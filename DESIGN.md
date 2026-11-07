@@ -93,7 +93,7 @@ flowchart LR
 | Result | A report for an assignment with source references, freshness, and decisions needed. It references items rather than restating them. |
 | Item | A finding with a stable identity from its source, such as a mail thread ID or a calendar event ID and version. It has a state (new, open, resolved, or dismissed), first-seen and last-reported times, and an owning responsibility. |
 | Cursor | The last position a responsibility has checked on a connection, so collectors fetch only what changed. |
-| Proposal | A change that needs operator approval: a new supervisor, responsibility, routine, or access request. |
+| Proposal | A change that needs operator approval: a new supervisor, responsibility, routine, access request, or reader. |
 | Action | A step outside AiHub's own records, such as a draft to create, a listing to publish, or a purchase. It has an autonomy level, a target connection, a cost if any, evidence, and a status (proposed, approved, done, failed, or declined). |
 | Conversation | A chat between the operator and one staff member, or a meeting with several. It keeps the transcript and links to the decisions and assignments it produced. |
 | Connection | An authenticated account or an identified local resource, such as a mailbox or a project folder. |
@@ -167,12 +167,14 @@ An adapter can offer draft-only operations, such as creating a mail draft or an 
 | --- | --- |
 | Existing Codex integration | Preferred when the background runtime can verify the intended account, use bounded operations, and enforce the required scope. |
 | MCP or direct API adapter | Use when an existing integration is unavailable or tighter account isolation, polling, or recovery is required. |
-| Local file or folder | Use for holdings exports, documents, project files, and other explicitly selected local resources. |
+| Local file or folder | Use for holdings exports, documents, project files, and other explicitly selected local resources. Built-in readers cover common formats, and staff can write a reader for one they don't. |
 | Custom adapter | Add new services and operations through the same typed contract. |
 
 Codex App Server exposes connector status and MCP calls. Its plugin installation endpoints are under development. Keep installation in Codex and verify what AiHub's background runtime can use. If a connector cannot enforce the required account and operation boundaries, qualify a direct or MCP adapter instead. [Codex App Server](https://learn.chatgpt.com/docs/app-server)
 
 When AiHub lacks a capability, the Chief of Staff can draft the responsibility, identify the missing capability, and propose a connection or custom adapter. Market coverage, freshness, and any provider cost depend on the selected data source. AiHub and the sample workflows require no separate OpenAI API key or paid service beyond existing Codex access.
+
+A reader turns the text of one file into source records. Built-in readers cover calendar exports, markdown, plain text, CSV, and JSON. For any other format, the Chief of Staff recruits a toolsmith, a worker that writes the reader from a description of the format and sample files, never from the source itself. The operator approves the reader on a card that shows its code and a preview of what it read from the real folder. AiHub runs only the approved version, in the box described under Authority and data boundaries.
 
 ## Scheduling and reporting
 
@@ -206,6 +208,7 @@ Persist occurrence IDs and attempts to deduplicate delivery across retries and r
   If Codex cannot meet these on Windows, data-reading runs move to another runtime behind the runtime interface.
 - Notes never carry authority. A note written in a run that read source data enters later contexts inside the same data markers as the source, so an injected instruction cannot persist as memory and steer another run. A staff member writes only its own folder.
 - No run combines personal data, untrusted content, and a way to act outside AiHub. Data runs have no outbound tools, workspace runs have no personal data, and anything above the Prepare level goes through approval. An injected instruction can then distort a report but cannot move data out.
+- A reader written by staff is code, so it runs as a pure function in a WebAssembly JavaScript interpreter with no host APIs, a memory cap, and a time limit. The daemon hands it one file's text and validates the records it returns. It reaches no files, network, or other process. A changed reader runs only after a new approval.
 - V1 covers reading, monitoring, analysis, reporting, and internal coordination. Drafts, project work, and spending follow in the phases under Roadmap after V1, each with its own grants and approval policies.
 - Staff never see or hold payment card details. A purchase ends in a checkout the operator completes, or later in a payment method with its own hard cap.
 - The daemon's HTTP surface follows the loopback hardening rules above. It holds mailbox access and is treated as a sensitive service.
@@ -218,7 +221,7 @@ Persist occurrence IDs and attempts to deduplicate delivery across retries and r
 | 1. Runtime, isolation, and control surface | The Windows daemon starts Codex, signs in, streams a reply, and invokes a gateway tool through the runtime interface. The Chief of Staff chat and roster restore after restart, and the chat rebuilds from records when its thread is discarded. A data-reading run passes the isolation checks. The daemon rejects requests with a foreign `Host` or `Origin` or a missing token. A simulated four-section briefing completes, with its turns and usage recorded. The roster, activity feed, and chat reflect real run state. |
 | 2. Staff, memory, and one real source | A chat request produces a proposal, and approving it creates a supervisor with a name, title, and job description, plus its responsibility and routine. One real local source, such as a calendar export or holdings CSV, feeds a briefing the operator reads daily. An unchanged item is not reported as new the next day, and a dismissed item stays out. Ending a mandate blocks further actions under it. Staff write and read notes in the vault, and a note from a source-data run enters later contexts as data. The 2D office is the home screen and renders run state from the event stream. |
 | 3. Teams and delegation | A supervisor recruits a worker with narrowed access, reviews its result, and the worker leaves the office; the assignment and result remain inspectable. A staff member asks a colleague a question without holding a turn open, and the answer arrives in a new turn. |
-| 4. Generality with sample sources | Configure a calendar, two isolated mailboxes, and a portfolio responsibility using the same staff engine. Add a fifth responsibility in chat and a small new adapter without changing the hierarchy or scheduler. The operator can open a chat with any staff member from the office. |
+| 4. New sources from chat | The calendar and every new source run through one source contract. Two new responsibilities are set up from chat on local folders with no code change: one in a format a built-in reader covers, and one whose reader a toolsmith writes and the operator approves. One supervisor can't read another's source, and an unapproved or changed reader never runs. The operator can open a chat with any staff member from the office. |
 | 5. Background operation | Briefings and alerts arrive with the browser closed and after the PC wakes from sleep. Test restart, duplicate triggers, stale data, revoked access, failed supervisors, exhausted Codex usage, and an expired sign-in caught by the health check. Responsibilities with nothing new use no model turn. |
 | 6. Real integrations | Qualify an existing Codex connector and a local file or custom adapter through the same contract. Verify account isolation, unattended operation, reconnect, source links, and partial results. |
 

@@ -134,12 +134,21 @@ A follow-up turn costs little because it continues the chat's own thread: the to
 - Workers may reuse the name of a worker who has left, so a wikilink to that name can point at either.
 - The snapshot holds open assignments and the 30 most recently settled. Older ones stay in the database but not in the office.
 
-## Milestone 4: generality with sample sources
+## Milestone 4: new sources from chat
 
-Acceptance (DESIGN.md): configure a calendar, two isolated mailboxes, and a portfolio responsibility using the same staff engine. Add a fifth responsibility in chat and a small new adapter without changing the hierarchy or scheduler. The operator can open a chat with any staff member from the office.
+Acceptance (DESIGN.md): the calendar and every new source run through one source contract. Two new responsibilities are set up from chat on local folders with no code change: one in a format a built-in reader covers, and one whose reader a toolsmith writes and the operator approves. One supervisor can't read another's source, and an unapproved or changed reader never runs. The operator can open a chat with any staff member from the office.
 
-1. **An adapter contract.** Move what `sources/collect.ts` does for `.ics` behind one interface per source kind: verify, read a window, key and version records, diff against the cursor, and describe a record for the model. The calendar becomes the first adapter, and the briefing and `aihub_read_calendar` go through the contract.
-2. **Two mailboxes.** A local adapter for a folder of `.eml` files, connected twice, each granted to its own supervisor, with tests that one supervisor can't read the other's mail.
-3. **A portfolio.** A holdings CSV adapter, with the operator's review rules as standing instructions.
+Earlier this plan hand-built readers for mailboxes and a portfolio. It changed on 2026-11-07 so that new sources come from chat instead of from code, and nothing in it asks the operator to connect an account. Tests and the fake office use made-up sample files.
+
+1. **One source contract.** Move what `sources/collect.ts` does for `.ics` behind one interface: verify a connection, read its records (in a window, for dated ones), key and version each record, diff against the cursor, and describe a record for the model. The calendar becomes the first source on it. The briefing goes through it, and `aihub_read_calendar` becomes `aihub_read_source`, checked against the caller's grants.
+2. **Folder sources.** A connection to a folder, with a file pattern and a reader. Built-in readers: markdown (one record per file, frontmatter as fields), plain text, CSV (one record per row, keyed by a column), and JSON. The daemon reads only matching files inside the folder, within size caps, and their text is source data. The Chief of Staff's proposal names the reader, and the operator picks the folder on the card, as they pick the `.ics` file today.
+3. **Readers written by staff.**
+   - First, prove the box: a WebAssembly JavaScript interpreter, such as QuickJS, with no host APIs, a memory cap, and a time limit. Test it with code that tries to reach files or the network, or loops forever. Node's own permission model isn't enough: in Node 22 it limits files and child processes but not the network.
+   - A reader is a pure function from one file's name and text to records. The daemon validates what it returns.
+   - When no built-in reader fits, the Chief of Staff recruits a toolsmith worker. It gets a description of the format and sample files, written by itself or given by the operator, never the source itself. It writes and tests the reader through gateway tools in the locked-down process, with no shell.
+   - The operator approves the reader on a card that shows its code and a preview of the records it read from the real folder. AiHub stores the approved version's hash and runs nothing else.
+   - In the office, the toolsmith walks in, works at a spare desk, and leaves once the reader is approved or declined.
 4. **Chat with anyone.** A conversation per staff member, opened from the profile card. A supervisor's chat runs in its own profile, and its turns count as source data.
-5. **A fifth responsibility.** Ask the Chief of Staff for something new, such as a reading list kept in a folder of markdown files, and add its small adapter without touching the hierarchy, the scheduler, or delegation.
+5. **The proof.** Two responsibilities set up entirely from chat: a reading list kept as markdown notes, on a built-in reader, and a made-up bank export in a layout no built-in reader covers, on a reader the toolsmith writes. Both report in the briefing. Tests show that one supervisor can't read another's source through any tool, and that a changed reader doesn't run until it is approved again.
+
+Not in this milestone: live accounts such as mail or a broker (Milestone 6, probably through existing MCP servers), briefings with the browser closed or after sleep (Milestone 5), drafts and sending (Roadmap phase A), and staff with a shell (Roadmap phase B).
