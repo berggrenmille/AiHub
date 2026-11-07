@@ -41,6 +41,12 @@ npm run codex -- login
 | `npm run codex -- <args>` | Runs the pinned Codex CLI with AiHub's `CODEX_HOME`. |
 | `npm run codex:protocol` | Regenerates the App Server protocol types after a Codex upgrade. |
 
+## The morning briefing
+
+Ask the Chief of Staff in chat to look after something, such as your work calendar. She proposes a supervisor on a card in the chat; approve it and pick the `.ics` export it should read. On weekdays at 07:00 Stockholm time the supervisors check their sources and the Chief of Staff posts one briefing in her chat. Items land in the Inbox, where you resolve or dismiss them. An hour earlier a health check posts a notice if Codex is signed out, a source can't be read, or usage is nearly spent. Run now on the Chief of Staff's profile card briefs you on request. The daemon has to be running at 07:00; a briefing it missed runs when it starts later that day.
+
+`npm run dev:fake` opens a furnished sample office with the same flow, reading `apps/daemon/test/fixtures/work.ics`.
+
 ## Staff notes
 
 Staff keep their notes in a vault of markdown files at `data/vault/`, one folder per staff member under `Staff/` plus a shared `Office/` folder. Open the folder in Obsidian to browse the notes and their graph, or point `AIHUB_VAULT_DIR` at a folder inside an existing vault. AiHub picks up notes you edit there. Profile notes follow each staff card, so edit profiles in AiHub instead.

@@ -36,25 +36,55 @@ The whole briefing took about a minute. The plan's primary usage limit read 50% 
 
 **Decision (2026-11-07):** Codex is the runtime for all runs, with the locked-down feature set. After every Codex upgrade, run `npm run spike:codex` and `npm run measure:briefing` again. If isolation ever fails, data runs move to the Claude API behind the same runtime interface; it needs an Anthropic API key and is billed per token.
 
-## Milestone 2: staff, memory, and one real source
+## Milestone 2: staff, memory, and one real source (done 2026-11-07)
 
-Acceptance (DESIGN.md): a chat request produces a proposal, and approving it creates a supervisor with a name, title, and job description, plus its responsibility and routine. One real local source feeds a briefing the operator reads daily. An unchanged item is not reported as new the next day, and a dismissed item stays out. Ending a mandate blocks further actions under it. Staff write and read notes in the vault, and a note from a source-data run enters later contexts as data. The 2D office is the home screen.
+The first real source is an `.ics` calendar export. The operator picks the file when approving the proposal.
 
-The first real source is an `.ics` calendar export (chosen 2026-11-07). The operator picks the file when approving the proposal.
+| Acceptance | Where it is shown |
+| --- | --- |
+| A chat request produces a proposal, and approving it creates a supervisor with a name, title, and job description, plus its responsibility and routine. | `staff/proposals.ts`, tested in `proposals.test.ts`. Checked against real Codex: asked to watch a work calendar, Vera read the roster and her notes and proposed "Nora, Calendar Supervisor", carrying the operator's "always flag overlaps" as a standing instruction. Approving with the `.ics` created Nora, her responsibility and routine, and a verified connection and grant in one transaction. Approving from the chat card works in the office UI. |
+| One real local source feeds a briefing the operator reads daily. | The `.ics` collector (`sources/ics.ts`, `sources/collect.ts`) expands recurrences, keys each occurrence, and diffs against the cursor in code. The scheduler (`scheduler.ts`) runs the briefing at 07:00 Stockholm time on weekdays, with a health check at 06:00, a same-day catch-up, and one retry. Run now is on the Chief of Staff's profile card. Checked against real Codex across three briefings and a calendar edit. |
+| An unchanged item is not reported as new the next day, and a dismissed item stays out. | `morning.test.ts`. Against real Codex, the second briefing reported only the moved and cancelled meetings, and the third had nothing new and spent no turn. |
+| Ending a mandate blocks further actions under it. | The gateway refuses every tool once a run's responsibility has ended or expired (`gateway.test.ts`, `server.test.ts`). |
+| Staff write and read notes in the vault, and a note from a source-data run enters later contexts as data. | `notes/notebook.ts`, tested in `notebook.test.ts`. Against real Codex, Vera wrote a note while proposing Nora. |
+| The 2D office is the home screen and renders run state from the event stream. | `apps/web`: the office floor, HUD, profile cards, chat drawer with approval cards, inbox, and notes with backlinks and a graph. Checked in a browser against the daemon in fake mode, from 700 px wide up. |
 
-1. **Records.** Schema v3: agent profiles (title, job description, working style, appearance), responsibilities (with standing instructions and an optional expiry, which makes a mandate), routines, occurrences, proposals, connections, grants, cursors, and items.
-2. **Notes vault.** Markdown files with frontmatter and `[[wikilinks]]`, one folder per staff member plus `Office`. AiHub writes profile and journal notes; staff list, read, write, and append through gateway tools within the folder rules. Notes from source-data runs carry that provenance and enter later contexts inside data markers. The operator can point `AIHUB_VAULT_DIR` into an Obsidian vault.
-3. **The office.** The home screen becomes a top-down office with generated characters whose animations follow run state, profile cards, a notes view with backlinks and a graph, approval cards, and the briefing with its items. Built in `apps/web` against the API from steps 1, 2, and 4–6.
-4. **One real local source.** A local-file connection and a collector that reads the `.ics` export, expands recurring events, gives each occurrence a stable key and version, and diffs against the cursor without a model turn.
-5. **Items and the briefing.** Report items get a stable identity from their source record. Items are new, open, resolved, or dismissed; the compose step separates new items from carried-over ones, and a dismissed item stays out unless its source changes. A section with nothing new uses no turn.
-6. **Proposals and mandates.** A Chief of Staff tool proposes a supervisor with its profile, responsibility, routine, and requested access. The proposal shows as a card in the chat; approving it creates the agent, responsibility, routine, connection, and grant in one transaction. The caps on active supervisors and daily turns are checked in code. The gateway checks a responsibility's expiry before every call, so ending a mandate blocks further actions under it.
-7. **Scheduler.** The weekday briefing routine in `Europe/Stockholm`, with occurrence IDs that deduplicate retries and restarts, one catch-up after downtime, and a health check an hour before.
+### Usage measured
+
+The calendar flow on 2026-11-07, Codex 0.167.0, ChatGPT plan "prolite":
+
+| Run | Turns | Input tokens | Cached | Output | Time |
+| --- | --- | --- | --- | --- | --- |
+| Chat: Vera proposes a supervisor | 1 | 33,844 | 11,008 | 388 | 13 s |
+| First briefing: Nora's report, first look at the source | 1 | 47,436 | 35,072 | 499 | 18 s |
+| First briefing: Vera composes | 1 | 11,469 | 0 | 109 | 24 s |
+| Second briefing, after a calendar edit: Nora's report | 1 | about 23,000 | | | |
+| Third briefing, nothing new | 0 | | | | |
+
+A first look at a source costs about twice a later check, since everything in the window is new.
+
+### What the real run changed
+
+| Finding | Change |
+| --- | --- |
+| The model saw a moved occurrence's raw key, which holds its original time, and called it a contradiction. | Records carry an opaque, stable `evt-` id. |
+| A conflict item stayed open after the other meeting was cancelled. | A report can list items still open that no longer apply. AiHub closes only those, under the supervisor's own responsibility, and the journal records why. |
+| A missing `overlapsWith` read as "not checked". | Every timed event still on carries the list, even an empty one. |
+| A morning with nothing new still spent a compose turn. | Code writes the quiet briefing. |
+| Asked again, Vera couldn't tell whether Nora's calendar was connected. | The roster tool shows each staff member's sources and their status. |
+
+### Known gaps
+
+- An `.ics` export is a snapshot: changes show only after the operator exports again, as Vera told the operator herself. Live calendars come with real integrations (Milestone 6).
+- The briefing in the Chief of Staff chat is written from source data, and a later chat turn can write notes from it as `conversation`. Mark chat turns that follow a briefing as source data before chat runs more often (Milestone 5).
+- The office has no note-removed event, so the UI drops a profile note's old path when a new one appears for the same owner. Unread chat counts live in the browser.
 
 ## Milestone 3: teams and delegation
 
 Acceptance (DESIGN.md): a supervisor recruits a worker with narrowed access, reviews its result, and the worker leaves the office. A staff member asks a colleague a question without holding a turn open, and the answer arrives in a new turn.
 
-1. **Assignments.** The assignment record with a parent, an owner, a deliverable, a turn budget, and a status. When an assignment finishes, the daemon starts a new turn for the parent with the result.
-2. **Workers.** A supervisor tool recruits a worker with a profile and a subset of the supervisor's grants, within a cap per supervisor. The worker delivers, the supervisor reviews, and AiHub archives the worker.
-3. **Asking colleagues.** A gateway tool turns a question into an assignment for a colleague. The answering run has no question tool of its own.
-4. **The office.** Workers walk in and out, and a staff member asking a question walks to the colleague's desk.
+1. **Assignments.** An assignment is a question or a task, with a requester, an owner, and either a parent assignment or the conversation it continues in, plus a brief, a run budget, a status, and a result. Runs record their assignment. Run kinds tell the gateway what a run is for: `question` and `assignment` for the owner's work, and `follow_up` when the requester resumes with results. When an assignment settles, the daemon starts the follow-up: a chat turn in the Chief of Staff's conversation, or a run on the parent assignment once all its children have settled.
+2. **Asking and assigning.** `aihub_ask_colleague` (Chief of Staff and supervisors) turns a question into an assignment, and the asking turn ends. `aihub_assign_task` lets the Chief of Staff hand a supervisor bounded work within its role. A question run and a follow-up run get neither tool, so nothing nests or loops, and each run checks the daily turn budget first. The question and the answer cross as data, inside markers.
+3. **Reading sources on demand.** `aihub_read_calendar` reads a window of a calendar the caller holds a grant for. Grants become the real boundary, so narrowing them means something.
+4. **Workers.** `aihub_recruit_worker` (supervisors, in assignment runs) hires a worker with a profile, a task, and a subset of the supervisor's grants, within a cap per supervisor. The worker delivers. In its follow-up run the supervisor accepts each result or asks for one revision with `aihub_review_work`. On acceptance AiHub archives the worker and revokes its grants; its assignment, result, and notes stay.
+5. **The office.** Workers walk in and out, a staff member asking a question walks to the colleague's desk, and a profile shows open and recent assignments.
