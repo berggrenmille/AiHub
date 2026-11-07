@@ -423,11 +423,12 @@ export class Store {
 
   // Connections and grants --------------------------------------------------
 
-  createConnection(input: { kind: SourceKind; label: string; path: string }): SourceConnection {
+  createConnection(input: { kind: SourceKind; label: string; path: string; pattern?: string | null; reader?: string | null }): SourceConnection {
     const id = crypto.randomUUID();
+    const config = { path: input.path, pattern: input.pattern ?? null, reader: input.reader ?? null };
     this.db
       .prepare("INSERT INTO connections (id, kind, label, config, status, created_at) VALUES (?, ?, ?, ?, 'unverified', ?)")
-      .run(id, input.kind, input.label, JSON.stringify({ path: input.path }), this.timestamp());
+      .run(id, input.kind, input.label, JSON.stringify(config), this.timestamp());
     return this.getConnection(id)!;
   }
 
@@ -904,12 +905,14 @@ function toResponsibility(row: Row): Responsibility {
 }
 
 function toConnection(row: Row): SourceConnection {
-  const config = JSON.parse(String(row.config)) as { path: string };
+  const config = JSON.parse(String(row.config)) as { path: string; pattern?: string | null; reader?: string | null };
   return {
     id: String(row.id),
     kind: row.kind as SourceKind,
     label: String(row.label),
     path: config.path,
+    pattern: config.pattern ?? null,
+    reader: config.reader ?? null,
     status: row.status as SourceConnection["status"],
     detail: row.detail as string | null,
     verifiedAt: row.verified_at as string | null,

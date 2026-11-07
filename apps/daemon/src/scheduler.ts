@@ -41,9 +41,9 @@ export class Scheduler {
     this.now = options.now ?? (() => new Date());
     this.briefing =
       options.briefing ??
-      ((office) => {
-        const sections = collectSections(office, this.now());
-        return sections.length ? runBriefing(office, sections, { now: this.now() }) : Promise.resolve(null);
+      (async (office) => {
+        const sections = await collectSections(office, this.now());
+        return sections.length ? runBriefing(office, sections, { now: this.now() }) : null;
       });
   }
 
@@ -140,7 +140,7 @@ export class Scheduler {
     const runtime = await this.office.refreshRuntimeStatus();
     if (!runtime.signedIn) problems.push(`Codex isn't signed in (${runtime.detail}). Run \`npm run codex -- login\`.`);
     for (const connection of store.listConnections()) {
-      const checked = verifyConnection(store, connection.id, this.now());
+      const checked = await verifyConnection(store, connection.id, this.office.sourceContext(this.now()));
       bus.publish({ type: "connection", connection: checked });
       if (checked.status !== "connected") problems.push(`${checked.label}: ${checked.detail}`);
     }

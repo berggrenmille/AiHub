@@ -39,9 +39,9 @@ export function seedDemoOffice(office: Office) {
   // The test fixture, so a briefing run from the office collects real records.
   const calendar = store.createConnection({ kind: "ics_file", label: "Work calendar", path: DEMO_CALENDAR });
   store.grant("work-schedule", calendar.id, ["read"]);
-  verifyConnection(store, calendar.id);
+  void verifyConnection(store, calendar.id, office.sourceContext());
   // Saga waits for her mailbox, so the office shows someone waiting for access.
-  const mailbox = store.createConnection({ kind: "ics_file", label: "Personal mailbox", path: "" });
+  const mailbox = store.createConnection({ kind: "folder", label: "Personal mailbox", path: "", reader: "text" });
   store.grant("personal-inbox", mailbox.id, ["read"]);
 
   const schedule = responsibilities.get("work-schedule")!;

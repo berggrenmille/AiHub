@@ -35,7 +35,7 @@ async function respond(input: string, options: RunTurnOptions): Promise<TurnResu
   return { status: "completed", text: `BRIEFING\n${input}`, error: null, usage };
 }
 
-function setUp() {
+async function setUp() {
   const dir = mkdtempSync(join(tmpdir(), "aihub-morning-"));
   dirs.push(dir);
   const calendar = join(dir, "work.ics");
@@ -50,7 +50,7 @@ function setUp() {
   store.createRoutine({ ownerId: "work-schedule", responsibilityId: responsibility.id, title: "Work schedule", trigger: { type: "briefing" }, timezone: "Europe/Stockholm", dailyTurnBudget: 4 });
   const connection = store.createConnection({ kind: "ics_file", label: "Work calendar", path: calendar });
   store.grant("work-schedule", connection.id, ["read"]);
-  verifyConnection(store, connection.id, MONDAY);
+  await verifyConnection(store, connection.id, { now: MONDAY });
   return { store, runtime, office, responsibility, calendar };
 }
 
@@ -59,7 +59,7 @@ const titles = (items: Array<{ title: string }>) => items.map((item) => item.tit
 
 describe("Morning briefing", () => {
   it("turns calendar changes into items that are new once, and posts the briefing", async () => {
-    const { office, store, runtime, responsibility } = setUp();
+    const { office, store, runtime, responsibility } = await setUp();
 
     const first = await runMorningBriefing(office, { now: MONDAY });
     const [section] = first.sections;
@@ -87,7 +87,7 @@ describe("Morning briefing", () => {
   });
 
   it("keeps a dismissed item out until its event changes", async () => {
-    const { office, store, responsibility, calendar } = setUp();
+    const { office, store, responsibility, calendar } = await setUp();
     await runMorningBriefing(office, { now: MONDAY });
     const erik = store.itemsOf(responsibility.id, ["open"]).find((item) => item.title.startsWith("1:1 with Erik"))!;
     const review = store.itemsOf(responsibility.id, ["open"]).find((item) => item.title.startsWith("Project review"))!;
@@ -106,7 +106,7 @@ describe("Morning briefing", () => {
   });
 
   it("closes open items the supervisor says no longer apply, and nothing else", async () => {
-    const { office, store, runtime, responsibility, calendar } = setUp();
+    const { office, store, runtime, responsibility, calendar } = await setUp();
     await runMorningBriefing(office, { now: MONDAY });
     const open = () => store.itemsOf(responsibility.id, ["open"]);
     const planning = open().find((item) => item.title.startsWith("Q4 planning"))!;
@@ -146,7 +146,7 @@ describe("Morning briefing", () => {
   });
 
   it("reports an unreadable source and skips an ended responsibility", async () => {
-    const { office, store, runtime, responsibility, calendar } = setUp();
+    const { office, store, runtime, responsibility, calendar } = await setUp();
     rmSync(calendar);
     const unavailable = await runMorningBriefing(office, { now: MONDAY });
     assert.equal(unavailable.sections[0]?.status, "unavailable");

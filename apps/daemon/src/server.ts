@@ -112,7 +112,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     const body = bodyOf(ApproveBody, request.body);
     if (!body.ok) return reply.code(400).send({ error: body.error });
     try {
-      return approveProposal(office, request.params.id, body.data);
+      return await approveProposal(office, request.params.id, body.data);
     } catch (error) {
       return sendError(reply, error);
     }

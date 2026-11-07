@@ -3,8 +3,7 @@ import type { Caller } from "../gateway/gateway.ts";
 import { SUPERVISOR_LIMIT } from "../limits.ts";
 import { ConflictError, InvalidRequestError, NotFoundError } from "../errors.ts";
 import type { Office } from "../office.ts";
-import { readCalendarFile } from "../sources/ics.ts";
-import { verifyConnection } from "../sources/collect.ts";
+import { checkProposedSource, connectionFor, verifyConnection } from "../sources/collect.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "./chief-of-staff.ts";
 import { SUPERVISOR_CHARTER } from "./supervisor.ts";
 
@@ -45,7 +44,7 @@ export function proposeSupervisor(office: Office, caller: Caller, payload: Recru
 }
 
 /** The operator approves: hire the supervisor with its responsibility, routine, and access. */
-export function approveProposal(office: Office, id: string, options: { sourcePath?: string } = {}): Proposal {
+export async function approveProposal(office: Office, id: string, options: { sourcePath?: string } = {}): Promise<Proposal> {
   const { store, bus, notebook } = office;
   const proposal = store.getProposal(id);
   if (!proposal) throw new NotFoundError(`No proposal ${id}`);
@@ -56,15 +55,18 @@ export function approveProposal(office: Office, id: string, options: { sourcePat
   if (SUPERVISOR_LIMIT - store.countActive("supervisor") <= 0) throw new ConflictError(`The office is at its cap of ${SUPERVISOR_LIMIT} supervisors.`);
 
   const sourcePath = options.sourcePath?.trim().replace(/^"(.*)"$/, "$1");
-  if (source && !sourcePath) throw new InvalidRequestError(`Pick the file for ${source.label} to approve this proposal.`);
+  const what = source?.kind === "folder" ? "folder" : "file";
+  if (source && !sourcePath) throw new InvalidRequestError(`Pick the ${what} for ${source.label} to approve this proposal.`);
   if (source && sourcePath) {
-    // Read the file before hiring anyone, so a wrong path is fixed on the card, not after.
+    // Read the source before hiring anyone, so a wrong path is fixed on the card, not after.
     try {
-      readCalendarFile(sourcePath, { from: new Date(), to: new Date(Date.now() + 86_400_000) });
+      await checkProposedSource(source, sourcePath, office.sourceContext());
     } catch (error) {
-      throw new InvalidRequestError(`AiHub can't read ${sourcePath} as a calendar export: ${error instanceof Error ? error.message : String(error)}`);
+      throw new InvalidRequestError(`AiHub can't read ${sourcePath}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
+  // Another approval may have run while the source was read.
+  if (store.getProposal(id)?.status !== "pending") throw new ConflictError("This proposal was already decided.");
 
   const hired = store.transaction(() => {
     const agentId = store.freeAgentId(profile.name);
@@ -79,13 +81,13 @@ export function approveProposal(office: Office, id: string, options: { sourcePat
       timezone: "Europe/Stockholm",
       dailyTurnBudget: SUPERVISOR_DAILY_TURNS,
     });
-    const connection = source && sourcePath ? store.createConnection({ kind: source.kind, label: source.label, path: sourcePath }) : null;
+    const connection = source && sourcePath ? store.createConnection(connectionFor(source, sourcePath)) : null;
     if (connection) store.grant(agentId, connection.id, ["read"]);
     const decided = store.decideProposal(id, "approved", `Hired ${profile.name} as ${profile.title}.`)!;
     return { agentId, responsibility, routine, connection, decided };
   });
 
-  const connection = hired.connection ? verifyConnection(store, hired.connection.id) : null;
+  const connection = hired.connection ? await verifyConnection(store, hired.connection.id, office.sourceContext()) : null;
   notebook.syncProfile(hired.agentId);
   notebook.journal(CHIEF_OF_STAFF_ID, `The operator approved hiring [[${profile.name}]] as ${profile.title}.`);
   bus.publish({ type: "proposal", proposal: hired.decided });

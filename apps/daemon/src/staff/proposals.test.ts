@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
@@ -68,11 +68,11 @@ describe("Recruitment", () => {
     await propose();
     const [proposal] = store.listProposals();
 
-    assert.throws(() => approveProposal(office, proposal!.id), InvalidRequestError);
-    assert.throws(() => approveProposal(office, proposal!.id, { sourcePath: "C:/nowhere/family.ics" }), /can't read C:\/nowhere\/family\.ics/);
+    await assert.rejects(() => approveProposal(office, proposal!.id), InvalidRequestError);
+    await assert.rejects(() => approveProposal(office, proposal!.id, { sourcePath: "C:/nowhere/family.ics" }), /can't read C:\/nowhere\/family\.ics/);
     assert.equal(store.getAgent("rut"), null, "nothing hired before the file reads");
 
-    const approved = approveProposal(office, proposal!.id, { sourcePath: `"${CALENDAR}"` });
+    const approved = await approveProposal(office, proposal!.id, { sourcePath: `"${CALENDAR}"` });
     assert.equal(approved.status, "approved");
     const rut = store.getAgent("rut")!;
     assert.deepEqual([rut.name, rut.title, rut.role, rut.managerId, rut.state], ["Rut", "Calendar Supervisor", "supervisor", CHIEF_OF_STAFF_ID, "idle"]);
@@ -93,7 +93,35 @@ describe("Recruitment", () => {
     const context = [...runtime.contexts.values()].at(-1)!;
     assert.match(context.options.instructions, /^You are Rut, Calendar Supervisor[\s\S]*Your responsibility: Family calendar\. School and activities\.\nStanding instructions from the operator: Always flag pickups after 17:00\./);
 
-    assert.throws(() => approveProposal(office, proposal!.id, { sourcePath: CALENDAR }), ConflictError);
+    await assert.rejects(() => approveProposal(office, proposal!.id, { sourcePath: CALENDAR }), ConflictError);
+  });
+
+  it("hires for a folder of notes, reading the folder before anyone joins", async () => {
+    const { store, office, propose } = setUp();
+    const folder = mkdtempSync(join(tmpdir(), "aihub-reading-"));
+    dirs.push(folder);
+    writeFileSync(join(folder, "Dune.md"), "---\nstatus: reading\n---\n");
+    const ines = {
+      ...RUT,
+      profile: { ...RUT.profile, name: "Ines", title: "Reading List Supervisor" },
+      responsibility: { title: "Reading list", scope: "Books to read and notes on them.", standingInstructions: "" },
+      source: { kind: "folder", label: "Reading list", reader: "markdown" },
+    };
+    assert.match((await propose({ ...ines, source: { kind: "folder", label: "Reading list" } })).text, /needs a reader/);
+    assert.match((await propose({ ...ines, source: { ...RUT.source, reader: "csv" } })).text, /takes no reader/);
+    assert.equal((await propose(ines)).ok, true);
+    const [proposal] = store.listProposals();
+
+    await assert.rejects(() => approveProposal(office, proposal!.id), /Pick the folder for Reading list/);
+    await assert.rejects(() => approveProposal(office, proposal!.id, { sourcePath: join(folder, "Dune.md") }), /That's a file, not a folder/);
+    assert.equal(store.getAgent("ines"), null);
+
+    await approveProposal(office, proposal!.id, { sourcePath: folder });
+    const [connection] = store.connectionsOf("ines");
+    assert.deepEqual(
+      [connection?.kind, connection?.reader, connection?.pattern, connection?.status, connection?.detail],
+      ["folder", "markdown", "*.md", "connected", "1 note in 1 file"],
+    );
   });
 
   it("records a decline once", async () => {
@@ -102,6 +130,6 @@ describe("Recruitment", () => {
     const [proposal] = store.listProposals();
     assert.equal(declineProposal(office, proposal!.id, "Not now").outcome, "Not now");
     assert.throws(() => declineProposal(office, proposal!.id), ConflictError);
-    assert.throws(() => approveProposal(office, proposal!.id, { sourcePath: CALENDAR }), /already declined/);
+    await assert.rejects(() => approveProposal(office, proposal!.id, { sourcePath: CALENDAR }), /already declined/);
   });
 });

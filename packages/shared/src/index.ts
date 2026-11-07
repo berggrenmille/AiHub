@@ -185,15 +185,23 @@ export interface Responsibility {
   endedAt: string | null;
 }
 
-export type SourceKind = "ics_file";
+/** A calendar export, or a folder of files that a reader turns into records. */
+export type SourceKind = "ics_file" | "folder";
+
+/** The readers AiHub has built in, for folder sources. */
+export type BuiltInReader = "markdown" | "text" | "csv" | "json";
 
 /** An identified local resource or account that collectors read (DESIGN.md › Connectors and capabilities). */
 export interface SourceConnection {
   id: string;
   kind: SourceKind;
   label: string;
-  /** For a local file, its path. */
+  /** For a local file or folder, its path. */
   path: string;
+  /** For a folder: the files it reads, such as "*.md". */
+  pattern: string | null;
+  /** For a folder: the reader that turns each file into records. */
+  reader: string | null;
   status: "unverified" | "connected" | "failed";
   /** What verification found, such as the number of events or the error. */
   detail: string | null;
@@ -219,12 +227,21 @@ export interface Routine {
   nextRunAt: string | null;
 }
 
+/** A source as proposed: what it is, but not yet where. */
+export interface ProposedSource {
+  kind: SourceKind;
+  label: string;
+  /** For a folder: the reader for its files, and which files to read. */
+  reader?: BuiltInReader;
+  pattern?: string;
+}
+
 /** What a recruitment proposal asks the operator to approve. */
 export interface RecruitProposal {
   profile: StaffProfile;
   responsibility: { title: string; scope: string; standingInstructions: string; expiresAt: string | null };
-  /** The source the supervisor watches. The operator picks the actual file when approving. */
-  source: { kind: SourceKind; label: string } | null;
+  /** The source the supervisor watches. The operator picks the actual file or folder when approving. */
+  source: ProposedSource | null;
   reason: string;
 }
 
@@ -360,7 +377,7 @@ export interface ChatResponse {
   run: Run;
 }
 
-/** `POST /api/proposals/:id/approve`. A proposal with a source needs the file to read. */
+/** `POST /api/proposals/:id/approve`. A proposal with a source needs the file or folder to read. */
 export interface ApproveProposalRequest {
   sourcePath?: string;
 }

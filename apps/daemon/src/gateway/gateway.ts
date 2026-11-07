@@ -2,6 +2,7 @@ import type { AgentRole, Assignment, Proposal, RecruitProposal, RunKind, RunProf
 import { z } from "zod";
 import type { Notebook } from "../notes/notebook.ts";
 import type { ToolCall, ToolOutcome, ToolSpec } from "../runtime/types.ts";
+import type { SourceContext } from "../sources/source.ts";
 import type { AgentRecord, Store } from "../store/store.ts";
 
 /** Who is calling: identified from the active run, never from anything the model says. */
@@ -28,6 +29,8 @@ export interface OfficeServices {
   /** Records a recruitment proposal and shows it to the operator as an approval card. */
   proposeSupervisor: ((caller: Caller, proposal: RecruitProposal) => Proposal) | null;
   delegation: DelegationService | null;
+  /** What source adapters need from the office for a read. */
+  sourceContext: (() => SourceContext) | null;
 }
 
 export interface ToolContext extends OfficeServices {
@@ -105,6 +108,7 @@ export class Gateway {
         notebook: this.services.notebook ?? null,
         proposeSupervisor: this.services.proposeSupervisor ?? null,
         delegation: this.services.delegation ?? null,
+        sourceContext: this.services.sourceContext ?? null,
       };
       const text = await tool.run(input.data, { caller, agent, store: this.store, ...services });
       this.record(caller, "tool_call", `Used ${call.name}`, { tool: call.name, arguments: input.data });

@@ -30,6 +30,10 @@ export interface BriefingSection {
   unavailable?: string | null;
   /** The first check of this source: the changes are everything in its window. */
   firstCheck?: boolean;
+  /** What a first check means for this kind of source. A calendar's applies when left out. */
+  firstCheckNote?: string;
+  /** How the changes were cut, such as some held back for the next check. */
+  notes?: string[];
   /** Runs once the briefing is delivered, such as saving the collector's cursor. */
   onDelivered?: () => void;
 }
@@ -137,10 +141,11 @@ async function reportSection(office: Office, section: BriefingSection, since: st
     agentId: section.agentId,
     kind: "report",
     title: `Report for the briefing: ${section.heading}`,
-    instructions: section.firstCheck ? `${REPORT_INSTRUCTIONS}\n${FIRST_CHECK_NOTE}` : REPORT_INSTRUCTIONS,
+    instructions: section.firstCheck ? `${REPORT_INSTRUCTIONS}\n${section.firstCheckNote ?? FIRST_CHECK_NOTE}` : REPORT_INSTRUCTIONS,
     input: [
       `Source: ${section.source}`,
       `Changes since your last check: ${section.changes.length}`,
+      ...(section.notes ?? []),
       "BEGIN SOURCE DATA",
       JSON.stringify(section.changes, null, 2),
       "END SOURCE DATA",

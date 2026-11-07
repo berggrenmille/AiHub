@@ -6,7 +6,7 @@ import { runBriefing, type BriefingOutcome, type BriefingSection } from "./brief
 // briefing, built from its granted source by the collectors.
 
 /** Collects every participating responsibility's changes. Runs no model turn. */
-export function collectSections(office: Office, now = new Date()): BriefingSection[] {
+export async function collectSections(office: Office, now = new Date()): Promise<BriefingSection[]> {
   const { store, bus } = office;
   for (const ended of store.endExpiredResponsibilities()) bus.publish({ type: "responsibility", responsibility: ended });
 
@@ -24,7 +24,7 @@ export function collectSections(office: Office, now = new Date()): BriefingSecti
       sections.push({ agentId: owner.id, heading: responsibility.title, source: "No source", changes: [], responsibilityId: responsibility.id });
       continue;
     }
-    const collection = collect(store, responsibility.id, connection, now);
+    const collection = await collect(store, responsibility.id, connection, office.sourceContext(now));
     bus.publish({ type: "connection", connection: collection.connection });
     sections.push({
       agentId: owner.id,
@@ -35,12 +35,14 @@ export function collectSections(office: Office, now = new Date()): BriefingSecti
       identities: collection.identities,
       unavailable: collection.unavailable,
       firstCheck: collection.firstCheck,
+      firstCheckNote: collection.firstCheckNote,
+      notes: collection.notes,
       onDelivered: collection.commit,
     });
   }
   return sections;
 }
 
-export function runMorningBriefing(office: Office, options: { timeoutMs?: number; now?: Date } = {}): Promise<BriefingOutcome> {
-  return runBriefing(office, collectSections(office, options.now), options);
+export async function runMorningBriefing(office: Office, options: { timeoutMs?: number; now?: Date } = {}): Promise<BriefingOutcome> {
+  return runBriefing(office, await collectSections(office, options.now), options);
 }

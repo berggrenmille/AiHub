@@ -1,5 +1,5 @@
 import { useId, useState, type FormEvent } from "react";
-import type { Proposal } from "@aihub/shared";
+import type { Proposal, ProposedSource } from "@aihub/shared";
 import { errorText } from "../api.ts";
 import { lookFor } from "../lib/avatar.ts";
 import { formatDateTime } from "../format.ts";
@@ -15,6 +15,26 @@ interface ProposalCardProps {
   intro: string;
   onApprove(sourcePath?: string): Promise<void>;
   onDecline(): Promise<void>;
+}
+
+const READER_LABELS: Record<NonNullable<ProposedSource["reader"]>, string> = {
+  markdown: "markdown notes",
+  text: "text files",
+  csv: "CSV files",
+  json: "JSON files",
+};
+
+/** What the card says about a source, and what it asks the operator to pick. */
+export function describeSource(source: ProposedSource): { kind: string; pick: string; placeholder: string } {
+  if (source.kind === "folder") {
+    const files = source.reader ? READER_LABELS[source.reader] : "files";
+    return {
+      kind: `folder of ${files}${source.pattern ? `, ${source.pattern}` : ""}`,
+      pick: "path to the folder on this PC",
+      placeholder: "C:\\Users\\you\\Documents\\Reading list",
+    };
+  }
+  return { kind: "calendar file", pick: "path to the .ics file on this PC", placeholder: "C:\\Users\\you\\Documents\\calendar.ics" };
 }
 
 const STATUS_LABELS: Record<Proposal["status"], string> = {
@@ -43,6 +63,7 @@ export function ProposalCard({ proposal, intro, onApprove, onDecline }: Proposal
   const pathNeeded = pending && source !== null;
   const trimmed = path.trim();
   const looksLikeIcs = /\.ics$/i.test(trimmed);
+  const described = source ? describeSource(source) : null;
 
   const run = async (kind: "approve" | "decline") => {
     setBusy(kind);
@@ -60,7 +81,7 @@ export function ProposalCard({ proposal, intro, onApprove, onDecline }: Proposal
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     if (pathNeeded && !trimmed) {
-      setError(`Enter the path of the ${source.label.toLowerCase()} file first.`);
+      setError(`Enter the path of the ${source.label.toLowerCase()} ${source.kind === "folder" ? "folder" : "file"} first.`);
       return;
     }
     void run("approve");
@@ -106,7 +127,7 @@ export function ProposalCard({ proposal, intro, onApprove, onDecline }: Proposal
         )}
         <div>
           <dt>Source</dt>
-          <dd>{source ? `${source.label} (calendar file)` : "None needed"}</dd>
+          <dd>{source && described ? `${source.label} (${described.kind})` : "None needed"}</dd>
         </div>
         <div>
           <dt>Why</dt>
@@ -116,19 +137,21 @@ export function ProposalCard({ proposal, intro, onApprove, onDecline }: Proposal
 
       {pending ? (
         <form className="proposal-actions" onSubmit={onSubmit}>
-          {source && (
+          {source && described && (
             <div className="field">
-              <label htmlFor={pathId}>{source.label}: path to the .ics file on this PC</label>
+              <label htmlFor={pathId}>
+                {source.label}: {described.pick}
+              </label>
               <input
                 id={pathId}
                 type="text"
                 value={path}
                 spellCheck={false}
                 autoComplete="off"
-                placeholder="C:\Users\you\Documents\calendar.ics"
+                placeholder={described.placeholder}
                 onChange={(event) => setPath(event.target.value)}
               />
-              {trimmed && !looksLikeIcs && <p className="hint warn">That doesn't end in .ics. AiHub reads calendar files.</p>}
+              {source.kind === "ics_file" && trimmed && !looksLikeIcs && <p className="hint warn">That doesn't end in .ics. AiHub reads calendar files.</p>}
             </div>
           )}
           <div className="button-row">

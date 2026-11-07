@@ -30,6 +30,7 @@ import { CHIEF_OF_STAFF, CHIEF_OF_STAFF_CONVERSATION_ID } from "./staff/chief-of
 import { instructionsFor } from "./staff/identity.ts";
 import { Delegation } from "./staff/delegation.ts";
 import { proposeSupervisor } from "./staff/proposals.ts";
+import type { SourceContext } from "./sources/source.ts";
 import type { Scheduler } from "./scheduler.ts";
 import type { ConversationRecord, Store } from "./store/store.ts";
 import { addDays, isWeekday, localDate, TIMEZONE, zonedInstant } from "./time.ts";
@@ -118,7 +119,13 @@ export class Office {
       notebook: this.notebook,
       proposeSupervisor: (caller, proposal) => proposeSupervisor(this, caller, proposal),
       delegation: this.delegation,
+      sourceContext: () => this.sourceContext(),
     });
+  }
+
+  /** What source adapters get from the office, such as the readers staff wrote and the operator approved. */
+  sourceContext(now = new Date()): SourceContext {
+    return { now };
   }
 
   /** Seeds the Chief of Staff and closes out runs that a restart interrupted. */

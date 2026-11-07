@@ -22,18 +22,17 @@ afterEach(() => {
 type Script = (input: string, options: RunTurnOptions) => Promise<string | TurnResult> | string | TurnResult;
 
 /** An office with Vera and two supervisors, Rut with the work calendar and Nils with none. */
-function setUp(store = new Store(":memory:"), runtime = new FakeRuntime()) {
+async function setUp(store = new Store(":memory:"), runtime = new FakeRuntime(), scripts: Record<string, Script> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "aihub-delegation-"));
   dirs.push(dir);
   const office = new Office({ store, runtime, vaultDir: dir });
   office.start();
   if (!store.getAgent("rut")) {
-    hire(office, "Rut", "Work calendar");
-    hire(office, "Nils", null);
+    await hire(office, "Rut", "Work calendar");
+    await hire(office, "Nils", null);
   }
 
   // Each staff member answers from its own script, picked by the charter of the context the turn is in.
-  const scripts: Record<string, Script> = {};
   runtime.respond = async (input, options) => {
     const contextId = runtime.calls.at(-1)!.split(" ")[1]!;
     const name = /^You are (\w+)/.exec(runtime.contexts.get(contextId)!.options.instructions)![1]!;
@@ -57,7 +56,7 @@ function setUp(store = new Store(":memory:"), runtime = new FakeRuntime()) {
   return { store, runtime, office, scripts, settle, contextOf, toolsOffered };
 }
 
-function hire(office: Office, name: string, source: string | null) {
+async function hire(office: Office, name: string, source: string | null) {
   const run = office.store.createRun({ agentId: CHIEF, kind: "chat", title: "Hire" });
   const proposal = proposeSupervisor(office, { agentId: CHIEF, runId: run.id, profile: "conversation" }, {
     profile: { name, title: "Calendar Supervisor", description: `${name} keeps a calendar.`, workingStyle: "Brief." },
@@ -65,7 +64,7 @@ function hire(office: Office, name: string, source: string | null) {
     source: source ? { kind: "ics_file", label: source } : null,
     reason: "Test",
   });
-  approveProposal(office, proposal.id, source ? { sourcePath: CALENDAR } : {});
+  await approveProposal(office, proposal.id, source ? { sourcePath: CALENDAR } : {});
   office.store.setRunState(run.id, "done");
 }
 
@@ -73,7 +72,7 @@ const call = (options: RunTurnOptions, name: string, args: object) => options.on
 
 describe("Delegation", () => {
   it("asks a colleague from chat and brings the answer back to the same thread", async () => {
-    const { store, runtime, office, scripts, settle, contextOf, toolsOffered } = setUp();
+    const { store, runtime, office, scripts, settle, contextOf, toolsOffered } = await setUp();
     scripts.Vera = async (input, options) => {
       if (input.endsWith("\nIs Thursday free?")) {
         const asked = await call(options, "aihub_ask_colleague", { colleague: "rut", question: "Is Thursday afternoon free?" });
@@ -100,7 +99,7 @@ describe("Delegation", () => {
     assert.equal(contextOf("Rut", "question").assignmentId, question!.id);
     assert.equal(contextOf("Vera", "follow_up").assignmentId, question!.id);
     // An answer can read sources but can't ask anyone in turn.
-    assert.ok(toolsOffered("Rut").includes("aihub_read_calendar"));
+    assert.ok(toolsOffered("Rut").includes("aihub_read_source"));
     assert.ok(!toolsOffered("Rut").includes("aihub_ask_colleague"));
 
     // The follow-up is a new turn of the chat's own thread, not a new thread.
@@ -119,7 +118,7 @@ describe("Delegation", () => {
   });
 
   it("follows a task up once the colleague it asked has answered", async () => {
-    const { store, scripts, settle, office, contextOf } = setUp();
+    const { store, scripts, settle, office, contextOf } = await setUp();
     scripts.Vera = async (input, options) => {
       if (input.endsWith("\nHow busy was October?")) {
         const assigned = await call(options, "aihub_assign_task", { colleague: "Rut", title: "Count October meetings", deliverable: "Meeting hours in October." });
@@ -154,7 +153,7 @@ describe("Delegation", () => {
   });
 
   it("refuses strangers, itself, questions past the cap, and an office out of turns", async () => {
-    const { store, office } = setUp();
+    const { store, office } = await setUp();
     const chat = { agentId: CHIEF, runId: store.createRun({ agentId: CHIEF, kind: "chat", title: "Reply" }).id, profile: "conversation" as const };
     const ask = (colleague: string) => office.delegation.ask(chat, { colleague, question: "Free on Friday?" });
 
@@ -175,7 +174,7 @@ describe("Delegation", () => {
   });
 
   it("tells the chat when a question fails", async () => {
-    const { store, office, scripts, settle } = setUp();
+    const { store, office, scripts, settle } = await setUp();
     scripts.Vera = async (input, options) => {
       if (input.endsWith("\nAsk Rut")) {
         await call(options, "aihub_ask_colleague", { colleague: "Rut", question: "Anything new?" });
@@ -197,7 +196,7 @@ describe("Delegation", () => {
 
   it("starts interrupted work again after a restart, without charging the run", async () => {
     const store = new Store(":memory:");
-    const first = setUp(store);
+    const first = await setUp(store);
     const question = store.createAssignment({
       kind: "question",
       requesterId: CHIEF,
@@ -212,9 +211,8 @@ describe("Delegation", () => {
     store.updateAssignment(question.id, { runStarted: true });
     await first.settle();
 
-    const restarted = setUp(store);
-    restarted.scripts.Rut = () => "Yes, all day.";
-    restarted.scripts.Vera = () => "Rut says Friday is free.";
+    // The scripts go in before the office starts, since it picks the question up again right away.
+    const restarted = await setUp(store, new FakeRuntime(), { Rut: () => "Yes, all day.", Vera: () => "Rut says Friday is free." });
     await restarted.settle();
 
     const after = store.getAssignment(question.id)!;
@@ -223,10 +221,10 @@ describe("Delegation", () => {
   });
 
   it("reads a calendar only through a grant", async () => {
-    const { store, office } = setUp();
+    const { store, office } = await setUp();
     const caller = (agentId: string) => ({ agentId, runId: store.createRun({ agentId, kind: "question", title: "Answer" }).id, profile: "data" as const });
     const read = (agentId: string, from = "2026-11-09") =>
-      office.gateway.call(caller(agentId), { name: "aihub_read_calendar", arguments: { source: "work calendar", from, days: 5 } });
+      office.gateway.call(caller(agentId), { name: "aihub_read_source", arguments: { source: "work calendar", from, days: 5 } });
 
     const rut = await read("rut");
     assert.equal(rut.ok, true, rut.text);
@@ -276,7 +274,7 @@ const IVY = {
 
 describe("Workers", () => {
   it("are recruited for part of a task, accepted, and then leave", async () => {
-    const { store, office, scripts, settle, runtime, toolsOffered } = setUp();
+    const { store, office, scripts, settle, runtime, toolsOffered } = await setUp();
     const left: string[] = [];
     office.bus.subscribe(({ event }) => event.type === "agent_left" && left.push(event.agentId));
     veraAssigns(scripts);
@@ -295,7 +293,7 @@ describe("Workers", () => {
     scripts.Ivy = async (input, options) => {
       assert.match(input, /Rut \(Calendar Supervisor\) hands you a task: Count October\.\nBEGIN TASK DATA\nCount the meeting hours in October 2026\.\nEND TASK DATA/);
       assert.match(input, /Your sources: Work calendar \(connected\)\./);
-      const read = await call(options, "aihub_read_calendar", { source: "Work calendar", from: "2026-10-01", days: 31 });
+      const read = await call(options, "aihub_read_source", { source: "Work calendar", from: "2026-10-01", days: 31 });
       assert.equal(read.ok, true, read.text);
       return "12 hours.";
     };
@@ -312,7 +310,7 @@ describe("Workers", () => {
     // Ivy worked under Rut's responsibility, with only the task's tools, and has left.
     const ivy = [...runtime.contexts.values()].find((context) => context.options.instructions.startsWith("You are Ivy"))!;
     assert.match(ivy.options.instructions, /You report to the supervisor who recruited you\.[\s\S]*Your responsibility: Rut's calendar\./);
-    assert.deepEqual(toolsOffered("Ivy"), ["aihub_read_calendar", "aihub_list_notes", "aihub_read_note", "aihub_write_note"]);
+    assert.deepEqual(toolsOffered("Ivy"), ["aihub_read_source", "aihub_list_notes", "aihub_read_note", "aihub_write_note"]);
     assert.equal(store.getAgentRecord("ivy")?.status, "archived");
     assert.deepEqual(store.connectionsOf("ivy"), []);
     assert.equal(store.getAgent("ivy"), null);
@@ -323,7 +321,7 @@ describe("Workers", () => {
   });
 
   it("revise once, and the supervisor follows up again with the revision", async () => {
-    const { store, office, scripts, settle } = setUp();
+    const { store, office, scripts, settle } = await setUp();
     veraAssigns(scripts);
     let followUps = 0;
     scripts.Rut = async (input, options) => {
@@ -358,7 +356,7 @@ describe("Workers", () => {
   });
 
   it("are capped per supervisor, get only its sources, and leave unreviewed once it delivers", async () => {
-    const { store, office, scripts, settle } = setUp();
+    const { store, office, scripts, settle } = await setUp();
     veraAssigns(scripts);
     scripts.Rut = async (input, options) => {
       if (input.includes("hands you a task")) {

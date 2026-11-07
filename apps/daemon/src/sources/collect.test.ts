@@ -5,10 +5,12 @@ import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { Store } from "../store/store.ts";
-import { collect, describeTime, recordRef, verifyConnection } from "./collect.ts";
+import { describeTime, recordRef } from "./calendar.ts";
+import { collect, verifyConnection } from "./collect.ts";
 
 const SAMPLE = fileURLToPath(new URL("../../test/fixtures/work.ics", import.meta.url));
 const MONDAY = new Date("2026-11-09T05:00:00.000Z");
+const AT_MONDAY = { now: MONDAY };
 const dirs: string[] = [];
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
@@ -27,24 +29,24 @@ function setup() {
 }
 
 describe("Calendar collector", () => {
-  it("verifies a connection by reading it", () => {
+  it("verifies a connection by reading it", async () => {
     const { store, connection, path } = setup();
     assert.deepEqual(
-      [verifyConnection(store, connection.id, MONDAY).status, store.getConnection(connection.id)!.detail],
+      [(await verifyConnection(store, connection.id, AT_MONDAY)).status, store.getConnection(connection.id)!.detail],
       ["connected", "8 events in the next 7 days"],
     );
     rmSync(path);
-    const failed = verifyConnection(store, connection.id, MONDAY);
+    const failed = await verifyConnection(store, connection.id, AT_MONDAY);
     assert.equal(failed.status, "failed");
     assert.match(failed.detail!, /isn't there any more/);
 
     const unchosen = store.createConnection({ kind: "ics_file", label: "Mailbox", path: "" });
-    assert.equal(verifyConnection(store, unchosen.id, MONDAY).detail, "No calendar file has been chosen yet.");
+    assert.equal((await verifyConnection(store, unchosen.id, AT_MONDAY)).detail, "No calendar file has been chosen yet.");
   });
 
-  it("hands over changes with stable ids, and sees them again until the cursor is saved", () => {
+  it("hands over changes with stable ids, and sees them again until the cursor is saved", async () => {
     const { store, responsibility, connection } = setup();
-    const first = collect(store, responsibility.id, connection, MONDAY);
+    const first = await collect(store, responsibility.id, connection, AT_MONDAY);
     assert.equal(first.unavailable, null);
     assert.equal(first.firstCheck, true);
     const planning = first.records.find((record) => record.title === "Q4 planning")!;
@@ -64,15 +66,15 @@ describe("Calendar collector", () => {
     assert.deepEqual(tuesdayStandup.overlapsWith, []);
     assert.equal(first.records.find((record) => record.title === "Company offsite")?.overlapsWith, undefined, "all-day events don't conflict");
 
-    assert.equal(collect(store, responsibility.id, connection, MONDAY).records.length, 8, "not committed yet");
+    assert.equal((await collect(store, responsibility.id, connection, AT_MONDAY)).records.length, 8, "not committed yet");
     first.commit();
-    assert.equal(collect(store, responsibility.id, connection, MONDAY).records.length, 0);
+    assert.equal((await collect(store, responsibility.id, connection, AT_MONDAY)).records.length, 0);
   });
 
-  it("says why a source is unavailable", () => {
+  it("says why a source is unavailable", async () => {
     const { store, responsibility, connection, path } = setup();
     rmSync(path);
-    const collection = collect(store, responsibility.id, connection, MONDAY);
+    const collection = await collect(store, responsibility.id, connection, AT_MONDAY);
     assert.match(collection.unavailable!, /isn't there any more/);
     assert.equal(store.getConnection(connection.id)!.status, "failed");
   });

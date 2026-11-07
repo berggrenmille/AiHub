@@ -1,19 +1,22 @@
-import { createHash } from "node:crypto";
-import type { SourceConnection } from "@aihub/shared";
+import type { ProposedSource, SourceConnection, SourceKind } from "@aihub/shared";
 import type { Store } from "../store/store.ts";
-import { localDate, TIMEZONE } from "../time.ts";
-import { diffCalendar, readCalendarFile, type CalendarChange, type CalendarCursor } from "./ics.ts";
+import { calendarSource } from "./calendar.ts";
+import { folderSource } from "./folder.ts";
+import { BUILT_IN_READERS, isBuiltInReader } from "./readers.ts";
+import type { Identity, SourceAdapter, SourceContext, SourceQuery, SourceReading, SourceRecord } from "./source.ts";
 
-// Collectors (DESIGN.md › Architecture): code that reads a connection, compares it with the cursor,
-// and hands the model only what changed. No model turn runs here.
+// Collectors (DESIGN.md › Architecture): code that reads a connection through its adapter, compares
+// it with the cursor, and hands the model only what changed. No model turn runs here.
 
-/** How far ahead the calendar collector looks. */
-export const CALENDAR_DAYS = 7;
+export type { SourceRecord } from "./source.ts";
 
-/** A change as the supervisor sees it: `id` is what its report cites as the sourceRef. */
-export interface SourceRecord {
-  id: string;
-  [field: string]: unknown;
+const ADAPTERS: Record<SourceKind, SourceAdapter> = {
+  ics_file: calendarSource,
+  folder: folderSource,
+};
+
+export function adapterFor(kind: SourceKind): SourceAdapter {
+  return ADAPTERS[kind];
 }
 
 export interface Collection {
@@ -21,105 +24,81 @@ export interface Collection {
   /** Why the source couldn't be read, or null when it was. */
   unavailable: string | null;
   firstCheck: boolean;
+  /** What a first check means for this kind of source. */
+  firstCheckNote: string;
   records: SourceRecord[];
   /** For each record id: the version that gives its item a stable identity, and when it stops mattering. */
-  identities: Map<string, { version: string; expiresAt: string | null }>;
+  identities: Map<string, Identity>;
+  /** How the changes were cut, such as some held back for the next check. */
+  notes: string[];
   /** Saves the cursor. Call it once the changes have been reported, so a failed run sees them again. */
   commit: () => void;
 }
 
 /** Reads the connection to check it works, and records what it found. */
-export function verifyConnection(store: Store, connectionId: string, now = new Date()): SourceConnection {
+export async function verifyConnection(store: Store, connectionId: string, context: SourceContext = { now: new Date() }): Promise<SourceConnection> {
   const connection = store.getConnection(connectionId);
   if (!connection) throw new Error(`No connection ${connectionId}`);
+  const adapter = adapterFor(connection.kind);
   try {
-    if (!connection.path.trim()) throw new NoFileChosen();
-    const records = readCalendarFile(connection.path, { from: now, to: new Date(now.getTime() + CALENDAR_DAYS * 86_400_000) });
-    const upcoming = records.filter((record) => record.status !== "cancelled").length;
-    return store.setConnectionStatus(connectionId, "connected", `${upcoming} event${upcoming === 1 ? "" : "s"} in the next ${CALENDAR_DAYS} days`);
+    return store.setConnectionStatus(connectionId, "connected", await adapter.verify(connection, context));
   } catch (error) {
-    return store.setConnectionStatus(connectionId, "failed", describeError(error));
+    return store.setConnectionStatus(connectionId, "failed", adapter.describeError(error));
   }
 }
 
-/** Collects what changed on a connection for a responsibility since its cursor. */
-export function collect(store: Store, responsibilityId: string, connection: SourceConnection, now = new Date()): Collection {
-  const window = { from: now, to: new Date(now.getTime() + CALENDAR_DAYS * 86_400_000) };
-  const empty = { connection, firstCheck: false, records: [], identities: new Map(), commit: () => {} };
-  let changes: CalendarChange[];
-  let firstCheck: boolean;
-  let cursor: CalendarCursor;
+/**
+ * Checks a proposed source at the path the operator picked, before anything is created, so a wrong
+ * path is fixed on the card. Returns what it found; throws with the reason it can't be read.
+ */
+export async function checkProposedSource(source: ProposedSource, path: string, context: SourceContext = { now: new Date() }): Promise<string> {
+  const adapter = adapterFor(source.kind);
+  const candidate = connectionFor(source, path);
   try {
-    if (!connection.path.trim()) throw new NoFileChosen();
-    const previous = store.getCursor(responsibilityId, connection.id) as CalendarCursor | null;
-    ({ changes, firstCheck, cursor } = diffCalendar(previous, readCalendarFile(connection.path, window), window));
+    return await adapter.verify({ ...candidate, id: "candidate", status: "unverified", detail: null, verifiedAt: null }, context);
   } catch (error) {
-    const failed = store.setConnectionStatus(connection.id, "failed", describeError(error));
-    return { ...empty, connection: failed, unavailable: failed.detail };
+    throw new Error(adapter.describeError(error));
   }
-  if (connection.status !== "connected") connection = verifyConnection(store, connection.id, now);
+}
 
-  const identities = new Map<string, { version: string; expiresAt: string | null }>();
-  const records = changes.map((change): SourceRecord => {
-    const { record } = change;
-    const id = recordRef(record.key);
-    identities.set(id, { version: `${change.change}:${record.version}`, expiresAt: record.end });
-    return {
-      id,
-      change: change.change,
-      title: record.title,
-      when: describeTime(record.start, record.end, record.allDay),
-      ...(change.was && { was: describeTime(change.was.start, change.was.end, false) }),
-      ...(record.location && { location: record.location }),
-      ...(record.organizer && { organizer: record.organizer }),
-      ...(record.status !== "confirmed" && change.change !== "removed" && { status: record.status }),
-      ...(record.description && { notes: record.description }),
-      ...(change.overlaps && { overlapsWith: change.overlaps.map((other) => `${other.title}, ${describeTime(other.start, other.end, false)}`) }),
-    };
-  });
+/** What a connection for a proposed source stores: the path, and for a folder its files and reader. */
+export function connectionFor(source: ProposedSource, path: string): Pick<SourceConnection, "kind" | "label" | "path" | "pattern" | "reader"> {
+  if (source.kind !== "folder") return { kind: source.kind, label: source.label, path, pattern: null, reader: null };
+  const reader = isBuiltInReader(source.reader) ? source.reader : "text";
+  return { kind: "folder", label: source.label, path, pattern: source.pattern?.trim() || BUILT_IN_READERS[reader].pattern, reader };
+}
+
+/** Collects what changed on a connection for a responsibility since its cursor. */
+export async function collect(store: Store, responsibilityId: string, connection: SourceConnection, context: SourceContext = { now: new Date() }): Promise<Collection> {
+  const adapter = adapterFor(connection.kind);
+  const base = { firstCheck: false, firstCheckNote: adapter.firstCheckNote, records: [], identities: new Map(), notes: [], commit: () => {} };
+  let changes;
+  try {
+    changes = await adapter.changes(connection, store.getCursor(responsibilityId, connection.id), context);
+  } catch (error) {
+    const failed = store.setConnectionStatus(connection.id, "failed", adapter.describeError(error));
+    return { ...base, connection: failed, unavailable: failed.detail };
+  }
+  if (connection.status !== "connected") connection = await verifyConnection(store, connection.id, context);
+  const { cursor } = changes;
   return {
+    ...base,
     connection,
     unavailable: null,
-    firstCheck,
-    records,
-    identities,
+    firstCheck: changes.firstCheck,
+    records: changes.records,
+    identities: changes.identities,
+    notes: changes.notes,
     commit: () => store.setCursor(responsibilityId, connection.id, cursor),
   };
 }
 
-/**
- * The id the model sees and cites: stable for an event, so its item keeps its identity, but opaque.
- * The raw key holds the original time of a moved occurrence, which reads as a contradiction.
- */
-export function recordRef(key: string): string {
-  return `evt-${createHash("sha256").update(key).digest("hex").slice(0, 10)}`;
-}
-
-const dayFormat = new Intl.DateTimeFormat("en-GB", { timeZone: TIMEZONE, weekday: "short", day: "numeric", month: "short" });
-const timeFormat = new Intl.DateTimeFormat("en-GB", { timeZone: TIMEZONE, hour: "2-digit", minute: "2-digit" });
-
-/** "Mon 9 Nov 10:00-11:30" in Stockholm time, or "Thu 12 Nov, all day". */
-export function describeTime(start: string, end: string, allDay: boolean): string {
-  const from = new Date(start);
-  const to = new Date(end);
-  if (allDay) return `${dayFormat.format(from)}, all day`;
-  return `${dayFormat.format(from)} ${timeFormat.format(from)}-${timeFormat.format(to)}`;
-}
-
-/** One moment, with the year, such as "Mon 2 Nov 2026 09:15", or the day alone when all-day. */
-export function describeStart(at: string, allDay: boolean): string {
-  const moment = new Date(at);
-  const year = localDate(moment, TIMEZONE).slice(0, 4);
-  return `${dayFormat.format(moment)} ${year}${allDay ? "" : ` ${timeFormat.format(moment)}`}`;
-}
-
-/** Raised for a connection whose file the operator hasn't picked yet. */
-class NoFileChosen extends Error {}
-
-function describeError(error: unknown): string {
-  if (error instanceof NoFileChosen) return "No calendar file has been chosen yet.";
-  const code = (error as NodeJS.ErrnoException)?.code;
-  if (code === "ENOENT") return "The calendar file isn't there any more. Export it again or pick its new location.";
-  if (code === "EACCES" || code === "EPERM") return "AiHub can't read the calendar file. Check its permissions.";
-  return `The calendar file couldn't be read: ${error instanceof Error ? error.message : String(error)}`;
+/** Reads records for a question or task. Throws with the reason, in the operator's terms. */
+export async function readSource(connection: SourceConnection, query: SourceQuery, context: SourceContext = { now: new Date() }): Promise<SourceReading> {
+  const adapter = adapterFor(connection.kind);
+  try {
+    return await adapter.read(connection, query, context);
+  } catch (error) {
+    throw new Error(adapter.describeError(error));
+  }
 }

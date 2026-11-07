@@ -24,6 +24,30 @@ export interface ReaderRecord {
 
 export type Reader = (file: ReaderFile) => ReaderRecord[];
 
+/** What reading a set of files produced: checked records per file, and the files that failed. */
+export interface FileReading {
+  records: Array<{ file: string; records: ReaderRecord[] }>;
+  errors: Array<{ file: string; error: string }>;
+}
+
+/** Reads a batch of files. Built-in readers run in the daemon; readers staff wrote run in the sandbox. */
+export type FolderReader = (files: ReaderFile[]) => Promise<FileReading>;
+
+/** Runs a built-in reader over files, checking its output like any reader's. */
+export function inProcess(reader: Reader): FolderReader {
+  return async (files) => {
+    const reading: FileReading = { records: [], errors: [] };
+    for (const file of files) {
+      try {
+        reading.records.push({ file: file.name, records: checkRecords(reader(file)) });
+      } catch (error) {
+        reading.errors.push({ file: file.name, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return reading;
+  };
+}
+
 export const READER_LIMITS = {
   recordsPerFile: 5_000,
   fieldsPerRecord: 40,
@@ -65,14 +89,10 @@ export function checkRecords(raw: unknown): ReaderRecord[] {
       key: clip(String(parsed.data.key ?? ""), READER_LIMITS.keyLength),
       title: clip(String(parsed.data.title), READER_LIMITS.titleLength) || "(untitled)",
       fields: Object.fromEntries(
-        fields.map(([name, value]) => [clip(name, READER_LIMITS.fieldNameLength), typeof value === "string" ? clip(value, READER_LIMITS.valueLength) : finite(value)]),
+        fields.map(([name, value]) => [clip(name, READER_LIMITS.fieldNameLength), typeof value === "string" ? clip(value, READER_LIMITS.valueLength) : value]),
       ),
     };
   });
-}
-
-function finite(value: FieldValue): FieldValue {
-  return typeof value === "number" && !Number.isFinite(value) ? null : value;
 }
 
 function clip(text: string, max: number): string {
