@@ -356,5 +356,11 @@ try {
   $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
   [Windows.UI.Notifications.ToastNotificationManager]::History.Clear($env:AIHUB_APP_ID)
 } catch {}
-Remove-Item -LiteralPath ('HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings\\' + $env:AIHUB_APP_ID) -Recurse -ErrorAction SilentlyContinue
+# Clearing the history makes Windows write the sender's settings once more, a moment later.
+$key = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings\\' + $env:AIHUB_APP_ID
+for ($try = 0; $try -lt 5; $try++) {
+  Remove-Item -LiteralPath $key -Recurse -ErrorAction SilentlyContinue
+  Start-Sleep -Milliseconds 1500
+  if (-not (Test-Path -LiteralPath $key)) { break }
+}
 `;
