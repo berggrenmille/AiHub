@@ -76,7 +76,7 @@ A first look at a source costs about twice a later check, since everything in th
 ### Known gaps
 
 - An `.ics` export is a snapshot: changes show only after the operator exports again, as Vera told the operator herself. Live calendars come with real integrations (Milestone 6).
-- The briefing in the Chief of Staff chat is written from source data, and a later chat turn can write notes from it as `conversation`. Mark chat turns that follow a briefing as source data before chat runs more often (Milestone 5).
+- The briefing in the Chief of Staff chat is written from source data, and a later chat turn can write notes from it as `conversation`. Mark chat turns that follow a briefing as source data before chat runs more often. Done in Milestone 5.
 - The office has no note-removed event, so the UI drops a profile note's old path when a new one appears for the same owner. Unread chat counts live in the browser.
 
 ## Milestone 3: teams and delegation (done 2026-11-07)
@@ -202,18 +202,66 @@ Writing a reader costs about one supervisor report and a half, once. Reading the
 
 Not in this milestone: live accounts such as mail or a broker (Milestone 6, probably through existing MCP servers), briefings with the browser closed or after sleep (Milestone 5), drafts and sending (Roadmap phase A), and staff with a shell (Roadmap phase B).
 
-## Milestone 5: background operation
+## Milestone 5: background operation (done 2026-11-08)
 
 Acceptance (DESIGN.md): briefings and alerts arrive with the browser closed and after the PC wakes from sleep. Tests cover restart, duplicate triggers, stale data, revoked access, failed supervisors, exhausted Codex usage, and an expired sign-in caught by the health check. Responsibilities with nothing new use no model turn.
 
 Already in place from earlier milestones: the daemon, not the browser, schedules the briefing; occurrences are claimed once, so a retry or restart never delivers twice; a missed briefing catches up later the same day; the health check runs an hour before; and a quiet section uses no model turn.
 
 1. **Runs in the background.** `npm run windows -- install` registers a Task Scheduler task that starts the daemon at Windows sign-in, under the operator's account, with no window. It serves the built office on `127.0.0.1:7420`, writes its log to `data/logs/`, and a second copy exits when one is already running. `uninstall` removes everything it added, and `status` says what is installed. A Start menu entry opens the office.
-2. **Wakes for the briefing.** The daemon keeps one Task Scheduler task with "Wake the computer to run this task", set for shortly before the next health check. When it fires it only starts the daemon if it isn't running; the daemon still decides what runs. From the health check until the briefing is done, the daemon asks Windows to stay awake, since a PC woken by a timer goes back to sleep after a couple of minutes. `status` says whether power settings allow wake timers.
-3. **Alerts outside the browser.** Windows notifications for a delivered briefing (with its count of new and urgent items), problems the health check finds, and a briefing that is waiting or has given up. Clicking one opens the office. They can be turned off.
-4. **Waiting instead of failing.** Codex turn errors are classified: usage exhausted, signed out, offline, or other. Before it starts, and when a run fails for one of the first three, the briefing waits with the reason shown in the chat and a notification ("waiting for Codex usage to reset at 09:12") and retries when that may have changed, until the end of the day. Its changes stay unreported, so the next briefing still covers them.
-5. **The failure cases, tested.** Restart during a briefing, duplicate triggers (two schedulers on one database), a stale calendar export (older than a week: the health check and the section say so), revoked access (the section says the supervisor can't read its source, with no model turn), a supervisor whose run fails (the briefing still goes out and names the gap, and its changes are reported next time), exhausted usage, and an expired sign-in caught by the health check.
+2. **Wakes for the briefing.** The installed daemon keeps one Task Scheduler task with "Wake the computer to run this task", set for two minutes before the next health check, or before a waiting briefing's next try. When it fires it only starts the daemon if it isn't running; the daemon still decides what runs. From the health check until the briefing settles, the daemon asks Windows to stay awake, since a PC woken by a timer goes back to sleep after a couple of minutes. `status` says whether power settings allow wake timers.
+3. **Alerts outside the browser.** Windows notifications for a delivered briefing (with its count of new and urgent items), problems the health check finds, and a briefing that is waiting or has given up. They carry counts, never source content. Clicking one opens the office. `AIHUB_NOTIFICATIONS=off` turns them off.
+4. **Waiting instead of failing.** Codex turn errors are sorted into used-up usage, signed out, offline, busy, or other. Before its first turn the briefing checks that Codex is signed in, reachable, and has usage left. When that check fails, or a turn fails, the briefing waits with the reason in the chat and a notification, and tries again when the reason may have passed: a minute after usage resets, or in 10 to 15 minutes, until the end of the day. Its changes stay unreported, so the next briefing still covers them.
+5. **The failure cases, tested.** Restart during a briefing, duplicate triggers (two schedulers on one database), a stale calendar export (older than a week: the health check and the section say so), revoked access (the section says the supervisor can't read its source, with no model turn), a supervisor whose run fails (the briefing still goes out and names the gap, and its changes are reported next time), used-up usage, and an expired sign-in caught by the health check.
 6. **Source data after a briefing.** Once a briefing or another source-data turn enters a chat's thread, every later turn in that thread counts as source data, so a note written from it can't pass as the operator's word. A new thread starts clean.
-7. **The proof.** On this PC: install, run the sign-in task as Windows would, and see the daemon start with no window; close the browser and get the briefing as a notification; see the wake task among Windows' wake timers; and run the failure cases against real Codex where they can be produced without harm. Signing out and in, and putting the PC to sleep, are left to the operator.
+7. **The proof.** Below.
 
 Not in this milestone: phone notifications and approvals away from the PC (Roadmap phase C), live accounts (Milestone 6), and running without a signed-in Windows session.
+
+### How it was shown
+
+On this PC, against real Codex, with AiHub installed under a test name (`--windows-name=AiHubProof --port=7431`) on a copy of the Milestone 4 proof office, and uninstalled afterwards.
+
+| Acceptance | Where it is shown |
+| --- | --- |
+| Briefings and alerts arrive with the browser closed. | Running the sign-in task as Windows would started the daemon with no window. With no browser open, Run now delivered the briefing in 21 s. Its notification, "Your briefing is ready: 1 new item.", is in Windows' notification history under AiHub's app id, set to open the office. A second copy said AiHub was already running and exited. |
+| Briefings arrive after the PC wakes from sleep. | The wake task stood in Task Scheduler with "Wake the computer to run this task", set for 05:58 the next weekday, and `status` reported wake timers allowed on mains power and off on battery. The stay-awake helper held while the briefing ran and let go when it was done (`scheduler.test.ts`, "keeps the PC awake from just before the health check until the briefing is in, and sets the next wake"; `windows-platform.test.ts`). Putting the PC to sleep is left to the operator. |
+| Restart and duplicate triggers. | `scheduler.test.ts`: a briefing cut off by a restart is tried once more after a pause, a waiting briefing keeps waiting across a restart, and two schedulers on one database start each briefing once. |
+| Stale data, revoked access, and failed supervisors. | `morning.test.ts`, "Morning briefing when something is wrong", and `scheduler.test.ts`: a week-old export is named in the health check and in its section; a supervisor whose access was removed gets a section that says so, with no model turn; a supervisor whose run fails leaves a gap the briefing names, and its changes come back next time. |
+| Used-up Codex usage. | `morning.test.ts` and `scheduler.test.ts`: with usage used up the briefing runs no turn and waits until a minute after the reset. Against real Codex, `npm run probe:failures` read the plan's usage (50% of the window, resetting at 11:05). |
+| An expired sign-in caught by the health check. | `scheduler.test.ts`. Against real Codex, `npm run probe:failures` ran an office on a Codex with no sign-in: the health check posted "Codex isn't signed in. Sign in with `npm run codex -- login`." in the chat and as a notification, and the briefing waited for 07:15 with no model turn. The same probe ran Codex with its connection pointed at a closed port: the briefing waited for 07:10. Signing the real account out and in is left to the operator. |
+| Responsibilities with nothing new use no model turn. | In the proof briefing Nora and Ingrid had nothing new and used no turn; only Clara, with the library book, did. A later briefing with nothing new anywhere used none. |
+| Source data stays marked in a chat. | `office.test.ts`, "Source data in a chat's thread". Against real Codex, asked about the briefing in the same chat, Vera answered "due back Thursday 12 November" and wrote a note about it, saved as source data. |
+
+### Usage measured
+
+The proof runs on 2026-11-07 and 2026-11-08, Codex 0.167.0:
+
+| Run | Turns | Input tokens | Cached | Output |
+| --- | --- | --- | --- | --- |
+| Clara's briefing report (one new item) | 1 | 34,682 | 11,136 | 251 |
+| Nora's and Ingrid's sections (nothing new) | 0 | | | |
+| Vera's briefing | 1 | 11,282 | 0 | 119 |
+| Chat: Vera answers about the briefing and writes a note | 1 | 63,080 | 61,824 | 229 |
+| A briefing with nothing new | 0 | | | |
+| A briefing waiting for sign-in or a connection | 0 | | | |
+
+A waiting briefing costs nothing while it waits. A chat turn after a briefing costs more input than a fresh one because the briefing comes into the thread, but nearly all of it is cached.
+
+### What the real run changed
+
+| Finding | Change |
+| --- | --- |
+| With no connection, Codex doesn't report a connection error. A turn fails after about a minute with a generic error ("workspace routing discovery failed"), and the account check fails too, which AiHub read as signed out. | A Codex that can't answer the account check reads as offline. After any failed turn the briefing runs its check again, and waits if Codex can't answer it. `npm run probe:failures` produces these cases without touching the real sign-in. |
+| The sign-in notice repeated Codex's own message next to AiHub's ("Not signed in. Run … Sign in with …"). | Each problem is one sentence AiHub writes. |
+| A health check with one problem said "a few things need you". | The notice counts them, as the notification already did. |
+| A daemon started with `npm run dev` also set the wake task, so a test run could leave the PC waking. | Only the installed daemon keeps a wake task. |
+| Uninstall left the notification settings: clearing the notification history makes Windows write them again a moment later. | Uninstall removes them until they stay gone. Checked: after install, a notification, and uninstall, nothing was left in Task Scheduler, the registry, or the Start menu. |
+
+### Known gaps
+
+- Clicking a notification wasn't tried on this PC. Its history entry shows the office's address and activation by protocol, which is what opens a browser.
+- When a briefing waits partway, its next try runs the reports that already finished again, which costs their turns twice. Nothing is lost or reported twice, because a report's items count as seen only once the briefing goes out.
+- A connection lost during a turn shows only when that turn fails, about a minute later.
+- Wake timers on battery are off in this PC's power plan, so a laptop on battery won't wake for the briefing. `status` says so.
+- Signing out and in, and sleep, are left to the operator to try.

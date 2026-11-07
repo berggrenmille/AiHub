@@ -41,10 +41,19 @@ npm run codex -- login
 | `npm run codex -- <args>` | Runs the pinned Codex CLI with AiHub's `CODEX_HOME`. |
 | `npm run codex:protocol` | Regenerates the App Server protocol types after a Codex upgrade. |
 | `npm run windows -- install` | Runs AiHub in the background on Windows: now and at every sign-in, with no window, a Start menu entry, and notifications (`AIHUB_NOTIFICATIONS=off` turns them off). Its log is `data/logs/daemon.log`. `uninstall` removes it all, and `status` says what's installed. |
+| `npm run probe:failures` | Shows how AiHub reads a signed-out and an offline Codex, and the plan's usage, without touching the real sign-in. Spends no usage. |
 
 ## The morning briefing
 
 Ask the Chief of Staff in chat to look after something, such as your work calendar. She proposes a supervisor on a card in the chat; approve it and pick the `.ics` export it should read. On weekdays at 07:00 Stockholm time the supervisors check their sources and the Chief of Staff posts one briefing in her chat. Items land in the Inbox, where you resolve or dismiss them. An hour earlier a health check posts a notice if Codex is signed out, a source can't be read, or usage is nearly spent. Run now on the Chief of Staff's profile card briefs you on request. The daemon has to be running at 07:00; a briefing it missed runs when it starts later that day.
+
+## In the background
+
+`npm run windows -- install` keeps AiHub running without a window: it starts now and at every Windows sign-in, and its Start menu entry opens the office. Before each health check it sets a Task Scheduler task that wakes the PC from sleep, and it keeps the PC awake until the briefing is done. Wake timers have to be allowed in the power plan; `npm run windows -- status` says whether they are, along with what is installed. Windows notifications tell you when the briefing is ready, with counts but none of its content, and when something needs you first. Clicking one opens the office.
+
+If Codex is signed out, offline, busy, or out of usage, the briefing waits instead of failing. The chat and a notification say why and when it tries again, and it keeps trying until the end of the day. Anything it didn't report shows up in the next briefing.
+
+`npm run windows -- uninstall` removes the tasks, the Start menu entry, and the notification registration. Your office's data stays in `data/`.
 
 `npm run dev:fake` opens a furnished sample office with the same flow, reading `apps/daemon/test/fixtures/work.ics`.
 
