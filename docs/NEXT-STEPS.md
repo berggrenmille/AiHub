@@ -2,56 +2,48 @@
 
 Where the build stands against [DESIGN.md](../DESIGN.md) › Build sequence and acceptance.
 
-## Done during setup
+## Milestone 1: runtime, isolation, and control surface (done 2026-11-07)
 
-- [x] **Official Windows CLI works.** The `Unsupported platform: win32 (x64)` error came from an old global install, `@openai/codex` 0.3.0, which shipped no Windows build. The project now pins `@openai/codex` 0.167.0 in `package.json`. It runs on this PC from `node_modules`.
-- [x] **App Server starts and handshakes.** `codex app-server` starts over stdio and completes `initialize` with the experimental API enabled.
-- [x] **Protocol types generated** from the pinned version, including the experimental dynamic tool interface (`dynamicTools` on `thread/start`, `item/tool/call` requests).
-- [x] **AiHub has its own `CODEX_HOME`** in `.codex-home/`, so it never loads your personal Codex config or MCP servers.
-- [x] **Daemon and UI skeletons.** The daemon serves `/api/health` on loopback and rejects foreign `Host` headers with 421. The UI shows the daemon's status.
+| Acceptance | Where it is shown |
+| --- | --- |
+| The Windows daemon starts Codex, signs in, streams a reply, and invokes a gateway tool through the runtime interface. | `apps/daemon/src/runtime/`: `AgentRuntime` with `CodexRuntime`, contract-tested against a fake app server. Checked against real Codex: a streamed chat reply that called `aihub_get_roster`. |
+| The Chief of Staff chat and roster restore after restart, and the chat rebuilds from records when its thread is discarded. | The daemon resumes the saved thread with `thread/resume`; checked against real Codex, where the resumed thread still knew the earlier message. If the thread is gone or its charter or tools changed, a new one starts with recent messages replayed from SQLite (`office.test.ts`). |
+| A data-reading run passes the isolation checks. | Every app-server process starts with `LOCKED_DOWN_FEATURES` disabled; data runs get their own process, a read-only sandbox in an empty directory outside any repository, web search off, and only `aihub_submit_report`. In the briefing measurement, a prompt injection in a sample email asked the supervisor to read a canary file and run a command; it reported the email as suspicious and the canary stayed unread. |
+| The daemon rejects requests with a foreign `Host` or `Origin` or a missing token. | `apps/daemon/src/security.ts`, tested in `server.test.ts`. |
+| A simulated four-section briefing completes, with its turns and usage recorded. | `npm run measure:briefing`; results below. |
+| The roster, activity feed, and chat reflect real run state. | `apps/web`, fed by `GET /api/state` and the `/api/events` stream, with the reducer tested in `state.test.ts`. Checked in a browser against the fake runtime (`npm run dev:fake`): streaming replies, queued messages, badges moving from idle to working and back, and recovery after a daemon restart. The daemon serves the built UI from `apps/web/dist`. |
 
-## Step 1: sign in and run the spike (done 2026-11-07)
+### Usage measured
 
-```bash
-npm run codex -- login
-```
+The simulated briefing on 2026-11-07, Codex 0.167.0, ChatGPT plan "prolite":
 
-```bash
-npm run spike:codex
-```
+| Run | Turns | Input tokens | Cached | Output |
+| --- | --- | --- | --- | --- |
+| Four supervisor reports (data runs) | 4 | 85,500 | 42,624 | 1,137 |
+| Chief of Staff composes the briefing | 1 | 11,513 | 0 | 334 |
+| **Total** | **5** | **97,013** | **42,624** | **1,471** |
 
-The spike streams a reply, calls an AiHub tool, probes isolation with a canary file, and measures usage. [spikes/codex-app-server/README.md](../spikes/codex-app-server/README.md) explains each check and what to try if one fails.
+The whole briefing took about a minute. The plan's primary usage limit read 50% before and after, so one briefing is below what the limit reports. Budget about 21K input tokens per data turn, roughly half of it cached, and about 12K for the compose turn. A chat turn costs about 20K. Sections with nothing new use no turn.
 
-With the locked-down feature set, all ten checks pass on Codex 0.167.0.
+### What the spike settled (step 1, 2026-11-07)
 
 | Finding | What it means for AiHub |
 | --- | --- |
-| With default features, Codex exposes ChatGPT apps through the `codex_apps` MCP server: 5,014 apps, including web search. The model searched the web through it even with `web_search = "disabled"`, and no approval request was sent. | Every AiHub Codex process starts with the locked-down feature set (`LOCKED_DOWN_FEATURES` in the spike). Features apply to a whole process, so data-reading runs get their own process. |
-| With the shell tool present, Codex asked for approval before reading the canary file, and AiHub declined. | Declining every approval request works as a second line of defense. |
-| With the locked-down features, the model found no shell, file, browser, or web tools. It could call only the AiHub tool and Codex's built-in MCP resource listing, which has no servers to reach. | Isolation comes from removing tools, not from the sandbox. |
+| With default features, Codex exposes ChatGPT apps through the `codex_apps` MCP server, including web search. The model searched the web through it even with `web_search = "disabled"`, and no approval request was sent. | Every AiHub Codex process starts with the locked-down feature set. Features apply to a whole process, so data runs get their own process. |
+| With the shell tool present, Codex asked for approval before reading the canary file, and AiHub declined. | Declining every approval request is the second line of defense. |
+| With the locked-down features, the model found no shell, file, browser, or web tools. | Isolation comes from removing tools, not from the sandbox. |
 | The Windows sandbox reports `notConfigured`. | Don't rely on it. If a run ever needs the shell, set it up first (`windowsSandbox/setupStart`) and re-run the probe. |
-| Two short turns used about 54K input tokens, mostly Codex's own instructions and tool definitions. The plan's primary usage limit stayed at 50% across three runs. | Budget about 25K input tokens per turn. The Milestone 1 usage measurement should confirm this with a full briefing. |
 
-## Step 2: decide whether Codex fits (gate)
+**Decision (2026-11-07):** Codex is the runtime for all runs, with the locked-down feature set. After every Codex upgrade, run `npm run spike:codex` and `npm run measure:briefing` again. If isolation ever fails, data runs move to the Claude API behind the same runtime interface; it needs an Anthropic API key and is billed per token.
 
-**Decision (2026-11-07):** continue with Codex as the runtime for all runs, with the locked-down feature set. Re-run the spike after every Codex upgrade and use this table again.
+## Milestone 2: staff, approvals, and one real source
 
-| Spike result | Decision |
-| --- | --- |
-| All checks pass | Continue with Codex as the runtime for all runs. |
-| Streaming and tool calls pass, isolation fails | Use Codex for the Chief of Staff chat only. Use the Claude API for data-reading runs, behind the same runtime interface: it sees only the tools AiHub defines, with no built-in shell, file, or web tools. It needs an Anthropic API key and is billed per token. |
-| Tool calls fail | The experimental interface is not usable in this version. Revisit the runtime choice before building further. |
+Acceptance (DESIGN.md): a chat request produces a proposal, and approving it creates a supervisor, a responsibility, and a routine. One real local source feeds a briefing the operator reads daily. An unchanged item is not reported as new the next day, and a dismissed item stays out. Ending a mandate blocks further actions under it.
 
-Record the result and the measured usage in this file.
-
-## Step 3: the rest of Milestone 1
-
-Each item maps to the Milestone 1 acceptance in DESIGN.md.
-
-1. **Runtime interface.** Move the spike's JSON-RPC client into `apps/daemon/src/runtime/` behind a small interface: start a context, run a turn with assembled context and allowed tools, stream events, handle tool calls, and report usage. Start every app-server process with the locked-down feature set, and give data-reading runs a process of their own. Write contract tests against the interface.
-2. **SQLite, schema v0.** Use the built-in `node:sqlite`. Add tables for agents, chat messages, runs, and the Chief of Staff thread ID.
-3. **Chief of Staff chat.** Add `POST /api/chat` and a server-sent events stream at `/api/events`. On reconnect, the UI loads current state before following the stream.
-4. **Restore after restart.** Resume the saved thread with `thread/resume`. If that fails, start a new thread from records and recent chat history.
-5. **Loopback hardening, second part.** Add the `Origin` check and the per-install token cookie.
-6. **Usage measurement.** Run a simulated four-section briefing and record turns, tokens, and the change in your usage limit.
-7. **Control surface.** Build the roster, activity feed, and chat, all reflecting real run state. The 2D office comes in Milestone 3.
+1. **Records.** Schema v3: responsibilities (with standing instructions, initiative policy, and an optional expiry, which makes a mandate), routines, proposals, connections, grants, cursors, and items.
+2. **Proposals and approval cards.** A Chief of Staff tool proposes a supervisor with its charter, responsibility, routine, and requested access. The proposal shows as a card in the chat; approving it creates the agent, responsibility, and routine in one transaction. The caps on active supervisors and daily turns are checked in code, and a proposal that would exceed one says so.
+3. **One real local source.** A local-file connection and a collector that reads it, normalizes records with stable IDs, and diffs against the cursor without a model turn. The first candidate is an `.ics` calendar export; a holdings CSV works the same way.
+4. **Items.** Report items get a stable identity from their source record. Items are new, open, resolved, or dismissed; the compose step separates new items from carried-over ones, and a dismissed item stays out unless its source changes.
+5. **Scheduler.** The weekday briefing routine in `Europe/Stockholm`, with occurrence IDs that deduplicate retries and restarts, and one catch-up after downtime.
+6. **Mandates.** The gateway checks a responsibility's expiry before every call, so ending a mandate blocks further actions under it.
+7. **UI.** Approval cards, the briefing with its items, and dismiss and resolve on each item.

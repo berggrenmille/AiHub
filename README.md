@@ -37,5 +37,6 @@ npm run codex -- login
 | `npm test` | Runs the tests. They use a fake Codex App Server, so they need no sign-in. |
 | `npm run build` | Builds the UI. |
 | `npm run spike:codex` | Runs the Codex App Server spike. |
+| `npm run measure:briefing` | Runs a simulated four-section briefing against real Codex and reports its turns, tokens, and isolation checks. Uses about 100K input tokens. |
 | `npm run codex -- <args>` | Runs the pinned Codex CLI with AiHub's `CODEX_HOME`. |
 | `npm run codex:protocol` | Regenerates the App Server protocol types after a Codex upgrade. |
