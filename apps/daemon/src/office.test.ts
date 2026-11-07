@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DaemonEvent } from "@aihub/shared";
-import { FakeRuntime } from "../test/fake-runtime.ts";
+import { FakeRuntime } from "./runtime/fake-runtime.ts";
 import { Office } from "./office.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID as CHAT, CHIEF_OF_STAFF_ID } from "./staff/chief-of-staff.ts";
 import { Store } from "./store/store.ts";

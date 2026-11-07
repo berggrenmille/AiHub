@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, it } from "node:test";
 import type { ChatResponse, DaemonEvent, StateSnapshot } from "@aihub/shared";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
-import { FakeRuntime } from "../test/fake-runtime.ts";
+import { FakeRuntime } from "./runtime/fake-runtime.ts";
 import { Office } from "./office.ts";
 import { buildServer } from "./server.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID as CHAT } from "./staff/chief-of-staff.ts";

@@ -13,11 +13,15 @@ export interface DaemonConfig {
   port: number;
   /** Extra browser origins allowed to call the API, such as the Vite dev server. */
   devOrigins: string[];
+  /** Use the fake runtime instead of Codex, for UI work without a sign-in or usage. */
+  fakeRuntime: boolean;
 }
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): DaemonConfig {
+export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] = process.argv): DaemonConfig {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-  const dataDir = env.AIHUB_DATA_DIR ? resolve(env.AIHUB_DATA_DIR) : join(root, "data");
+  const fakeRuntime = argv.includes("--fake-runtime");
+  // The fake runtime keeps its own state, so trying out the UI never mixes with real records.
+  const dataDir = env.AIHUB_DATA_DIR ? resolve(env.AIHUB_DATA_DIR) : join(root, "data", ...(fakeRuntime ? ["fake"] : []));
   const codexHome = join(root, ".codex-home");
   mkdirSync(dataDir, { recursive: true });
   mkdirSync(codexHome, { recursive: true });
@@ -27,5 +31,5 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): DaemonConfig {
   const devOrigins =
     env.NODE_ENV === "production" ? [] : [`http://127.0.0.1:${webPort}`, `http://localhost:${webPort}`];
 
-  return { root, dataDir, codexHome, host: "127.0.0.1", port, devOrigins };
+  return { root, dataDir, codexHome, host: "127.0.0.1", port, devOrigins, fakeRuntime };
 }

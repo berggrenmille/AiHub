@@ -11,6 +11,7 @@
   ],
   "scripts": {
     "dev": "concurrently -k -n daemon,web -c blue,magenta \"npm:dev:daemon\" \"npm:dev:web\"",
+    "dev:fake": "concurrently -k -n daemon,web -c blue,magenta \"npm run dev -w @aihub/daemon -- --fake-runtime\" \"npm:dev:web\"",
     "dev:daemon": "npm run dev -w @aihub/daemon",
     "dev:web": "npm run dev -w @aihub/web",
     "build": "npm run build --workspaces --if-present",

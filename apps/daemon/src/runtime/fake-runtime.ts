@@ -6,7 +6,7 @@ import {
   type RuntimeAccount,
   type TurnResult,
   type UsageLimits,
-} from "../src/runtime/types.ts";
+} from "./types.ts";
 
 type Responder = (input: string, options: RunTurnOptions) => Promise<TurnResult>;
 
@@ -17,7 +17,26 @@ export const echo: Responder = async (input, options) => {
   return { status: "completed", text, error: null, usage: { inputTokens: 10, cachedInputTokens: 4, outputTokens: 2 } };
 };
 
-/** An in-process AgentRuntime for testing the staff engine. Records every call it receives. */
+/**
+ * For working on the UI without Codex (`AIHUB_RUNTIME=fake`): streams slowly enough to watch,
+ * and calls the first offered tool when the message asks for it, such as "who is on staff? use a tool".
+ */
+export const demo: Responder = async (input, options) => {
+  let text = `This is the fake runtime, so nobody is thinking. You said: “${input}”`;
+  if (/tool/i.test(input)) {
+    const outcome = await options.onToolCall({ name: "aihub_get_roster", arguments: {} });
+    text += `
+
+The roster tool returned: ${outcome.text}`;
+  }
+  for (const piece of text.match(/.{1,6}/gs) ?? []) {
+    options.onEvent?.({ type: "delta", text: piece });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  }
+  return { status: "completed", text, error: null, usage: { inputTokens: 1200, cachedInputTokens: 800, outputTokens: 40 } };
+};
+
+/** An in-process AgentRuntime for tests and UI work. Records every call it receives. */
 export class FakeRuntime implements AgentRuntime {
   readonly contexts = new Map<string, { options: ContextOptions; inputs: string[] }>();
   readonly calls: string[] = [];

@@ -32,6 +32,7 @@ npm run codex -- login
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Starts the daemon and the UI at http://127.0.0.1:5173. |
+| `npm run dev:fake` | Same, with a fake runtime instead of Codex: no sign-in, no usage, and its own state in `data/fake/`. |
 | `npm run typecheck` | Typechecks every workspace and the spike. |
 | `npm test` | Runs the tests. They use a fake Codex App Server, so they need no sign-in. |
 | `npm run build` | Builds the UI. |
