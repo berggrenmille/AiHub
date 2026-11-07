@@ -1,4 +1,4 @@
-import type { AgentRole, RunProfile } from "@aihub/shared";
+import type { AgentRole, Proposal, RecruitProposal, RunProfile } from "@aihub/shared";
 import { z } from "zod";
 import type { Notebook } from "../notes/notebook.ts";
 import type { ToolCall, ToolOutcome, ToolSpec } from "../runtime/types.ts";
@@ -13,12 +13,18 @@ export interface Caller {
   sourceData?: boolean;
 }
 
-export interface ToolContext {
+/** What tools may ask the office to do. The office checks its rules, records, and publishes each change. */
+export interface OfficeServices {
+  /** The staff's notes, when the office keeps a vault. */
+  notebook: Notebook | null;
+  /** Records a recruitment proposal and shows it to the operator as an approval card. */
+  proposeSupervisor: ((caller: Caller, proposal: RecruitProposal) => Proposal) | null;
+}
+
+export interface ToolContext extends OfficeServices {
   caller: Caller;
   agent: AgentRecord;
   store: Store;
-  /** The staff's notes, when the office keeps a vault. */
-  notebook: Notebook | null;
 }
 
 export interface GatewayTool<Input extends z.ZodType = z.ZodType> {
@@ -47,7 +53,7 @@ export class Gateway {
     private readonly store: Store,
     tools: GatewayTool[],
     private readonly onActivity: (entry: ReturnType<Store["addActivity"]>) => void = () => {},
-    private readonly notebook: Notebook | null = null,
+    private readonly services: Partial<OfficeServices> = {},
   ) {
     for (const tool of tools) {
       if (this.tools.has(tool.name)) throw new Error(`Duplicate gateway tool ${tool.name}`);
@@ -80,7 +86,8 @@ export class Gateway {
       return this.refuse(caller, call.name, `Invalid arguments for ${call.name}: ${z.prettifyError(input.error)}`);
     }
     try {
-      const text = await tool.run(input.data, { caller, agent, store: this.store, notebook: this.notebook });
+      const services = { notebook: this.services.notebook ?? null, proposeSupervisor: this.services.proposeSupervisor ?? null };
+      const text = await tool.run(input.data, { caller, agent, store: this.store, ...services });
       this.record(caller, "tool_call", `Used ${call.name}`, { tool: call.name, arguments: input.data });
       return { ok: true, text };
     } catch (error) {

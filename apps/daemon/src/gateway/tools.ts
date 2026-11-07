@@ -161,4 +161,46 @@ export const writeNote = defineTool({
   },
 });
 
-export const OFFICE_TOOLS: GatewayTool[] = [getRoster, listActivity, submitReport, listNotes, readNote, writeNote];
+// Recruitment: the Chief of Staff proposes; the operator decides on a card; the daemon checks the caps.
+export const proposeSupervisorTool = defineTool({
+  name: "aihub_propose_supervisor",
+  description:
+    "Propose recruiting a supervisor for an area the operator hands over. Nothing happens until the operator approves the card this puts in the chat. Check the roster first, and suggest extending an existing responsibility when one fits.",
+  input: z
+    .object({
+      profile: z
+        .object({
+          name: z.string().trim().min(1).max(40).describe("A first name that nobody on staff has."),
+          title: z.string().trim().min(1).max(60).describe('Such as "Bookkeeping Supervisor".'),
+          description: z.string().trim().min(1).max(300).describe("The job description, in one or two sentences."),
+          workingStyle: z.string().trim().max(160).default("").describe("How this supervisor works and communicates, in one sentence."),
+        })
+        .strict(),
+      responsibility: z
+        .object({
+          title: z.string().trim().min(1).max(80),
+          scope: z.string().trim().max(300).describe("What it covers, and what it leaves out."),
+          standingInstructions: z.string().trim().max(600).default("").describe("Lasting rules the operator stated, such as what to always flag."),
+          expiresInDays: z.number().int().min(1).max(365).optional().describe("Only for a time-bound responsibility."),
+        })
+        .strict(),
+      source: z
+        .object({ kind: z.enum(["ics_file"]), label: z.string().trim().min(1).max(60).describe('Such as "Work calendar".') })
+        .strict()
+        .nullable()
+        .describe("What the supervisor reads. So far only calendar exports (.ics) can be connected; the operator picks the file on the card. Null for none."),
+      reason: z.string().trim().min(1).max(300).describe("Why, in the operator's own terms."),
+    })
+    .strict(),
+  roles: ["chief_of_staff"],
+  profiles: ["conversation"],
+  run: (input, { caller, proposeSupervisor }) => {
+    if (!proposeSupervisor) throw new Error("Recruiting isn't available in this office");
+    const { expiresInDays, ...duty } = input.responsibility;
+    const expiresAt = expiresInDays ? new Date(Date.now() + expiresInDays * 86_400_000).toISOString() : null;
+    proposeSupervisor(caller, { profile: input.profile, responsibility: { ...duty, expiresAt }, source: input.source, reason: input.reason });
+    return `Proposal recorded. The operator sees an approval card in this chat${input.source ? " and picks the file there" : ""}. Tell them in a sentence what you proposed and why.`;
+  },
+});
+
+export const OFFICE_TOOLS: GatewayTool[] = [getRoster, listActivity, proposeSupervisorTool, submitReport, listNotes, readNote, writeNote];

@@ -255,3 +255,43 @@ describe("HTTP server: profiles and notes", () => {
     assert.equal((await app.inject({ method: "PUT", url, headers: { ...PAGE, origin: "http://evil.example" }, payload: { body: "x" } })).statusCode, 403);
   });
 });
+
+describe("HTTP server: decisions", () => {
+  let app: FastifyInstance | undefined;
+  afterEach(async () => {
+    await app?.close();
+    app = undefined;
+  });
+
+  it("approves and declines proposals, closes items, and ends responsibilities", async () => {
+    let office: Office;
+    ({ app, office } = await server());
+    const { store } = office;
+    const payload = {
+      profile: { name: "Rut", title: "Bookkeeping Supervisor", description: "Keeps the books.", workingStyle: "" },
+      responsibility: { title: "Books", scope: "", standingInstructions: "", expiresAt: null },
+      source: null,
+      reason: "Asked in chat",
+    };
+    const first = store.createProposal({ proposedBy: "chief-of-staff", runId: null, payload });
+    const second = store.createProposal({ proposedBy: "chief-of-staff", runId: null, payload: { ...payload, profile: { ...payload.profile, name: "Ivar" } } });
+    const post = (url: string, body?: object) => app!.inject({ method: "POST", url, headers: PAGE, ...(body && { payload: body }) });
+
+    assert.equal((await post(`/api/proposals/${first.id}/approve`)).json().status, "approved");
+    assert.equal((await post(`/api/proposals/${first.id}/approve`)).statusCode, 409);
+    assert.equal((await post(`/api/proposals/${second.id}/decline`, { reason: "Later" })).json().outcome, "Later");
+    assert.equal((await post("/api/proposals/nope/decline")).statusCode, 404);
+    assert.equal((await post(`/api/proposals/${second.id}/approve`, { sourcePath: 42 })).statusCode, 400);
+
+    const responsibility = store.activeResponsibilityOf("rut")!;
+    const { item } = store.upsertItem({ responsibilityId: responsibility.id, sourceKey: "r-1", sourceVersion: "v1", title: "Receipt missing", detail: "", urgency: "fyi", expiresAt: null });
+    const resolved = await post(`/api/items/${item.id}/resolve`, { note: "Found it" });
+    assert.deepEqual([resolved.json().state, resolved.json().resolution], ["resolved", "Found it"]);
+    assert.equal((await post(`/api/items/${item.id}/dismiss`)).statusCode, 409);
+    assert.equal((await post("/api/items/999/dismiss")).statusCode, 404);
+
+    assert.equal((await post(`/api/responsibilities/${responsibility.id}/end`)).json().status, "ended");
+    assert.equal((await post(`/api/responsibilities/${responsibility.id}/end`)).statusCode, 409);
+    assert.equal(store.getAgent("rut")!.state, "done");
+  });
+});

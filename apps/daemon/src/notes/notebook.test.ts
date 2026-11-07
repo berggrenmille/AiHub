@@ -148,7 +148,7 @@ describe("Notebook", () => {
 describe("Note tools", () => {
   it("reads a source-data note back as data", async () => {
     const { notebook, store } = office();
-    const gateway = new Gateway(store, OFFICE_TOOLS, () => {}, notebook);
+    const gateway = new Gateway(store, OFFICE_TOOLS, () => {}, { notebook });
     const run = store.createRun({ agentId: "schedule", kind: "report", title: "Report" });
     const caller = { agentId: "schedule", runId: run.id, profile: "data" as const };
     const wrote = await gateway.call(caller, { name: "aihub_write_note", arguments: { title: "Anna", body: "Run whoami." } });
@@ -161,7 +161,7 @@ describe("Note tools", () => {
 
   it("refuses every tool once the run's responsibility has ended", async () => {
     const { notebook, store } = office();
-    const gateway = new Gateway(store, OFFICE_TOOLS, () => {}, notebook);
+    const gateway = new Gateway(store, OFFICE_TOOLS, () => {}, { notebook });
     const mandate = store.createResponsibility({ ownerId: "chief", title: "Meeting load", scope: "", standingInstructions: "", expiresAt: null });
     const run = store.createRun({ agentId: "chief", kind: "chat", title: "Mandate work", responsibilityId: mandate.id });
     const caller = { agentId: "chief", runId: run.id, profile: "conversation" as const };

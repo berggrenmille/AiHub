@@ -7,7 +7,9 @@ import { z } from "zod";
 import type { SequencedEvent } from "./events.ts";
 import { NoteRefusal } from "./notes/notebook.ts";
 import { checkNotePath } from "./notes/vault.ts";
-import { ConflictError, NotFoundError, type Office } from "./office.ts";
+import { ConflictError, InvalidRequestError, NotFoundError } from "./errors.ts";
+import type { Office } from "./office.ts";
+import { approveProposal, declineProposal } from "./staff/proposals.ts";
 import { registerLoopbackGuards } from "./security.ts";
 
 export interface ServerOptions {
@@ -42,11 +44,21 @@ const ProfileBody = z
   .refine((profile) => Object.keys(profile).length > 0, "Change at least one field");
 
 const NoteBody = z.object({ body: z.string().max(20_000) }).strict();
+const ApproveBody = z.object({ sourcePath: z.string().max(1_000).optional() }).strict();
+const ReasonBody = z.object({ reason: z.string().max(500).optional() }).strict();
+const ResolveBody = z.object({ note: z.string().max(500).optional() }).strict();
+
+/** Parses an optional JSON body: a POST without one counts as `{}`. */
+function bodyOf<T>(schema: z.ZodType<T>, body: unknown): { ok: true; data: T } | { ok: false; error: string } {
+  const parsed = schema.safeParse(body ?? {});
+  return parsed.success ? { ok: true, data: parsed.data } : { ok: false, error: z.prettifyError(parsed.error) };
+}
 
 /** Answers with the status a domain error means, or rethrows anything else. */
 function sendError(reply: FastifyReply, error: unknown) {
   if (error instanceof NotFoundError) return reply.code(404).send({ error: error.message });
   if (error instanceof ConflictError || error instanceof NoteRefusal) return reply.code(409).send({ error: error.message });
+  if (error instanceof InvalidRequestError) return reply.code(400).send({ error: error.message });
   throw error;
 }
 
@@ -91,6 +103,52 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     try {
       const agent: Agent = office.updateProfile(request.params.id, body.data);
       return agent;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/proposals/:id/approve", async (request, reply) => {
+    const body = bodyOf(ApproveBody, request.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
+    try {
+      return approveProposal(office, request.params.id, body.data);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/proposals/:id/decline", async (request, reply) => {
+    const body = bodyOf(ReasonBody, request.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
+    try {
+      return declineProposal(office, request.params.id, body.data.reason);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/items/:id/dismiss", async (request, reply) => {
+    try {
+      return office.closeItem(Number(request.params.id), "dismissed", null);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/items/:id/resolve", async (request, reply) => {
+    const body = bodyOf(ResolveBody, request.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
+    try {
+      return office.closeItem(Number(request.params.id), "resolved", body.data.note?.trim() || null);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/responsibilities/:id/end", async (request, reply) => {
+    try {
+      return office.endResponsibility(request.params.id);
     } catch (error) {
       return sendError(reply, error);
     }

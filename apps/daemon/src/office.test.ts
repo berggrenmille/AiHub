@@ -74,7 +74,7 @@ describe("Office", () => {
 
     const [context] = runtime.contexts.values();
     assert.match(context!.options.instructions, /Chief of Staff in AiHub/);
-    assert.deepEqual(context!.options.tools.map((tool) => tool.name), ["aihub_get_roster", "aihub_list_activity", ...NOTE_TOOLS]);
+    assert.deepEqual(context!.options.tools.map((tool) => tool.name), ["aihub_get_roster", "aihub_list_activity", "aihub_propose_supervisor", ...NOTE_TOOLS]);
   });
 
   it("resumes the saved context after a restart", async () => {

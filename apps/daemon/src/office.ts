@@ -7,15 +7,18 @@ import type {
   Agent,
   ChatMessage,
   ChatResponse,
+  Item,
   MessageKind,
   OfficeStats,
   Run,
   RunKind,
+  Responsibility,
   RunState,
   RuntimeStatus,
   StaffProfile,
   StateSnapshot,
 } from "@aihub/shared";
+import { ConflictError, NotFoundError } from "./errors.ts";
 import { EventBus } from "./events.ts";
 import { Gateway, type GatewayTool } from "./gateway/gateway.ts";
 import { OFFICE_TOOLS } from "./gateway/tools.ts";
@@ -25,13 +28,11 @@ import { DAILY_TURN_LIMIT, SUPERVISOR_LIMIT } from "./limits.ts";
 import { Notebook } from "./notes/notebook.ts";
 import { CHIEF_OF_STAFF, CHIEF_OF_STAFF_CONVERSATION_ID } from "./staff/chief-of-staff.ts";
 import { instructionsFor } from "./staff/identity.ts";
+import { proposeSupervisor } from "./staff/proposals.ts";
 import type { ConversationRecord, Store } from "./store/store.ts";
 import { addDays, isWeekday, localDate, TIMEZONE, zonedInstant } from "./time.ts";
 
-export class NotFoundError extends Error {}
-
-/** The request conflicts with the office's records, such as a name already in use. */
-export class ConflictError extends Error {}
+export { ConflictError, InvalidRequestError, NotFoundError } from "./errors.ts";
 
 /** One background turn for an agent. */
 export interface Task {
@@ -94,12 +95,10 @@ export class Office {
     this.turnTimeoutMs = options.turnTimeoutMs;
     const vaultDir = options.vaultDir ?? mkdtempSync(join(tmpdir(), "aihub-vault-"));
     this.notebook = new Notebook(vaultDir, this.store, (note) => this.bus.publish({ type: "note", note }));
-    this.gateway = new Gateway(
-      this.store,
-      options.tools ?? OFFICE_TOOLS,
-      (entry) => this.bus.publish({ type: "activity", entry }),
-      this.notebook,
-    );
+    this.gateway = new Gateway(this.store, options.tools ?? OFFICE_TOOLS, (entry) => this.bus.publish({ type: "activity", entry }), {
+      notebook: this.notebook,
+      proposeSupervisor: (caller, proposal) => proposeSupervisor(this, caller, proposal),
+    });
   }
 
   /** Seeds the Chief of Staff and closes out runs that a restart interrupted. */
@@ -182,6 +181,36 @@ export class Office {
     };
   }
 
+  /** The operator dismisses or resolves an item. Its supervisor's journal remembers it. */
+  closeItem(id: number, state: "dismissed" | "resolved", resolution: string | null): Item {
+    const existing = this.store.getItem(id);
+    if (!existing) throw new NotFoundError(`No item ${id}`);
+    const item = this.store.closeItem(id, state, resolution);
+    if (!item) throw new ConflictError(`This item is already ${existing.state}.`);
+    this.bus.publish({ type: "item", item });
+    const owner = this.store.getResponsibility(item.responsibilityId)?.ownerId;
+    if (owner) {
+      this.notebook.journal(owner, `The operator ${state} "${item.title}"${resolution ? `: ${resolution}` : "."}`);
+      const agent = this.store.getAgent(owner);
+      if (agent) this.bus.publish({ type: "agent", agent });
+    }
+    return item;
+  }
+
+  /** Ends a responsibility, such as a mandate. The gateway refuses every later call under it. */
+  endResponsibility(id: string): Responsibility {
+    const existing = this.store.getResponsibility(id);
+    if (!existing) throw new NotFoundError(`No responsibility ${id}`);
+    const responsibility = this.store.endResponsibility(id);
+    if (!responsibility) throw new ConflictError("This responsibility has already ended.");
+    this.bus.publish({ type: "responsibility", responsibility });
+    const agent = this.store.getAgent(responsibility.ownerId);
+    if (agent) this.bus.publish({ type: "agent", agent });
+    this.activity(responsibility.ownerId, null, "responsibility_ended", `${responsibility.title} ended`);
+    this.notebook.syncProfile(responsibility.ownerId);
+    return responsibility;
+  }
+
   /** Records the operator's message and queues the reply. Returns before the reply starts. */
   chat(conversationId: string, text: string): ChatResponse {
     const conversation = this.store.getConversation(conversationId);
@@ -198,7 +227,11 @@ export class Office {
     const conversation = this.store.getConversation(conversationId)!;
     const agent = this.store.getAgentRecord(conversation.agentId)!;
     const caller = { agentId: agent.id, runId, profile: agent.profile };
-    const options: ContextOptions = { profile: agent.profile, instructions: instructionsFor(agent), tools: this.gateway.specsFor(caller) };
+    const options: ContextOptions = {
+      profile: agent.profile,
+      instructions: instructionsFor(agent, this.store.activeResponsibilityOf(agent.id)),
+      tools: this.gateway.specsFor(caller),
+    };
     this.setRunState(runId, "working");
     this.activity(agent.id, runId, "run_started", `${agent.name} is replying in chat`);
 
@@ -282,7 +315,7 @@ export class Office {
     try {
       const contextId = await this.runtime.startContext({
         profile: agent.profile,
-        instructions: `${instructionsFor(agent)}
+        instructions: `${instructionsFor(agent, this.store.activeResponsibilityOf(agent.id))}
 
 ${task.instructions}`,
         tools: this.gateway.specsFor(caller),
