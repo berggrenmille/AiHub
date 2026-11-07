@@ -378,9 +378,12 @@ export class Office {
     this.activity(agent.id, runId, "run_started", `${agent.name}: ${task.title}`);
     let text = "";
     try {
+      // A worker has no responsibility of its own: it works under its supervisor's, the run's.
+      const responsibility =
+        this.store.activeResponsibilityOf(agent.id) ?? (task.responsibilityId ? this.store.getResponsibility(task.responsibilityId) : null);
       const contextId = await this.runtime.startContext({
         profile: agent.profile,
-        instructions: `${instructionsFor(agent, this.store.activeResponsibilityOf(agent.id))}
+        instructions: `${instructionsFor(agent, responsibility)}
 
 ${task.instructions}`,
         tools: this.gateway.specsFor(caller),

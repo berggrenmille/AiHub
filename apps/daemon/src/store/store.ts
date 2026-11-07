@@ -451,6 +451,15 @@ export class Store {
       .run(agentId, connectionId, JSON.stringify(operations), this.timestamp());
   }
 
+  /** A staff member leaves: off the roster, with every grant revoked. Its records and notes stay. */
+  archiveAgent(id: string) {
+    const now = this.timestamp();
+    this.transaction(() => {
+      this.db.prepare("UPDATE agents SET status = 'archived' WHERE id = ?").run(id);
+      this.db.prepare("UPDATE grants SET revoked_at = ? WHERE agent_id = ? AND revoked_at IS NULL").run(now, id);
+    });
+  }
+
   /** Connections the agent holds an unrevoked grant for. */
   connectionsOf(agentId: string): SourceConnection[] {
     const rows = this.db

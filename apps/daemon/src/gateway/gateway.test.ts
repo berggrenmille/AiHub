@@ -47,9 +47,9 @@ describe("Gateway", () => {
     const names = (caller: Caller, asKind?: RunKind) => gateway.specsFor(caller, asKind).map((tool) => tool.name);
 
     // A task may ask a colleague and read its sources; an answer to a question may only read.
-    assert.deepEqual(names(asRun("schedule", "assignment", "data")), ["aihub_ask_colleague", "aihub_read_calendar", ...NOTE_TOOLS]);
+    assert.deepEqual(names(asRun("schedule", "assignment", "data")), ["aihub_ask_colleague", "aihub_recruit_worker", "aihub_read_calendar", ...NOTE_TOOLS]);
     assert.deepEqual(names(asRun("schedule", "question", "data")), ["aihub_read_calendar", ...NOTE_TOOLS]);
-    assert.deepEqual(names(asRun("schedule", "follow_up", "data")), ["aihub_read_calendar", ...NOTE_TOOLS]);
+    assert.deepEqual(names(asRun("schedule", "follow_up", "data")), ["aihub_review_work", "aihub_read_calendar", ...NOTE_TOOLS]);
 
     // A chat follow-up is offered the chat's tools, so the thread stays the same, but can't delegate again.
     const followUp = asRun("chief", "follow_up", "conversation");

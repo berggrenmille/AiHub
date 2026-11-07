@@ -17,3 +17,9 @@ export const QUESTION_RUNS = 1;
 
 /** Runs a task may use by default, including follow-ups once what it asked for arrives. */
 export const TASK_RUNS = 3;
+
+/** Workers one supervisor may have on staff at once. */
+export const WORKERS_PER_SUPERVISOR = 2;
+
+/** Runs a worker's task may use: the work and one revision. */
+export const WORKER_RUNS = 2;

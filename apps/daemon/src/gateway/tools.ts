@@ -267,6 +267,56 @@ export const assignTask = defineTool({
   },
 });
 
+// Workers (DESIGN.md › Recruitment and delegation). A supervisor working on a task recruits a worker
+// for one bounded part, sharing some of its own sources. The worker delivers once; the supervisor
+// accepts the work or asks for one revision, and an accepted worker leaves the office.
+export const recruitWorker = defineTool({
+  name: "aihub_recruit_worker",
+  description:
+    "Recruit a worker for one bounded part of your task, such as going through a month of events. It reads only the sources you share, delivers once, and leaves when its work is accepted. Its work comes back to you in a new run, so end this turn after recruiting.",
+  input: z
+    .object({
+      name: z.string().trim().min(1).max(30).describe("A first name nobody on staff uses."),
+      title: z.string().trim().min(1).max(60).describe("A short job title, such as Meeting Counter."),
+      description: z.string().trim().min(1).max(300).describe("What the worker does, in a sentence."),
+      taskTitle: z.string().trim().min(1).max(80).describe("A short name for its task."),
+      task: z.string().trim().min(1).max(1_500).describe("What to produce, with the context and limits the worker needs."),
+      sources: z.array(z.string().trim().min(1).max(60)).max(3).default([]).describe("Which of your sources the worker may read, by name."),
+    })
+    .strict(),
+  roles: ["supervisor"],
+  profiles: ["data"],
+  kinds: ["assignment"],
+  run: (input, { caller, delegation }) => {
+    if (!delegation) throw new Error("Recruiting workers isn't available in this office");
+    const work = delegation.recruit(caller, input);
+    return `Recruited ${work.ownerName} for "${work.title}". The work comes back to you in a new run; end this turn now, without the deliverable.`;
+  },
+});
+
+export const reviewWork = defineTool({
+  name: "aihub_review_work",
+  description:
+    "Accept a worker's delivered work, or send it back once with specific feedback. An accepted worker leaves the office. Work you don't review is accepted when you deliver.",
+  input: z
+    .object({
+      worker: z.string().trim().min(1).max(30).describe("The worker's name."),
+      verdict: z.enum(["accept", "revise"]),
+      feedback: z.string().trim().min(1).max(1_000).optional().describe("For a revision: what to change, specifically."),
+    })
+    .strict(),
+  roles: ["supervisor"],
+  profiles: ["data"],
+  kinds: ["follow_up"],
+  run: (input, { caller, delegation }) => {
+    if (!delegation) throw new Error("Reviewing work isn't available in this office");
+    const work = delegation.review(caller, input);
+    return input.verdict === "accept"
+      ? `Accepted ${work.ownerName}'s work. ${work.ownerName} has left the office.`
+      : `Sent "${work.title}" back to ${work.ownerName}. The revision comes back to you in a new run; end this turn now, without the deliverable.`;
+  },
+});
+
 /** Most events one read returns, so a long window can't flood the turn. */
 const MAX_EVENTS = 200;
 
@@ -317,6 +367,8 @@ export const OFFICE_TOOLS: GatewayTool[] = [
   proposeSupervisorTool,
   askColleague,
   assignTask,
+  recruitWorker,
+  reviewWork,
   submitReport,
   readCalendar,
   listNotes,

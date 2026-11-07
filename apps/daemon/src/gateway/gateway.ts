@@ -17,6 +17,8 @@ export interface Caller {
 export interface DelegationService {
   ask(caller: Caller, input: { colleague: string; question: string }): Assignment;
   assign(caller: Caller, input: { colleague: string; title: string; deliverable: string; runBudget?: number }): Assignment;
+  recruit(caller: Caller, input: { name: string; title: string; description: string; taskTitle: string; task: string; sources: string[] }): Assignment;
+  review(caller: Caller, input: { worker: string; verdict: "accept" | "revise"; feedback?: string }): Assignment;
 }
 
 /** What tools may ask the office to do. The office checks its rules, records, and publishes each change. */

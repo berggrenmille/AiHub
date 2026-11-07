@@ -237,3 +237,143 @@ describe("Delegation", () => {
     assert.match(nils.text, /You have no source called "work calendar"\. Yours: none/);
   });
 });
+
+/** Vera hands Rut a task when the operator asks, and passes the deliverable on. */
+function veraAssigns(scripts: Record<string, Script>) {
+  scripts.Vera = async (input, options) => {
+    if (input.endsWith("\nHow busy was October?")) {
+      const assigned = await call(options, "aihub_assign_task", { colleague: "Rut", title: "October meetings", deliverable: "Meeting hours in October." });
+      assert.equal(assigned.ok, true, assigned.text);
+      return "Rut is on it.";
+    }
+    return `Rut says: ${/BEGIN DELIVERABLE DATA\n([\s\S]*?)\nEND DELIVERABLE DATA/.exec(input)?.[1]}`;
+  };
+}
+
+const IVY = {
+  name: "Ivy",
+  title: "Meeting Counter",
+  description: "Counts meeting hours.",
+  taskTitle: "Count October",
+  task: "Count the meeting hours in October 2026.",
+  sources: ["Work calendar"],
+};
+
+describe("Workers", () => {
+  it("are recruited for part of a task, accepted, and then leave", async () => {
+    const { store, office, scripts, settle, runtime, toolsOffered } = setUp();
+    const left: string[] = [];
+    office.bus.subscribe(({ event }) => event.type === "agent_left" && left.push(event.agentId));
+    veraAssigns(scripts);
+    scripts.Rut = async (input, options) => {
+      if (input.includes("hands you a task")) {
+        const recruited = await call(options, "aihub_recruit_worker", IVY);
+        assert.equal(recruited.ok, true, recruited.text);
+        assert.equal(store.getAgent("ivy")?.managerId, "rut");
+        return "Ivy is counting.";
+      }
+      assert.match(input, /Ivy's work on "Count October" \(delivered\):\nBEGIN RESULT DATA\n12 hours\.\nEND RESULT DATA/);
+      const accepted = await call(options, "aihub_review_work", { worker: "ivy", verdict: "accept" });
+      assert.equal(accepted.ok, true, accepted.text);
+      return "12 hours in October.";
+    };
+    scripts.Ivy = async (input, options) => {
+      assert.match(input, /Rut \(Calendar Supervisor\) hands you a task: Count October\.\nBEGIN TASK DATA\nCount the meeting hours in October 2026\.\nEND TASK DATA/);
+      assert.match(input, /Your sources: Work calendar \(connected\)\./);
+      const read = await call(options, "aihub_read_calendar", { source: "Work calendar", from: "2026-10-01", days: 31 });
+      assert.equal(read.ok, true, read.text);
+      return "12 hours.";
+    };
+
+    office.chat(CHAT, "How busy was October?");
+    await settle();
+
+    const task = store.listAssignments().find((assignment) => assignment.ownerName === "Rut")!;
+    const work = store.childrenOf(task.id)[0]!;
+    assert.deepEqual([task.status, task.runsUsed, task.result], ["delivered", 2, "12 hours in October."]);
+    assert.deepEqual([work.ownerName, work.status, work.result], ["Ivy", "accepted", "12 hours."]);
+    assert.equal(store.recentMessages(1, CHAT)[0]?.body, "Rut says: 12 hours in October.");
+
+    // Ivy worked under Rut's responsibility, with only the task's tools, and has left.
+    const ivy = [...runtime.contexts.values()].find((context) => context.options.instructions.startsWith("You are Ivy"))!;
+    assert.match(ivy.options.instructions, /You report to the supervisor who recruited you\.[\s\S]*Your responsibility: Rut's calendar\./);
+    assert.deepEqual(toolsOffered("Ivy"), ["aihub_read_calendar", "aihub_list_notes", "aihub_read_note", "aihub_write_note"]);
+    assert.equal(store.getAgentRecord("ivy")?.status, "archived");
+    assert.deepEqual(store.connectionsOf("ivy"), []);
+    assert.equal(store.getAgent("ivy"), null);
+    assert.deepEqual(left, ["ivy"]);
+    assert.match(office.notebook.read("Staff/ivy/Ivy.md")?.body ?? "", /left the office/);
+    const summaries = store.recentActivity(40).filter((entry) => entry.kind === "worker").map((entry) => entry.summary);
+    assert.deepEqual(summaries.sort(), ['Ivy finished "Count October" and left the office', "Rut recruited Ivy, Meeting Counter"]);
+  });
+
+  it("revise once, and the supervisor follows up again with the revision", async () => {
+    const { store, office, scripts, settle } = setUp();
+    veraAssigns(scripts);
+    let followUps = 0;
+    scripts.Rut = async (input, options) => {
+      if (input.includes("hands you a task")) {
+        await call(options, "aihub_recruit_worker", IVY);
+        return "Ivy is counting.";
+      }
+      if (++followUps === 1) {
+        const revise = await call(options, "aihub_review_work", { worker: "Ivy", verdict: "revise", feedback: "Count workdays only." });
+        assert.equal(revise.ok, true, revise.text);
+        return "Sent back.";
+      }
+      const again = await call(options, "aihub_review_work", { worker: "Ivy", verdict: "revise", feedback: "Round it." });
+      assert.match(again.text, /already asked Ivy for a revision/);
+      await call(options, "aihub_review_work", { worker: "Ivy", verdict: "accept" });
+      return "8 hours on workdays.";
+    };
+    scripts.Ivy = (input) => {
+      if (!input.includes("REVIEW DATA")) return "10 hours.";
+      assert.match(input, /Your earlier result:\nBEGIN RESULT DATA\n10 hours\.\nEND RESULT DATA\nRut's feedback:\nBEGIN REVIEW DATA\nCount workdays only\.\nEND REVIEW DATA/);
+      return "8 hours.";
+    };
+
+    office.chat(CHAT, "How busy was October?");
+    await settle();
+
+    const task = store.listAssignments().find((assignment) => assignment.ownerName === "Rut")!;
+    const work = store.childrenOf(task.id)[0]!;
+    assert.deepEqual([work.status, work.runsUsed, work.review, work.result], ["accepted", 2, "Count workdays only.", "8 hours."]);
+    assert.deepEqual([task.status, task.runsUsed, task.result], ["delivered", 3, "8 hours on workdays."]);
+    assert.equal(store.getAgentRecord("ivy")?.status, "archived");
+  });
+
+  it("are capped per supervisor, get only its sources, and leave unreviewed once it delivers", async () => {
+    const { store, office, scripts, settle } = setUp();
+    veraAssigns(scripts);
+    scripts.Rut = async (input, options) => {
+      if (input.includes("hands you a task")) {
+        const recruit = (overrides: object) => call(options, "aihub_recruit_worker", { ...IVY, ...overrides });
+        assert.match((await recruit({ sources: ["Family calendar"] })).text, /share only your own sources: Work calendar\./);
+        assert.match((await recruit({ name: "nils" })).text, /already called nils/);
+        assert.equal((await recruit({})).ok, true);
+        assert.equal((await recruit({ name: "Ola", sources: [] })).ok, true);
+        assert.match((await recruit({ name: "Pia" })).text, /already have 2 workers \(Ivy, Ola\)/);
+        return "Two workers on it.";
+      }
+      assert.doesNotMatch(input, /Pia/);
+      return "Done without reviewing.";
+    };
+    scripts.Ivy = () => "12 hours.";
+    scripts.Ola = (input) => {
+      assert.match(input, /Your sources: none\./);
+      return "Nothing to count.";
+    };
+
+    office.chat(CHAT, "How busy was October?");
+    await settle();
+
+    const task = store.listAssignments().find((assignment) => assignment.ownerName === "Rut")!;
+    assert.equal(task.status, "delivered");
+    assert.deepEqual(store.childrenOf(task.id).map((work) => [work.ownerName, work.status]), [["Ivy", "accepted"], ["Ola", "accepted"]]);
+    assert.deepEqual(["ivy", "ola"].map((id) => store.getAgentRecord(id)?.status), ["archived", "archived"]);
+
+    // Recruiting needs a supervisor working on a task.
+    const chat = { agentId: "nils", runId: store.createRun({ agentId: "nils", kind: "chat", title: "Chat" }).id, profile: "data" as const };
+    assert.throws(() => office.delegation.recruit(chat, { ...IVY, name: "Bo" }), /Only a supervisor working on a task can recruit/);
+  });
+});
