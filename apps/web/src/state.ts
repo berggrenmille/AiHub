@@ -9,8 +9,15 @@ import {
   type ChatResponse,
   type Conversation,
   type DaemonEvent,
+  type Item,
+  type NoteSummary,
+  type OfficeStats,
+  type Proposal,
+  type Responsibility,
+  type Routine,
   type Run,
   type RuntimeStatus,
+  type SourceConnection,
   type StateSnapshot,
 } from "@aihub/shared";
 
@@ -39,6 +46,16 @@ export interface OfficeState {
   runtime: RuntimeStatus | null;
   /** Replies in progress, by run ID. */
   streaming: Record<string, StreamingReply>;
+  responsibilities: Responsibility[];
+  connections: SourceConnection[];
+  routines: Routine[];
+  /** Newest first. */
+  proposals: Proposal[];
+  items: Item[];
+  /** Summaries only. A note's body is fetched when it is opened. */
+  notes: NoteSummary[];
+  /** Null until the first snapshot arrives. */
+  office: OfficeStats | null;
 }
 
 export type OfficeAction =
@@ -62,6 +79,13 @@ export const initialOfficeState: OfficeState = {
   activity: [],
   runtime: null,
   streaming: {},
+  responsibilities: [],
+  connections: [],
+  routines: [],
+  proposals: [],
+  items: [],
+  notes: [],
+  office: null,
 };
 
 export function isActive(run: Run): boolean {
@@ -112,16 +136,20 @@ function applySnapshot(state: OfficeState, snapshot: StateSnapshot): OfficeState
     activity: [...snapshot.activity].sort(byIdDescending).slice(0, ACTIVITY_LIMIT),
     runtime: snapshot.runtime,
     streaming,
+    responsibilities: snapshot.responsibilities ?? [],
+    connections: snapshot.connections ?? [],
+    routines: snapshot.routines ?? [],
+    proposals: [...(snapshot.proposals ?? [])].sort(newestFirst),
+    items: snapshot.items ?? [],
+    notes: snapshot.notes ?? [],
+    office: snapshot.office ?? null,
   };
 }
 
 function applyEvent(state: OfficeState, event: DaemonEvent): OfficeState {
   switch (event.type) {
-    case "agent": {
-      const index = state.agents.findIndex((agent) => agent.id === event.agent.id);
-      const agents = index === -1 ? [...state.agents, event.agent] : state.agents.with(index, event.agent);
-      return { ...state, agents };
-    }
+    case "agent":
+      return { ...state, agents: upsert(state.agents, event.agent, (agent) => agent.id) };
     case "run": {
       const runs = { ...state.runs, [event.run.id]: event.run };
       if (isActive(event.run) || !state.streaming[event.run.id]) return { ...state, runs };
@@ -143,13 +171,51 @@ function applyEvent(state: OfficeState, event: DaemonEvent): OfficeState {
     }
     case "runtime":
       return { ...state, runtime: event.runtime };
+    case "responsibility":
+      return { ...state, responsibilities: upsert(state.responsibilities, event.responsibility, (r) => r.id) };
+    case "connection":
+      return { ...state, connections: upsert(state.connections, event.connection, (c) => c.id) };
+    case "routine":
+      return { ...state, routines: upsert(state.routines, event.routine, (r) => r.id) };
+    case "proposal": {
+      const existing = state.proposals.find((proposal) => proposal.id === event.proposal.id);
+      // A decision is final: an older copy of a decided proposal, such as a late HTTP response, can't reopen it.
+      if (existing && existing.status !== "pending" && event.proposal.status === "pending") return state;
+      return { ...state, proposals: upsert(state.proposals, event.proposal, (p) => p.id).sort(newestFirst) };
+    }
+    case "item": {
+      const existing = state.items.find((item) => item.id === event.item.id);
+      if (existing && existing.updatedAt > event.item.updatedAt) return state;
+      return { ...state, items: upsert(state.items, event.item, (item) => item.id) };
+    }
+    case "note": {
+      const notes = upsertNote(state.notes, event.note);
+      return notes === state.notes ? state : { ...state, notes };
+    }
+    case "office":
+      return { ...state, office: event.office };
     case "resync":
       // The connection reloads the snapshot and applies it; until then the current view stands.
       return state;
     default:
-      // Milestone 2 records arrive before the views that show them.
+      // An event from a newer daemon. The next snapshot brings whatever it changed.
       return state;
   }
+}
+
+/**
+ * Upserts a note summary by path. A staff member has one profile note, named after it, so a new
+ * profile path for the same owner means a rename and the old path is gone from the vault. The
+ * stream has no removal event, so drop the old one here.
+ */
+function upsertNote(notes: NoteSummary[], note: NoteSummary): NoteSummary[] {
+  const existing = notes.find((candidate) => candidate.path === note.path);
+  if (existing && existing.updatedAt > note.updatedAt) return notes;
+  const kept =
+    note.kind === "profile" && note.ownerId !== null
+      ? notes.filter((other) => !(other.kind === "profile" && other.ownerId === note.ownerId && other.path !== note.path))
+      : notes;
+  return upsert(kept, note, (candidate) => candidate.path);
 }
 
 const ROLE_ORDER: Record<Agent["role"], number> = { chief_of_staff: 0, supervisor: 1, worker: 2 };
@@ -188,6 +254,13 @@ function addMessage(state: OfficeState, message: ChatMessage): OfficeState {
   return { ...state, messages, streaming: finished ? without(state.streaming, message.runId!) : state.streaming };
 }
 
+/** Replaces the record with the same key in place, or appends it. */
+function upsert<T>(list: T[], record: T, key: (value: T) => string | number): T[] {
+  const id = key(record);
+  const index = list.findIndex((candidate) => key(candidate) === id);
+  return index === -1 ? [...list, record] : list.with(index, record);
+}
+
 function without<T>(record: Record<string, T>, key: string): Record<string, T> {
   const { [key]: _removed, ...rest } = record;
   return rest;
@@ -199,4 +272,8 @@ function byId(a: { id: number }, b: { id: number }): number {
 
 function byIdDescending(a: { id: number }, b: { id: number }): number {
   return b.id - a.id;
+}
+
+function newestFirst(a: { createdAt: string; id: string }, b: { createdAt: string; id: string }): number {
+  return b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id);
 }

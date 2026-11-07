@@ -1,4 +1,4 @@
-import type { ActivityKind, AgentRole, RunState } from "@aihub/shared";
+import type { ActivityKind, AgentRole, RoutineTrigger, RunKind, RunState, SourceConnection, Urgency } from "@aihub/shared";
 
 export type AgentState = RunState | "idle";
 
@@ -84,3 +84,52 @@ export function formatFeedTime(iso: string, now: Date = new Date()): string {
 export function formatClock(iso: string): string {
   return shortTimeFormat.format(new Date(iso));
 }
+
+const longDateFormat = new Intl.DateTimeFormat("en-GB", { timeZone: TIME_ZONE, weekday: "long", day: "numeric", month: "long", year: "numeric" });
+const shortDateFormat = new Intl.DateTimeFormat("en-GB", { timeZone: TIME_ZONE, day: "numeric", month: "short" });
+
+/** A long date for the morning paper's masthead, such as Saturday 7 November 2026. */
+export function formatLongDate(iso: string): string {
+  return longDateFormat.format(new Date(iso));
+}
+
+/** The time for today, otherwise the day and month, such as 7 Nov. */
+export function formatShortWhen(iso: string, now: Date = new Date()): string {
+  const date = new Date(iso);
+  return dayFormat.format(date) === dayFormat.format(now) ? shortTimeFormat.format(date) : shortDateFormat.format(date);
+}
+
+/** How long ago, roughly: "just now", "4 min ago", "3 h ago", "2 days ago". */
+export function formatAgo(iso: string, now: number = Date.now()): string {
+  const seconds = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
+  if (seconds < 45) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 36) return `${hours} h ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+export const URGENCY_LABELS: Record<Urgency, string> = {
+  urgent: "Urgent",
+  today: "Today",
+  this_week: "This week",
+  fyi: "FYI",
+};
+
+export function triggerLabel(trigger: RoutineTrigger): string {
+  return trigger.type === "weekdays" ? `Weekdays at ${trigger.time}` : "Part of the morning briefing";
+}
+
+export const CONNECTION_STATUS_LABELS: Record<SourceConnection["status"], string> = {
+  connected: "Connected",
+  unverified: "Not verified",
+  failed: "Failed",
+};
+
+export const RUN_KIND_LABELS: Record<RunKind, string> = {
+  chat: "Chat",
+  briefing: "Briefing",
+  report: "Report",
+};
