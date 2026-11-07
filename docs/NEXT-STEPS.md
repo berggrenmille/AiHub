@@ -88,3 +88,38 @@ Acceptance (DESIGN.md): a supervisor recruits a worker with narrowed access, rev
 3. **Reading sources on demand.** `aihub_read_calendar` reads a window of a calendar the caller holds a grant for. Grants become the real boundary, so narrowing them means something.
 4. **Workers.** `aihub_recruit_worker` (supervisors, in assignment runs) hires a worker with a profile, a task, and a subset of the supervisor's grants, within a cap per supervisor. The worker delivers. In its follow-up run the supervisor accepts each result or asks for one revision with `aihub_review_work`. On acceptance AiHub archives the worker and revokes its grants; its assignment, result, and notes stay.
 5. **The office.** Workers walk in and out, a staff member asking a question walks to the colleague's desk, and a profile shows open and recent assignments.
+
+### Progress (2026-11-07)
+
+Steps 1 to 4 are in the daemon and checked against real Codex. Step 5, the office, is being built.
+
+| Acceptance | Where it is shown |
+| --- | --- |
+| A staff member asks a colleague without holding a turn open, and the answer arrives in a new turn. | `staff/delegation.ts`, tested in `delegation.test.ts`. Against real Codex, Vera asked Nora when the standup series started. Her chat turn ended at "I've asked Nora", Nora answered in a `question` run, and Vera passed the answer on in a follow-up turn of the same thread (15,478 tokens in, 14,976 cached). |
+| A supervisor recruits a worker with narrowed access, reviews its result, and the worker leaves the office. | Same files. Against real Codex, the operator asked for the recurring meetings that take the most time over two months. Vera assigned it to Nora, and Nora recruited Elias, Calendar Analyst, sharing only her Work calendar. Elias read both months and delivered. Nora re-read the calendar to check his tally and accepted it. Elias was archived with his grant revoked, and his profile note and his own note stayed in the vault. |
+| Nothing nests or loops. | Run kinds limit the tools (`gateway.test.ts`): a `question` or `follow_up` run can't ask, assign, or recruit, and a worker can't ask or recruit. Caps: 3 open questions per requester, 4 open tasks, 2 workers per supervisor, a run budget per assignment, and the daily turn limit. |
+
+### Usage measured
+
+The delegation runs on 2026-11-07, Codex 0.167.0:
+
+| Run | Input tokens | Cached | Output |
+| --- | --- | --- | --- |
+| Chat: Vera assigns a task | 36,088 | 23,808 | 252 |
+| Nora works the task alone (one week) | 36,380 | 11,520 | 465 |
+| Vera's follow-up turn in the chat | 12,766 | 12,160 | 120 |
+| Chat: Vera assigns a two-month task | 26,162 | 25,600 | 258 |
+| Nora recruits Elias | 23,502 | 11,648 | 246 |
+| Elias reads two months and delivers | 75,359 | 50,176 | 1,542 |
+| Nora checks Elias's work and accepts it | 40,635 | 26,112 | 593 |
+| Vera's follow-up turn in the chat | 13,924 | 13,056 | 129 |
+| Nora answers a question | 37,121 | 23,936 | 379 |
+
+A follow-up turn costs little because it continues the chat's own thread: the tool list is the same for every turn of a thread, and the run kind decides which calls go through. A worker reading a long window costs the most.
+
+### What the real run changed
+
+| Finding | Change |
+| --- | --- |
+| Nora and Elias called their totals "provisional": the calendar reader returned bare occurrences, so a series that starts mid-window, or skips a day, looked like missing data. | `aihub_read_calendar` lists each series once, with its rule, its first occurrence, and the occurrences the file skips in the window. Asked again, Nora answered that the standup is "explicitly skipped" on the offsite day. |
+| Given a one-week task and permission to bring in a helper, Nora did it herself. | Kept: a worker is for bounded work that needs reading through a lot, and the instructions say so. |
