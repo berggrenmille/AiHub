@@ -45,6 +45,10 @@ export interface Task {
   /** Use a run the caller already opened, such as a briefing that was collecting first. */
   runId?: string;
   timeoutMs?: number;
+  /** The responsibility the run works under. The gateway refuses its tools once that has ended. */
+  responsibilityId?: string | null;
+  /** The input holds source data or reports written from it, so the run's notes count as source data. */
+  sourceData?: boolean;
 }
 
 export interface TaskOutcome {
@@ -238,15 +242,15 @@ export class Office {
   runTask(task: Task): Promise<TaskOutcome> {
     const agent = this.store.getAgentRecord(task.agentId);
     if (!agent) throw new NotFoundError(`No agent ${task.agentId}`);
-    const run = task.runId ? this.store.getRun(task.runId)! : this.openRun(agent.id, task.kind, task.title);
+    const run = task.runId ? this.store.getRun(task.runId)! : this.openRun(agent.id, task.kind, task.title, task.responsibilityId);
     return new Promise((resolve, reject) =>
       this.queue.enqueue("background", () => this.executeTask(run.id, task).then(resolve, reject)),
     );
   }
 
   /** Records a new queued run. */
-  openRun(agentId: string, kind: RunKind, title: string): Run {
-    const run = this.store.createRun({ agentId, kind, title });
+  openRun(agentId: string, kind: RunKind, title: string, responsibilityId: string | null = null): Run {
+    const run = this.store.createRun({ agentId, kind, title, responsibilityId });
     this.publishRun(run);
     return run;
   }
@@ -271,7 +275,7 @@ export class Office {
 
   private async executeTask(runId: string, task: Task): Promise<TaskOutcome> {
     const agent = this.store.getAgentRecord(task.agentId)!;
-    const caller = { agentId: agent.id, runId, profile: agent.profile };
+    const caller = { agentId: agent.id, runId, profile: agent.profile, sourceData: task.sourceData ?? agent.profile === "data" };
     this.setRunState(runId, "working");
     this.activity(agent.id, runId, "run_started", `${agent.name}: ${task.title}`);
     let text = "";

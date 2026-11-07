@@ -9,6 +9,8 @@ export interface Caller {
   agentId: string;
   runId: string;
   profile: RunProfile;
+  /** The run's input holds source data, or reports written from it, even if its profile isn't data. */
+  sourceData?: boolean;
 }
 
 export interface ToolContext {

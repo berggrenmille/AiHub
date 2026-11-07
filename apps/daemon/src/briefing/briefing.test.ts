@@ -46,7 +46,7 @@ describe("runBriefing", () => {
     const contexts = [...runtime.contexts.values()];
     assert.equal(contexts.filter((context) => context.options.profile === "data").length, 3);
     assert.ok(contexts.every((context) => context.options.ephemeral));
-    assert.match(outcome.text, /Section 1: Work schedule\n\{\n  "summary": "Checked Work calendar\."/);
+    assert.match(outcome.text, /Section 1: Work schedule\nSummary: Checked Work calendar\.\nReport: \{\n {2}"summary": "Checked Work calendar\."/);
     assert.match(outcome.text, /Section 4: Portfolio\nChecked; nothing new/);
     const [posted] = store.recentMessages(1, CHIEF_OF_STAFF_CONVERSATION_ID);
     assert.equal(posted?.body, outcome.text);

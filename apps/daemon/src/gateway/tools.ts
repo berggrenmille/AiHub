@@ -156,7 +156,7 @@ export const writeNote = defineTool({
   roles: ["chief_of_staff", "supervisor", "worker"],
   profiles: ["conversation", "data"],
   run: (input, { agent, caller, notebook }) => {
-    const note = notebookOf(notebook).writeFor(agent, caller.runId, caller.profile, input);
+    const note = notebookOf(notebook).writeFor(agent, caller.runId, caller.sourceData ? "data" : caller.profile, input);
     return `Saved "${note.title}".`;
   },
 });
