@@ -134,21 +134,70 @@ A follow-up turn costs little because it continues the chat's own thread: the to
 - Workers may reuse the name of a worker who has left, so a wikilink to that name can point at either.
 - The snapshot holds open assignments and the 30 most recently settled. Older ones stay in the database but not in the office.
 
-## Milestone 4: new sources from chat
+## Milestone 4: new sources from chat (done 2026-11-07)
 
 Acceptance (DESIGN.md): the calendar and every new source run through one source contract. Two new responsibilities are set up from chat on local folders with no code change: one in a format a built-in reader covers, and one whose reader a toolsmith writes and the operator approves. One supervisor can't read another's source, and an unapproved or changed reader never runs. The operator can open a chat with any staff member from the office.
 
 Earlier this plan hand-built readers for mailboxes and a portfolio. It changed on 2026-11-07 so that new sources come from chat instead of from code, and nothing in it asks the operator to connect an account. Tests and the fake office use made-up sample files.
 
-1. **One source contract.** Move what `sources/collect.ts` does for `.ics` behind one interface: verify a connection, read its records (in a window, for dated ones), key and version each record, diff against the cursor, and describe a record for the model. The calendar becomes the first source on it. The briefing goes through it, and `aihub_read_calendar` becomes `aihub_read_source`, checked against the caller's grants.
-2. **Folder sources.** A connection to a folder, with a file pattern and a reader. Built-in readers: markdown (one record per file, frontmatter as fields), plain text, CSV (one record per row, keyed by a column), and JSON. The daemon reads only matching files inside the folder, within size caps, and their text is source data. The Chief of Staff's proposal names the reader, and the operator picks the folder on the card, as they pick the `.ics` file today.
+1. **One source contract.** `sources/source.ts`: an adapter verifies a connection, hands over what changed since its cursor (keyed and versioned records), and reads records for a question. The calendar is the first adapter. The briefing goes through it, and `aihub_read_calendar` became `aihub_read_source`, checked against the caller's grants.
+2. **Folder sources.** A connection to a folder, with a file pattern and a reader. Built-in readers: markdown (one record per note, frontmatter as fields), plain text, CSV (one record per row, keyed by an id column or its content), and JSON. The daemon reads only matching files inside the folder: no hidden entries or links, at most 2,000 files, 2 MB each, and 50 MB in all. A first check hands over a sample, and a big change is cut at 60 records with the rest held for the next check. The Chief of Staff's proposal names the reader, and the operator picks the folder on the card.
 3. **Readers written by staff.**
-   - First, prove the box: a WebAssembly JavaScript interpreter, such as QuickJS, with no host APIs, a memory cap, and a time limit. Test it with code that tries to reach files or the network, or loops forever. Node's own permission model isn't enough: in Node 22 it limits files and child processes but not the network.
-   - A reader is a pure function from one file's name and text to records. The daemon validates what it returns.
-   - When no built-in reader fits, the Chief of Staff recruits a toolsmith worker. It gets a description of the format and sample files, written by itself or given by the operator, never the source itself. It writes and tests the reader through gateway tools in the locked-down process, with no shell.
-   - The operator approves the reader on a card that shows its code and a preview of the records it read from the real folder. AiHub stores the approved version's hash and runs nothing else.
-   - In the office, the toolsmith walks in, works at a spare desk, and leaves once the reader is approved or declined.
-4. **Chat with anyone.** A conversation per staff member, opened from the profile card. A supervisor's chat runs in its own profile, and its turns count as source data.
-5. **The proof.** Two responsibilities set up entirely from chat: a reading list kept as markdown notes, on a built-in reader, and a made-up bank export in a layout no built-in reader covers, on a reader the toolsmith writes. Both report in the briefing. Tests show that one supervisor can't read another's source through any tool, and that a changed reader doesn't run until it is approved again.
+   - The box (`sources/sandbox.ts`): QuickJS compiled to WebAssembly, in a worker thread. Each file gets a fresh runtime with no host objects, 32 MB of memory, and 1 second, within 10 seconds per run. A native loop QuickJS can't interrupt is stopped by killing the worker. Only JSON comes out, and the daemon checks it as records.
+   - A reader is `function read(file)` returning `{ key, title, fields }` records.
+   - When no built-in reader fits, the Chief of Staff calls `aihub_commission_reader` with a description and sample files. A toolsmith joins as the Chief of Staff's worker with no sources, tests with `aihub_test_reader` on the samples, hands in with `aihub_submit_reader`, and leaves once its task settles. Those two tools exist only for a toolsmith with a reader to write.
+   - The Chief of Staff then proposes a supervisor whose folder names the reader. The card shows the code and the toolsmith's notes, and Approve waits for a preview of the real folder. Approving the supervisor approves the reader and pins its code by hash: only that code runs, and only in the box.
+   - In the office, the toolsmith walks in to a lounge desk, works there with a wrench, and walks out after handing in.
+4. **Chat with anyone.** Any staff member's profile opens a chat with them. A supervisor's or worker's chat runs in its data profile, with its own sources, and its turns count as source data. A chat with someone who has left stays readable.
+5. **The proof.** Below.
+
+### How it was shown
+
+Against real Codex, with made-up files: a reading list of four markdown notes, and two monthly bank statements in a fixed-width layout with a header block and Swedish amounts.
+
+| Acceptance | Where it is shown |
+| --- | --- |
+| Every source runs through one contract. | `sources/collect.ts` picks the adapter by kind; `collect.test.ts`, `folder.test.ts`, and the briefing tests run the calendar and folders through it. |
+| A responsibility on a built-in reader, set up from chat. | Asked to watch the reading list, Vera proposed Clara with a markdown folder in one turn. The card's preview listed the four notes with their frontmatter; approving connected them. In the briefing Clara flagged the library book due back in seven days. |
+| A responsibility on a reader the toolsmith writes, set up from chat. | Given October's statement pasted into chat, Vera commissioned a reader. Oskar tested on the sample, then on two edge cases of his own (CRLF, a duplicate row, malformed rows), handed in a 47-line reader, and left. Vera proposed Ingrid with it. The preview read 13 transactions from both files, and the card showed the code. In the briefing Ingrid flagged the double Spotify debit and the 14,995 purchase. |
+| One supervisor can't read another's source. | `aihub_read_source` reads only granted connections (`folder.test.ts`, "lets a supervisor read only the sources it holds a grant for"), and a staff member's notes are readable only by it and the staff above it (`notebook.test.ts`). Asked for the bank balance in Clara's own chat, Clara replied that the statements were out of reach. |
+| An unapproved or changed reader never runs. | `toolsmith.test.ts`: a connection naming a reader before approval reads nothing, and approved code changed in the database is refused. Against real Codex, with the approved code changed in the database, Ingrid's read was refused ("The reader for this folder isn't approved, so AiHub won't run it"), and Ingrid said so; with the approved code restored, Ingrid answered from the statements again. |
+| The box holds. | `sandbox.test.ts`: no host objects; `require`, `process`, `fetch`, timers, and dynamic import all fail without touching files or the network; endless loops, native loops, unbounded allocation, deep recursion, huge output, and bad records each fail cleanly, and the next file still runs. |
+| The operator can chat with any staff member. | `office.test.ts` "Chat with any staff member", and in the browser: a profile's Chat button opens the chat, with a way back to the Chief of Staff's. Against real Codex, Ingrid answered from the statements in a direct chat. |
+| The office shows it. | Checked in a browser against the fake office, where "watch my reading list" and "write a reader for my bank export" run both flows: the toolsmith walks in and out, the card gates Approve on a preview, and profiles show each folder's reader. |
+
+### Usage measured
+
+The proof runs on 2026-11-07, Codex 0.167.0:
+
+| Run | Input tokens | Cached | Output |
+| --- | --- | --- | --- |
+| Chat: Vera proposes Clara (reading list) | 39,694 | 26,112 | 330 |
+| Chat: Vera commissions a reader | 42,214 | 27,904 | 516 |
+| Oskar writes, tests three times, and hands in | 82,342 | 53,632 | 1,705 |
+| Vera's follow-up proposes Ingrid | 45,290 | 43,136 | 351 |
+| Clara's briefing report | 35,102 | 23,168 | 337 |
+| Ingrid's briefing report | 52,923 | 43,392 | 549 |
+| Vera's briefing | 11,476 | 0 | 169 |
+| Ingrid answers in a direct chat | 35,822 | 22,272 | 185 |
+| Clara declines the bank question | 11,091 | 0 | 44 |
+
+Writing a reader costs about one supervisor report and a half, once. Reading the folders costs no model turns: the collectors and the box do it.
+
+### What the real run changed
+
+| Finding | Change |
+| --- | --- |
+| Ingrid's first read guessed the source was called "Monthly bank statements" and was refused before retrying. | Instructions list the sources a staff member holds, by the names `aihub_read_source` takes. Asked again, Ingrid used the right name first. |
+| Vera took the reader's name, "Sample Bank statements", from the made-up header. | Kept: the Chief of Staff names readers from what the operator shares, and the card shows the name before anything runs. |
+
+### Known gaps
+
+- A reader can't be revised. A changed format needs a new reader under a new name, and a reader handed in for a declined card stays waiting with nothing to retire it.
+- A read refused in chat, such as by a changed reader, doesn't mark the connection failed. The next briefing or health check does.
+- Readers see the real clock and random numbers. The toolsmith's charter asks for deterministic code; nothing enforces it.
+- A deadline can run over by about 0.7 seconds when the box has to kill and replace its worker.
+- The box's worker loads through Node's own type stripping, since tsx doesn't reach worker threads. Before Node 22.18 that takes a flag, which AiHub adds, and a bundled build would need the worker as its own entry.
+- Each check reads the whole folder again; nothing skips unchanged files yet.
 
 Not in this milestone: live accounts such as mail or a broker (Milestone 6, probably through existing MCP servers), briefings with the browser closed or after sleep (Milestone 5), drafts and sending (Roadmap phase A), and staff with a shell (Roadmap phase B).

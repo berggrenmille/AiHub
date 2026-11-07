@@ -106,7 +106,7 @@ export function seedDemoOffice(office: Office) {
         standingInstructions: "Flag any charge over 2 000 kr that isn't a known bill.",
         expiresAt: null,
       },
-      source: { kind: "ics_file", label: "Bank export" },
+      source: { kind: "folder", label: "Bank export", reader: "csv" },
       reason: "You asked for help keeping the books.",
     },
   });

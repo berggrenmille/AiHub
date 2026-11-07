@@ -55,6 +55,16 @@ Caps keep this bounded: 3 open questions per staff member, 4 open tasks, 2 worke
 
 In the fake office, try "ask Oskar whether …" or "give Elin a task with a helper: …" in the Chief of Staff's chat.
 
+## Folders and readers
+
+A supervisor can watch a folder on this PC as well as a calendar export. Tell the Chief of Staff what the files are, such as "my reading list is a folder of markdown notes", and the card proposes a supervisor with a reader for them. Pick the folder, press Preview to see what AiHub reads there, and approve. Built-in readers cover markdown notes (frontmatter becomes fields), plain text, CSV, and JSON. AiHub reads only the matching files in that folder, up to 2,000 files of 2 MB each.
+
+For a format none of them fits, such as a bank statement with its own layout, paste or describe a sample in chat. The Chief of Staff brings in a toolsmith, who writes a reader from the sample, never from your files, tests it, and leaves. The card for the supervisor who will use it shows the reader's code and notes, and Approve waits until you have previewed your real folder with it. Approving pins that exact code: a reader written by staff runs only as approved, in a sealed WebAssembly sandbox with no access to files, the network, or the rest of the PC.
+
+Chat with any staff member from their profile card. A supervisor answers from its own sources and notes, and can't read another supervisor's.
+
+In the fake office, try "watch my reading list" or "write a reader for my bank export" in the Chief of Staff's chat.
+
 ## Staff notes
 
 Staff keep their notes in a vault of markdown files at `data/vault/`, one folder per staff member under `Staff/` plus a shared `Office/` folder. Open the folder in Obsidian to browse the notes and their graph, or point `AIHUB_VAULT_DIR` at a folder inside an existing vault. AiHub picks up notes you edit there. Profile notes follow each staff card, so edit profiles in AiHub instead.
