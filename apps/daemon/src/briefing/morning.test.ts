@@ -150,7 +150,7 @@ describe("Morning briefing", () => {
     rmSync(calendar);
     const unavailable = await runMorningBriefing(office, { now: MONDAY });
     assert.equal(unavailable.sections[0]?.status, "unavailable");
-    assert.match(unavailable.text, /Source unavailable: The calendar file isn't there any more/);
+    assert.match(unavailable.text, /Source unavailable: There's no calendar file at that path/);
     assert.equal(store.getAgent("work-schedule")!.state, "waiting_for_access");
 
     store.endResponsibility(responsibility.id);

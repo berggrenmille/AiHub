@@ -1750,6 +1750,8 @@ summary.hud-chip::-webkit-details-marker {
 }
 
 .drawer-body {
+  /* Holds the visually hidden speaker labels, so they scroll with the messages. */
+  position: relative;
   flex: 1;
   overflow-y: auto;
   padding: 14px;

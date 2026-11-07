@@ -38,7 +38,7 @@ describe("Calendar collector", () => {
     rmSync(path);
     const failed = await verifyConnection(store, connection.id, AT_MONDAY);
     assert.equal(failed.status, "failed");
-    assert.match(failed.detail!, /isn't there any more/);
+    assert.match(failed.detail!, /no calendar file at that path/);
 
     const unchosen = store.createConnection({ kind: "ics_file", label: "Mailbox", path: "" });
     assert.equal((await verifyConnection(store, unchosen.id, AT_MONDAY)).detail, "No calendar file has been chosen yet.");
@@ -75,7 +75,7 @@ describe("Calendar collector", () => {
     const { store, responsibility, connection, path } = setup();
     rmSync(path);
     const collection = await collect(store, responsibility.id, connection, AT_MONDAY);
-    assert.match(collection.unavailable!, /isn't there any more/);
+    assert.match(collection.unavailable!, /no calendar file at that path/);
     assert.equal(store.getConnection(connection.id)!.status, "failed");
   });
 

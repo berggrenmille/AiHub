@@ -87,6 +87,7 @@ export const calendarSource: SourceAdapter = {
     const through = localDate(new Date(window.to.getTime() - 1), TIMEZONE);
     const filtered = query.words.length ? ` matching "${query.words.join(" ")}"` : "";
     const cut = records.length < matching.length ? ` (the first ${records.length} of ${matching.length})` : "";
+    if (query.preview) return { summary: `${plural(events.length, "event")} from ${from} through ${through}${cut}.`, data: { series: [...series.values()], events } };
     return {
       summary: `${connection.label}, ${from} through ${through}: ${plural(events.length, "event")}${filtered}${cut}. This is everything the file holds in the window. Occurrences of a recurring event point to its series, listed once with its rule, its first occurrence, and the occurrences the file skips in the window.`,
       data: { series: [...series.values()], events },
@@ -96,7 +97,7 @@ export const calendarSource: SourceAdapter = {
   describeError(error) {
     if (error instanceof NoPathChosen) return "No calendar file has been chosen yet.";
     const code = errorCode(error);
-    if (code === "ENOENT") return "The calendar file isn't there any more. Export it again or pick its new location.";
+    if (code === "ENOENT") return "There's no calendar file at that path. If it moved, export it again or pick its new location.";
     if (code === "EACCES" || code === "EPERM") return "AiHub can't read the calendar file. Check its permissions.";
     if (code === "EISDIR") return "That's a folder, not a calendar file. Pick the .ics file itself.";
     return `The calendar file couldn't be read: ${messageOf(error)}`;

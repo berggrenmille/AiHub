@@ -179,7 +179,7 @@ describe("Readers staff write", () => {
 
     const preview = await previewProposal(office, proposal.id, folder);
     assert.equal(preview.code, BANK_READER);
-    assert.match(preview.summary, /^Bank: 2 records out of 2 in 1 file\./);
+    assert.equal(preview.summary, "2 records in 1 file.");
     assert.deepEqual(
       (preview.data as { records: Array<{ title: string }> }).records.map((record) => record.title),
       ["Spotify -129,00", "Rent -9 000,00"],

@@ -53,7 +53,7 @@ describe("Folder source", () => {
     const { root, store } = setUp();
     const check = (path: string) => checkProposedSource({ kind: "folder", label: "Notes", reader: "markdown" }, path, NOW);
     assert.equal(await check(root), "No *.md files yet");
-    await assert.rejects(check(join(root, "missing")), /The folder isn't there any more/);
+    await assert.rejects(check(join(root, "missing")), /There's no folder at that path/);
     writeFileSync(join(root, "file.md"), "x");
     await assert.rejects(check(join(root, "file.md")), /That's a file, not a folder/);
     const unchosen = store.createConnection({ kind: "folder", label: "Mail", path: "", reader: "text" });

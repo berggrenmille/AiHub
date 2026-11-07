@@ -38,6 +38,8 @@ export interface SourceQuery {
   /** Words every returned record must contain. */
   words: string[];
   limit: number;
+  /** For the operator's preview on a card: the summary says what was found, without guidance meant for staff. */
+  preview?: boolean;
 }
 
 export interface SourceReading {

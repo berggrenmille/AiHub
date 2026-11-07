@@ -137,8 +137,12 @@ export const folderSource: SourceAdapter = {
     }));
     const reader = describeReader(connection);
     const filtered = query.words.length ? ` match "${query.words.join(" ")}"` : "";
-    const shown = records.length < matching.length ? ` Showing the first ${records.length}; narrow it with words to see others.` : "";
     const unreadable = scan.errors.length ? ` ${plural(scan.errors.length, "file")} couldn't be read: ${describeErrors(scan.errors)}` : "";
+    if (query.preview) {
+      const first = records.length < matching.length ? ` Here are the first ${records.length}.` : "";
+      return { summary: `${plural(scan.records.length, reader.noun, reader.nouns)} in ${plural(scan.files, "file")}.${first}${unreadable}`, data: { records } };
+    }
+    const shown = records.length < matching.length ? ` Showing the first ${records.length}; narrow it with words to see others.` : "";
     return {
       summary: `${connection.label}: ${plural(matching.length, reader.noun, reader.nouns)}${filtered} out of ${scan.records.length} in ${plural(scan.files, "file")}.${shown} Long texts are cut at ${FOLDER_LIMITS.readValueLength} characters.${unreadable}`,
       data: { records },
@@ -149,7 +153,7 @@ export const folderSource: SourceAdapter = {
     if (error instanceof NoPathChosen) return "No folder has been chosen yet.";
     if (error instanceof FolderProblem) return error.message;
     const code = errorCode(error);
-    if (code === "ENOENT") return "The folder isn't there any more. Pick its new location.";
+    if (code === "ENOENT") return "There's no folder at that path. If it moved, pick its new location.";
     if (code === "ENOTDIR") return "That's a file, not a folder. Pick the folder that holds the files.";
     if (code === "EACCES" || code === "EPERM") return "AiHub can't read the folder. Check its permissions.";
     return `The folder couldn't be read: ${messageOf(error)}`;

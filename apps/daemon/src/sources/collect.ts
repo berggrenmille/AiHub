@@ -74,7 +74,7 @@ export async function previewProposedSource(source: ProposedSource, path: string
   const adapter = adapterFor(source.kind);
   const candidate = { ...connectionFor(source, path), id: "candidate", status: "unverified" as const, detail: null, verifiedAt: null };
   try {
-    return await adapter.read(candidate, { days: 7, words: [], limit }, context);
+    return await adapter.read(candidate, { days: 7, words: [], limit, preview: true }, context);
   } catch (error) {
     throw new Error(adapter.describeError(error));
   }
