@@ -6,10 +6,15 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { SequencedEvent } from "./events.ts";
 import { NotFoundError, type Office } from "./office.ts";
+import { registerLoopbackGuards } from "./security.ts";
 
 export interface ServerOptions {
   office: Office;
   version: string;
+  /** The per-install token every API request must carry. */
+  token: string;
+  /** Extra UI origins allowed to make state-changing requests, such as the Vite dev server. */
+  devOrigins?: string[];
   /** The port the daemon listens on. Defaults to the port it actually bound, which tests use. */
   port?: number;
   /** The built web UI, served at `/` when it exists. */
@@ -26,16 +31,13 @@ const ChatBody = z.object({
 export async function buildServer(options: ServerOptions): Promise<FastifyInstance> {
   const { office } = options;
   const startedAt = new Date().toISOString();
-  const app = Fastify({ logger: options.logger ?? true });
+  // On shutdown, drop connections instead of waiting for browsers to close their idle sockets.
+  const app = Fastify({ logger: options.logger ?? true, forceCloseConnections: true });
 
-  const port = () => options.port ?? (app.server.address() as AddressInfo | null)?.port;
-
-  // DNS rebinding protection: only answer requests addressed to the loopback daemon itself.
-  app.addHook("onRequest", async (request, reply) => {
-    const allowed = [`127.0.0.1:${port()}`, `localhost:${port()}`];
-    if (!allowed.includes(request.headers.host ?? "")) {
-      return reply.code(421).send({ error: "Unexpected Host header" });
-    }
+  registerLoopbackGuards(app, {
+    port: () => options.port ?? (app.server.address() as AddressInfo | null)?.port,
+    devOrigins: options.devOrigins ?? [],
+    token: options.token,
   });
 
   app.get("/api/health", async (): Promise<HealthResponse> => ({ status: "ok", version: options.version, startedAt }));
@@ -55,7 +57,13 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   });
 
   // Server-sent events. A client loads /api/state, then follows from that snapshot's lastEventId.
-  // EventSource sends Last-Event-ID itself when it reconnects.
+  // EventSource sends Last-Event-ID itself when it reconnects. Open streams are ended on shutdown,
+  // which would otherwise wait for every browser tab to disconnect.
+  const streams = new Set<() => void>();
+  app.addHook("preClose", async () => {
+    for (const end of streams) end();
+  });
+
   app.get<{ Querystring: { after?: string } }>("/api/events", (request, reply) => {
     const after = String(request.headers["last-event-id"] ?? request.query.after ?? office.bus.lastEventId);
     reply.hijack();
@@ -75,10 +83,14 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     for (const event of backlog) send(event);
     const unsubscribe = office.bus.subscribe(send);
     const heartbeat = setInterval(() => response.write(": keep-alive\n\n"), options.heartbeatMs ?? 15_000);
-    request.raw.on("close", () => {
+    const end = () => {
       clearInterval(heartbeat);
       unsubscribe();
-    });
+      streams.delete(end);
+      response.end();
+    };
+    streams.add(end);
+    request.raw.on("close", end);
   });
 
   if (options.webRoot && existsSync(options.webRoot)) {

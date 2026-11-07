@@ -3,6 +3,7 @@ import pkg from "../package.json" with { type: "json" };
 import { loadConfig } from "./config.ts";
 import { Office } from "./office.ts";
 import { CodexRuntime, pinnedCodexCommand } from "./runtime/codex-runtime.ts";
+import { installToken } from "./security.ts";
 import { buildServer } from "./server.ts";
 import { Store } from "./store/store.ts";
 
@@ -13,7 +14,14 @@ const office = new Office({ store, runtime });
 office.start();
 
 // The daemon only listens on loopback (DESIGN.md › Architecture).
-const app = await buildServer({ office, version: pkg.version, port: config.port, webRoot: join(config.root, "apps", "web", "dist") });
+const app = await buildServer({
+  office,
+  version: pkg.version,
+  token: installToken(store),
+  devOrigins: config.devOrigins,
+  port: config.port,
+  webRoot: join(config.root, "apps", "web", "dist"),
+});
 await app.listen({ host: config.host, port: config.port });
 void office.refreshRuntimeStatus();
 

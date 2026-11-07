@@ -10,7 +10,9 @@ export function App() {
   const [status, setStatus] = useState<DaemonStatus>({ kind: "loading" });
 
   useEffect(() => {
-    fetch("/api/health")
+    // The daemon gives this page its token cookie first; every other API call needs it.
+    fetch("/api/session")
+      .then(() => fetch("/api/health"))
       .then(async (res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         setStatus({ kind: "up", health: (await res.json()) as HealthResponse });

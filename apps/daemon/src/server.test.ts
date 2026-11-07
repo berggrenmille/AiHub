@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, it } from "node:test";
 import type { ChatResponse, DaemonEvent, StateSnapshot } from "@aihub/shared";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { FakeRuntime } from "../test/fake-runtime.ts";
 import { Office } from "./office.ts";
 import { buildServer } from "./server.ts";
@@ -11,12 +11,22 @@ import { Store } from "./store/store.ts";
 
 const PORT = 7420;
 const HOST = `127.0.0.1:${PORT}`;
+const TOKEN = "test-token";
+/** What the AiHub page sends: its own Host and Origin, and the token cookie. */
+const PAGE = { host: HOST, origin: `http://${HOST}`, cookie: `aihub_token=${TOKEN}` };
 
 /** `port: null` takes the port the server actually binds, for tests that listen. */
 async function server(port: number | null = PORT) {
   const office = new Office({ store: new Store(":memory:"), runtime: new FakeRuntime() });
   office.start();
-  const app = await buildServer({ office, version: "0.0.0", port: port ?? undefined, logger: false });
+  const app = await buildServer({
+    office,
+    version: "0.0.0",
+    token: TOKEN,
+    devOrigins: ["http://127.0.0.1:5173"],
+    port: port ?? undefined,
+    logger: false,
+  });
   return { office, app };
 }
 
@@ -51,16 +61,70 @@ describe("HTTP server", () => {
   it("answers only requests addressed to the loopback daemon", async () => {
     ({ app } = await server());
 
-    assert.equal((await app.inject({ url: "/api/health", headers: { host: HOST } })).statusCode, 200);
-    assert.equal((await app.inject({ url: "/api/health", headers: { host: `localhost:${PORT}` } })).statusCode, 200);
-    assert.equal((await app.inject({ url: "/api/health", headers: { host: "evil.example:7420" } })).statusCode, 421);
-    assert.equal((await app.inject({ url: "/api/health", headers: { host: "127.0.0.1:8080" } })).statusCode, 421);
+    const health = (host: string) => app!.inject({ url: "/api/health", headers: { ...PAGE, host } });
+    assert.equal((await health(HOST)).statusCode, 200);
+    assert.equal((await health(`localhost:${PORT}`)).statusCode, 200);
+    assert.equal((await health("evil.example:7420")).statusCode, 421);
+    assert.equal((await health("127.0.0.1:8080")).statusCode, 421);
+  });
+
+  it("requires the install token on every API request", async () => {
+    ({ app } = await server());
+
+    for (const url of ["/api/health", "/api/state", "/api/events", "/api//state?x=1"]) {
+      const response: LightMyRequestResponse = await app.inject({ url, headers: { host: HOST } });
+      assert.ok([401, 404].includes(response.statusCode), url);
+      assert.notEqual(response.statusCode, 200, url);
+    }
+    const wrong = await app.inject({ url: "/api/state", headers: { ...PAGE, cookie: "aihub_token=guess" } });
+    assert.equal(wrong.statusCode, 401);
+  });
+
+  it("accepts state-changing requests only from the AiHub page", async () => {
+    ({ app } = await server());
+    const { origin: _pageOrigin, ...withoutOrigin } = PAGE;
+    const post = (origin: string | undefined) =>
+      app!.inject({
+        method: "POST",
+        url: "/api/chat",
+        headers: origin ? { ...withoutOrigin, origin } : withoutOrigin,
+        payload: { conversationId: CHAT, text: "Hi" },
+      });
+
+    assert.equal((await post(undefined)).statusCode, 403);
+    assert.equal((await post("https://evil.example")).statusCode, 403);
+    assert.equal((await post("http://127.0.0.1:5174")).statusCode, 403);
+    assert.equal((await post("http://127.0.0.1:5173")).statusCode, 202);
+    assert.equal((await post(`http://localhost:${PORT}`)).statusCode, 202);
+  });
+
+  it("gives the token only to the AiHub page itself", async () => {
+    ({ app } = await server());
+    const session = (site: string | undefined) =>
+      app!.inject({ url: "/api/session", headers: { host: HOST, ...(site ? { "sec-fetch-site": site } : {}) } });
+
+    assert.equal((await session("cross-site")).statusCode, 403);
+    assert.equal((await session("same-site")).statusCode, 403);
+    assert.equal((await session(undefined)).statusCode, 403);
+    const response = await session("same-origin");
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers["set-cookie"], `aihub_token=${TOKEN}; Path=/api; HttpOnly; SameSite=Strict; Max-Age=315360000`);
+    assert.equal((await session("none")).statusCode, 200);
+  });
+
+  it("forbids framing", async () => {
+    ({ app } = await server());
+
+    const response = await app.inject({ url: "/api/health", headers: PAGE });
+
+    assert.equal(response.headers["x-frame-options"], "DENY");
+    assert.equal(response.headers["content-security-policy"], "frame-ancestors 'none'");
   });
 
   it("returns the current state", async () => {
     ({ app } = await server());
 
-    const response = await app.inject({ url: "/api/state", headers: { host: HOST } });
+    const response = await app.inject({ url: "/api/state", headers: PAGE });
 
     const state = response.json<StateSnapshot>();
     assert.equal(state.agents[0]?.name, "Chief of Staff");
@@ -71,7 +135,7 @@ describe("HTTP server", () => {
     let office: Office;
     ({ app, office } = await server());
 
-    const response = await app.inject({ method: "POST", url: "/api/chat", headers: { host: HOST }, payload: { conversationId: CHAT, text: "Hi" } });
+    const response = await app.inject({ method: "POST", url: "/api/chat", headers: PAGE, payload: { conversationId: CHAT, text: "Hi" } });
 
     assert.equal(response.statusCode, 202);
     const body = response.json<ChatResponse>();
@@ -83,7 +147,7 @@ describe("HTTP server", () => {
 
   it("rejects an empty message and an unknown conversation", async () => {
     ({ app } = await server());
-    const post = (payload: object) => app!.inject({ method: "POST", url: "/api/chat", headers: { host: HOST }, payload });
+    const post = (payload: object) => app!.inject({ method: "POST", url: "/api/chat", headers: PAGE, payload });
 
     assert.equal((await post({ conversationId: CHAT, text: "   " })).statusCode, 400);
     assert.equal((await post({ conversationId: "nobody", text: "Hi" })).statusCode, 404);
@@ -96,8 +160,10 @@ describe("HTTP server", () => {
     const base = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
     const { lastEventId } = office.snapshot();
 
-    const reading = readEvents(`${base}/api/events?after=${lastEventId}`, (events) =>
-      events.some((event) => event.type === "message" && event.message.author === "agent"),
+    const reading = readEvents(
+      `${base}/api/events?after=${lastEventId}`,
+      (events) => events.some((event) => event.type === "message" && event.message.author === "agent"),
+      { headers: { cookie: PAGE.cookie } },
     );
     await new Promise((resolve) => setTimeout(resolve, 50));
     office.chat(CHAT, "Hello there");
@@ -119,11 +185,13 @@ describe("HTTP server", () => {
     await office.queue.idle();
 
     const replayed = await readEvents(`${base}/api/events`, (events) => events.some((event) => event.type === "message"), {
-      headers: { "last-event-id": lastEventId },
+      headers: { "last-event-id": lastEventId, cookie: PAGE.cookie },
     });
     assert.equal(replayed[0]?.type === "message" && replayed[0].message.body, "While you were away");
 
-    const stale = await readEvents(`${base}/api/events?after=0badb007-12`, (events) => events.length > 0);
+    const stale = await readEvents(`${base}/api/events?after=0badb007-12`, (events) => events.length > 0, {
+      headers: { cookie: PAGE.cookie },
+    });
     assert.deepEqual(stale, [{ type: "resync" }]);
   });
 });
