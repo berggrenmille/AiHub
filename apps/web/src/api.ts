@@ -1,4 +1,18 @@
-import type { ChatRequest, ChatResponse, DaemonEvent, StateSnapshot } from "@aihub/shared";
+import type {
+  Agent,
+  ApproveProposalRequest,
+  ChatRequest,
+  ChatResponse,
+  DaemonEvent,
+  Item,
+  Note,
+  NoteSummary,
+  Proposal,
+  ResolveItemRequest,
+  StateSnapshot,
+  UpdateAgentRequest,
+  WriteNoteRequest,
+} from "@aihub/shared";
 import type { ConnectionStatus } from "./state.ts";
 
 export class ApiError extends Error {
@@ -6,10 +20,15 @@ export class ApiError extends Error {
     message: string,
     /** The HTTP status, or 0 when the daemon could not be reached. */
     readonly status: number,
+    /** True when the daemon has no such endpoint yet, as opposed to no such record. */
+    readonly unsupported = false,
   ) {
     super(message);
   }
 }
+
+/** Shown when the daemon doesn't have an endpoint the UI already uses. */
+export const UNSUPPORTED_MESSAGE = "This daemon can't do that yet. It arrives with a daemon update.";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
@@ -18,19 +37,37 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   } catch {
     throw new ApiError("Can't reach the AiHub daemon. Is it running?", 0);
   }
-  if (!response.ok) throw new ApiError(await failureText(response), response.status);
+  if (!response.ok) {
+    const failure = await failureOf(response);
+    throw new ApiError(failure.unsupported ? UNSUPPORTED_MESSAGE : failure.text, response.status, failure.unsupported);
+  }
   return (await response.json()) as T;
 }
 
-/** The daemon's `{ error }` text when it sent one, otherwise the status. */
-async function failureText(response: Response): Promise<string> {
+/**
+ * The daemon's `{ error }` text when it sent one, otherwise the status. A 404 from a route the
+ * daemon doesn't have comes from Fastify's own handler, `{ message: "Route POST:/x not found" }`,
+ * which tells it apart from a 404 for a record that doesn't exist.
+ */
+async function failureOf(response: Response): Promise<{ text: string; unsupported: boolean }> {
   try {
-    const body = (await response.json()) as { error?: unknown };
-    if (typeof body.error === "string") return body.error;
+    const body = (await response.json()) as { error?: unknown; message?: unknown };
+    const unsupported = response.status === 404 && typeof body.message === "string" && /^Route \S+ not found$/.test(body.message);
+    if (unsupported) return { text: body.message as string, unsupported };
+    if (typeof body.error === "string") return { text: body.error, unsupported: false };
   } catch {
     // Not JSON, such as a proxy error while the daemon is down.
   }
-  return `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
+  return { text: `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`, unsupported: false };
+}
+
+/** A message for an error from any API call. */
+export function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function json(method: string, body: unknown): RequestInit {
+  return { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
 }
 
 /** Sets the token cookie that every other API call needs. */
@@ -49,11 +86,47 @@ export function loadState(): Promise<StateSnapshot> {
 
 /** Records the message and queues the reply. The reply itself arrives on the event stream. */
 export function sendChat(body: ChatRequest): Promise<ChatResponse> {
-  return request<ChatResponse>("/api/chat", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  return request<ChatResponse>("/api/chat", json("POST", body));
+}
+
+/** Edits a staff member's profile. A name another staff member has answers 409. */
+export function updateAgent(agentId: string, body: UpdateAgentRequest): Promise<Agent> {
+  return request<Agent>(`/api/agents/${encodeURIComponent(agentId)}`, json("PATCH", body));
+}
+
+/** The URL of a note: its vault path, each segment encoded. */
+export function noteUrl(path: string): string {
+  return `/api/notes/${path.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+export function getNote(path: string): Promise<Note> {
+  return request<Note>(noteUrl(path));
+}
+
+/** Writes a note as the operator. Profile notes answer 409: they follow the staff card. */
+export function putNote(path: string, body: WriteNoteRequest): Promise<NoteSummary> {
+  return request<NoteSummary>(noteUrl(path), json("PUT", body));
+}
+
+export function approveProposal(proposalId: string, body: ApproveProposalRequest): Promise<Proposal> {
+  return request<Proposal>(`/api/proposals/${encodeURIComponent(proposalId)}/approve`, json("POST", body));
+}
+
+export function declineProposal(proposalId: string): Promise<Proposal> {
+  return request<Proposal>(`/api/proposals/${encodeURIComponent(proposalId)}/decline`, json("POST", {}));
+}
+
+export function dismissItem(itemId: number): Promise<Item> {
+  return request<Item>(`/api/items/${itemId}/dismiss`, json("POST", {}));
+}
+
+export function resolveItem(itemId: number, body: ResolveItemRequest): Promise<Item> {
+  return request<Item>(`/api/items/${itemId}/resolve`, json("POST", body));
+}
+
+/** Starts a routine now. Its run arrives on the event stream. */
+export function runRoutine(routineId: string): Promise<unknown> {
+  return request<unknown>(`/api/routines/${encodeURIComponent(routineId)}/run`, json("POST", {}));
 }
 
 export interface OfficeConnectionHandlers {

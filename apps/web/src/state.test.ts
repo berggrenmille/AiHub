@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { ActivityEntry, Agent, ChatMessage, DaemonEvent, Run, StateSnapshot } from "@aihub/shared";
+import type { ActivityEntry, Agent, ChatMessage, DaemonEvent, Item, NoteSummary, Proposal, Responsibility, Run, StateSnapshot } from "@aihub/shared";
 import { ACTIVITY_LIMIT, initialOfficeState, officeReducer, rosterOrder, type OfficeAction, type OfficeState } from "./state.ts";
 
 const CHAT = "chief-of-staff";
@@ -263,6 +263,153 @@ describe("office state", () => {
     assert.equal(state.connection, "connected");
     assert.equal(state.error, null);
     assert.equal(apply(state, { type: "connection", status: "connected", error: null }), state);
+  });
+});
+
+function responsibility(overrides: Partial<Responsibility> = {}): Responsibility {
+  return {
+    id: "resp-1",
+    ownerId: "work-schedule",
+    title: "Work schedule",
+    scope: "The work calendar.",
+    standingInstructions: "",
+    expiresAt: null,
+    status: "active",
+    endedAt: null,
+    ...overrides,
+  };
+}
+
+function proposal(overrides: Partial<Proposal> = {}): Proposal {
+  return {
+    id: "prop-1",
+    kind: "recruit_supervisor",
+    proposedBy: "chief-of-staff",
+    payload: {
+      profile: { name: "Rut", title: "Bookkeeping Supervisor", description: "Keeps the books.", workingStyle: "Careful." },
+      responsibility: { title: "Bookkeeping", scope: "Bank exports.", standingInstructions: "", expiresAt: null },
+      source: { kind: "ics_file", label: "Bank export" },
+      reason: "You asked.",
+    },
+    status: "pending",
+    outcome: null,
+    createdAt: "2026-11-07T16:00:00.000Z",
+    decidedAt: null,
+    ...overrides,
+  };
+}
+
+function item(overrides: Partial<Item> = {}): Item {
+  return {
+    id: 1,
+    responsibilityId: "resp-1",
+    sourceKey: "event-1",
+    title: "Planning moved",
+    detail: "Now at 10:00.",
+    urgency: "today",
+    state: "new",
+    firstSeenAt: "2026-11-07T16:00:00.000Z",
+    lastReportedAt: null,
+    resolution: null,
+    updatedAt: "2026-11-07T16:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function note(overrides: Partial<NoteSummary> = {}): NoteSummary {
+  return {
+    path: "Office/Operator preferences.md",
+    title: "Operator preferences",
+    ownerId: null,
+    kind: "office",
+    provenance: "operator",
+    links: [],
+    updatedAt: "2026-11-07T16:00:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("office records", () => {
+  it("loads responsibilities, connections, routines, proposals, items, notes and stats from the snapshot", () => {
+    const office = { turnsToday: 12, dailyTurnLimit: 80, activeSupervisors: 2, supervisorLimit: 8, briefingStreak: 3 };
+    const state = apply(initialOfficeState, {
+      type: "snapshot",
+      snapshot: snapshot({
+        responsibilities: [responsibility()],
+        connections: [{ id: "conn-1", kind: "ics_file", label: "Work calendar", path: "C:/work.ics", status: "connected", detail: "12 events", verifiedAt: null }],
+        routines: [{ id: "routine-1", ownerId: "work-schedule", responsibilityId: "resp-1", title: "Check", trigger: { type: "briefing" }, timezone: "Europe/Stockholm", dailyTurnBudget: 4, paused: false, nextRunAt: null }],
+        proposals: [proposal({ id: "old", createdAt: "2026-11-06T09:00:00.000Z" }), proposal({ id: "new" })],
+        items: [item()],
+        notes: [note()],
+        office,
+      }),
+    });
+    assert.equal(state.responsibilities.length, 1);
+    assert.equal(state.connections[0]?.label, "Work calendar");
+    assert.equal(state.routines[0]?.id, "routine-1");
+    assert.deepEqual(state.proposals.map((p) => p.id), ["new", "old"]);
+    assert.equal(state.items.length, 1);
+    assert.equal(state.notes.length, 1);
+    assert.deepEqual(state.office, office);
+  });
+
+  it("upserts responsibilities, connections and routines by id", () => {
+    let state = events(loaded(), { type: "responsibility", responsibility: responsibility() });
+    state = events(state, { type: "responsibility", responsibility: responsibility({ status: "ended", endedAt: "2026-11-07T18:00:00.000Z" }) });
+    assert.equal(state.responsibilities.length, 1);
+    assert.equal(state.responsibilities[0]?.status, "ended");
+
+    const connection = { id: "conn-1", kind: "ics_file" as const, label: "Work calendar", path: "C:/work.ics", status: "unverified" as const, detail: null, verifiedAt: null };
+    state = events(state, { type: "connection", connection }, { type: "connection", connection: { ...connection, status: "failed", detail: "Not found" } });
+    assert.deepEqual(state.connections.map((c) => [c.id, c.status]), [["conn-1", "failed"]]);
+
+    const routine = { id: "r-1", ownerId: "work-schedule", responsibilityId: null, title: "Check", trigger: { type: "weekdays" as const, time: "07:00" }, timezone: "Europe/Stockholm", dailyTurnBudget: 4, paused: false, nextRunAt: null };
+    state = events(state, { type: "routine", routine }, { type: "routine", routine: { ...routine, paused: true } }, { type: "routine", routine: { ...routine, id: "r-2" } });
+    assert.deepEqual(state.routines.map((r) => [r.id, r.paused]), [["r-1", true], ["r-2", false]]);
+  });
+
+  it("keeps proposals newest first and never reopens a decided one", () => {
+    let state = events(loaded(), { type: "proposal", proposal: proposal({ id: "a", createdAt: "2026-11-07T09:00:00.000Z" }) }, { type: "proposal", proposal: proposal({ id: "b" }) });
+    assert.deepEqual(state.proposals.map((p) => p.id), ["b", "a"]);
+    const approved = proposal({ id: "b", status: "approved", outcome: "Hired Rut", decidedAt: "2026-11-07T16:05:00.000Z" });
+    state = events(state, { type: "proposal", proposal: approved });
+    assert.equal(state.proposals[0]?.status, "approved");
+    // A late copy from before the decision changes nothing.
+    assert.equal(events(state, { type: "proposal", proposal: proposal({ id: "b" }) }), state);
+  });
+
+  it("ignores an item update older than the one it has", () => {
+    let state = events(loaded(), { type: "item", item: item() });
+    state = events(state, { type: "item", item: item({ state: "resolved", resolution: "Done", updatedAt: "2026-11-07T17:00:00.000Z" }) });
+    assert.equal(state.items[0]?.state, "resolved");
+    assert.equal(events(state, { type: "item", item: item({ state: "open", updatedAt: "2026-11-07T16:30:00.000Z" }) }), state);
+    state = events(state, { type: "item", item: item({ id: 2, sourceKey: "event-2" }) });
+    assert.deepEqual(state.items.map((i) => i.id), [1, 2]);
+  });
+
+  it("upserts notes by path and drops the old path when a profile note is renamed", () => {
+    const profile = note({ path: "Staff/work-schedule/Elin.md", title: "Elin", ownerId: "work-schedule", kind: "profile", provenance: "aihub" });
+    const topic = note({ path: "Staff/work-schedule/Anna.md", title: "Anna", ownerId: "work-schedule", kind: "topic", provenance: "source_data" });
+    let state = events(loaded(), { type: "note", note: note() }, { type: "note", note: profile }, { type: "note", note: topic });
+    assert.equal(state.notes.length, 3);
+
+    state = events(state, { type: "note", note: note({ links: ["Elin"], updatedAt: "2026-11-07T17:00:00.000Z" }) });
+    assert.equal(state.notes.length, 3);
+    assert.deepEqual(state.notes.find((n) => n.kind === "office")?.links, ["Elin"]);
+    assert.equal(events(state, { type: "note", note: note({ links: [] }) }), state, "an older copy is ignored");
+
+    state = events(state, { type: "note", note: { ...profile, path: "Staff/work-schedule/Elina.md", title: "Elina", updatedAt: "2026-11-07T18:00:00.000Z" } });
+    assert.deepEqual(state.notes.map((n) => n.path).sort(), ["Office/Operator preferences.md", "Staff/work-schedule/Anna.md", "Staff/work-schedule/Elina.md"]);
+  });
+
+  it("replaces the office stats", () => {
+    const office = { turnsToday: 40, dailyTurnLimit: 80, activeSupervisors: 4, supervisorLimit: 8, briefingStreak: 5 };
+    assert.deepEqual(events(loaded(), { type: "office", office }).office, office);
+  });
+
+  it("ignores event types from a newer daemon", () => {
+    const state = loaded();
+    assert.equal(events(state, { type: "surprise" } as unknown as DaemonEvent), state);
   });
 });
 
