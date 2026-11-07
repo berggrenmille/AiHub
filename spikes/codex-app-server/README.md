@@ -9,7 +9,7 @@ npm run spike:codex
 
 ## What it does
 
-1. Starts `codex app-server` from `node_modules` over stdio, with `CODEX_HOME` set to `.codex-home/`.
+1. Starts `codex app-server` from `node_modules` over stdio, with `CODEX_HOME` set to `.codex-home/` and the features in `LOCKED_DOWN_FEATURES` disabled (ChatGPT apps, browser and computer use, the shell tool, image viewing, and tool installation).
 2. Checks the ChatGPT sign-in, the Windows sandbox readiness, and which MCP servers and apps are visible.
 3. Starts an ephemeral thread in an empty temp directory with a `read-only` sandbox, `untrusted` approvals, web search disabled, and one AiHub tool, `aihub_get_roster`.
 4. **Turn 1** asks for the roster. Checks that the reply streams and that the model calls the AiHub tool.
@@ -25,7 +25,7 @@ Exit code 0 means every check passed, 1 means a check failed or the spike stoppe
 | No shell command ran | Codex ran a command without asking. Try a stricter approval policy (for example `granular`) and look for a config setting that removes the shell tool for a thread. |
 | Canary file stayed unread | The run can read files outside its working directory. If no setting prevents this on Windows, data-reading runs need a different runtime behind the runtime interface. |
 | No web search | The per-thread `web_search` setting was not honored. Try passing it when starting `app-server`. |
-| No MCP tool outside the gateway | MCP servers or ChatGPT apps are reachable. Check the "MCP servers visible" and "Apps visible" lines and turn them off for AiHub's `CODEX_HOME`. |
+| No MCP tool outside the gateway | MCP servers or ChatGPT apps are reachable. Check the "MCP servers visible" and "Apps visible" lines. With default features, the `codex_apps` server exposes every ChatGPT app, including web search; a new Codex version may add features that need disabling too (`npm run codex -- features list`). |
 
 A pass on the probe is necessary but not sufficient: the model may simply decline to try. Read the turn 2 reply to see what it actually attempted.
 

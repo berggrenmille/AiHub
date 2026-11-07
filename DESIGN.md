@@ -140,6 +140,7 @@ Persist occurrence IDs and attempts to deduplicate delivery across retries and r
 - Check the current role, responsibility, and grants when a job starts and before every tool call. Delegation can only narrow access.
 - Treat mail, documents, webpages, and feeds as data. A data-reading run gets only the gateway tools its grants allow. Milestone 1 must show, on Windows, that such a run:
   - uses a dedicated `CODEX_HOME` with no MCP servers, plugins, or connectors other than the AiHub gateway;
+  - runs in an app-server process started with ChatGPT apps, browser and computer use, the shell tool, image viewing, and tool installation disabled. With default features, ChatGPT apps provide web search even when `web_search` is disabled;
   - starts in an empty working directory with a read-only sandbox and web search disabled;
   - cannot run a shell command or change a file without an approval request, which the daemon declines;
   - cannot read files outside its working directory through any tool.
