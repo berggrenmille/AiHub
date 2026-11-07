@@ -187,4 +187,30 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE messages ADD COLUMN kind TEXT NOT NULL DEFAULT 'chat';
   ALTER TABLE messages ADD COLUMN ref_id TEXT;
   `,
+
+  // v4: assignments, for questions to colleagues and delegated tasks (Milestone 3).
+  `
+  CREATE TABLE assignments (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('question', 'task')),
+    requester_id TEXT NOT NULL REFERENCES agents (id),
+    owner_id TEXT NOT NULL REFERENCES agents (id),
+    parent_id TEXT REFERENCES assignments (id),
+    conversation_id TEXT REFERENCES conversations (id),
+    responsibility_id TEXT REFERENCES responsibilities (id),
+    title TEXT NOT NULL,
+    brief TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('open', 'waiting', 'delivered', 'accepted', 'failed')),
+    run_budget INTEGER NOT NULL,
+    runs_used INTEGER NOT NULL DEFAULT 0,
+    result TEXT,
+    review TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX assignments_by_parent ON assignments (parent_id);
+  CREATE INDEX assignments_by_status ON assignments (status, updated_at);
+
+  ALTER TABLE runs ADD COLUMN assignment_id TEXT REFERENCES assignments (id);
+  `,
 ];

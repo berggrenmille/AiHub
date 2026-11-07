@@ -2,6 +2,9 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import {
   ACTIVE_RUN_STATES,
   type ActivityEntry,
+  type Assignment,
+  type AssignmentKind,
+  type AssignmentStatus,
   type ActivityKind,
   type Agent,
   type AgentRole,
@@ -254,11 +257,13 @@ export class Store {
 
   // Runs --------------------------------------------------------------------
 
-  createRun(run: { agentId: string; kind: RunKind; title: string; responsibilityId?: string | null }): Run {
+  createRun(run: { agentId: string; kind: RunKind; title: string; responsibilityId?: string | null; assignmentId?: string | null }): Run {
     const id = crypto.randomUUID();
     this.db
-      .prepare("INSERT INTO runs (id, agent_id, responsibility_id, kind, title, state, queued_at) VALUES (?, ?, ?, ?, ?, 'queued', ?)")
-      .run(id, run.agentId, run.responsibilityId ?? null, run.kind, run.title, this.timestamp());
+      .prepare(
+        "INSERT INTO runs (id, agent_id, responsibility_id, assignment_id, kind, title, state, queued_at) VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)",
+      )
+      .run(id, run.agentId, run.responsibilityId ?? null, run.assignmentId ?? null, run.kind, run.title, this.timestamp());
     return this.getRun(id)!;
   }
 
@@ -672,6 +677,109 @@ export class Store {
     return rows.flatMap(({ id }) => this.closeItem(Number(id), "resolved", resolution) ?? []);
   }
 
+  // Assignments -------------------------------------------------------------
+
+  createAssignment(input: {
+    kind: AssignmentKind;
+    requesterId: string;
+    ownerId: string;
+    parentId: string | null;
+    conversationId: string | null;
+    responsibilityId: string | null;
+    title: string;
+    brief: string;
+    runBudget: number;
+  }): Assignment {
+    const id = crypto.randomUUID();
+    const now = this.timestamp();
+    this.db
+      .prepare(
+        `INSERT INTO assignments (id, kind, requester_id, owner_id, parent_id, conversation_id, responsibility_id, title, brief, status, run_budget, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)`,
+      )
+      .run(id, input.kind, input.requesterId, input.ownerId, input.parentId, input.conversationId, input.responsibilityId, input.title, input.brief, input.runBudget, now, now);
+    return this.getAssignment(id)!;
+  }
+
+  getAssignment(id: string): (Assignment & { responsibilityId: string | null }) | null {
+    const row = this.db.prepare(`${ASSIGNMENT_SELECT} WHERE x.id = ?`).get(id) as Row | undefined;
+    return row ? toAssignment(row) : null;
+  }
+
+  /** Open and waiting assignments, then the most recent settled ones, newest first. */
+  listAssignments(recent = 30): Assignment[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM (${ASSIGNMENT_SELECT} WHERE x.status IN ('open', 'waiting'))
+         UNION ALL
+         SELECT * FROM (${ASSIGNMENT_SELECT} WHERE x.status NOT IN ('open', 'waiting') ORDER BY x.updated_at DESC, x.id LIMIT ?)`,
+      )
+      .all(recent) as Row[];
+    const open = (row: Row) => row.status === "open" || row.status === "waiting";
+    return rows
+      .sort((a, b) => Number(open(b)) - Number(open(a)) || String(b.updated_at).localeCompare(String(a.updated_at)))
+      .map((row) => {
+        const { responsibilityId: _responsibility, ...assignment } = toAssignment(row);
+        return assignment;
+      });
+  }
+
+  childrenOf(parentId: string): Array<Assignment & { responsibilityId: string | null }> {
+    const rows = this.db.prepare(`${ASSIGNMENT_SELECT} WHERE x.parent_id = ? ORDER BY x.created_at, x.id`).all(parentId) as Row[];
+    return rows.map(toAssignment);
+  }
+
+  /** Assignments in these states, such as open ones to pick up after a restart. */
+  assignmentsIn(statuses: AssignmentStatus[]): Array<Assignment & { responsibilityId: string | null }> {
+    const rows = this.db
+      .prepare(`${ASSIGNMENT_SELECT} WHERE x.status IN (${statuses.map(() => "?").join(", ")}) ORDER BY x.created_at, x.id`)
+      .all(...statuses) as Row[];
+    return rows.map(toAssignment);
+  }
+
+  countAssignments(filter: { requesterId?: string; ownerId?: string; kind?: AssignmentKind; statuses: AssignmentStatus[] }): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM assignments
+         WHERE status IN (${filter.statuses.map(() => "?").join(", ")})
+           AND (? IS NULL OR requester_id = ?) AND (? IS NULL OR owner_id = ?) AND (? IS NULL OR kind = ?)`,
+      )
+      .get(
+        ...filter.statuses,
+        filter.requesterId ?? null,
+        filter.requesterId ?? null,
+        filter.ownerId ?? null,
+        filter.ownerId ?? null,
+        filter.kind ?? null,
+        filter.kind ?? null,
+      ) as { n: number };
+    return Number(row.n);
+  }
+
+  updateAssignment(id: string, update: { status?: AssignmentStatus; result?: string | null; review?: string | null; runStarted?: boolean }) {
+    this.db
+      .prepare(
+        `UPDATE assignments SET
+           status = COALESCE(?, status),
+           result = CASE WHEN ? THEN ? ELSE result END,
+           review = CASE WHEN ? THEN ? ELSE review END,
+           runs_used = runs_used + ?,
+           updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(
+        update.status ?? null,
+        update.result !== undefined ? 1 : 0,
+        update.result ?? null,
+        update.review !== undefined ? 1 : 0,
+        update.review ?? null,
+        update.runStarted ? 1 : 0,
+        this.timestamp(),
+        id,
+      );
+    return this.getAssignment(id)!;
+  }
+
   // Settings ----------------------------------------------------------------
 
   getSetting(key: string): string | null {
@@ -732,7 +840,7 @@ function toRun(row: Row): Run {
     id: String(row.id),
     agentId: String(row.agent_id),
     responsibilityId: row.responsibility_id as string | null,
-    assignmentId: (row.assignment_id as string | null | undefined) ?? null,
+    assignmentId: row.assignment_id as string | null,
     kind: row.kind as RunKind,
     title: String(row.title),
     state: row.state as RunState,
@@ -823,6 +931,32 @@ function toProposal(row: Row): Proposal {
     outcome: row.outcome as string | null,
     createdAt: String(row.created_at),
     decidedAt: row.decided_at as string | null,
+  };
+}
+
+const ASSIGNMENT_SELECT = `SELECT x.*, r.name AS requester_name, o.name AS owner_name
+  FROM assignments x JOIN agents r ON r.id = x.requester_id JOIN agents o ON o.id = x.owner_id`;
+
+function toAssignment(row: Row): Assignment & { responsibilityId: string | null } {
+  return {
+    id: String(row.id),
+    kind: row.kind as AssignmentKind,
+    requesterId: String(row.requester_id),
+    requesterName: String(row.requester_name),
+    ownerId: String(row.owner_id),
+    ownerName: String(row.owner_name),
+    parentId: row.parent_id as string | null,
+    conversationId: row.conversation_id as string | null,
+    responsibilityId: row.responsibility_id as string | null,
+    title: String(row.title),
+    brief: String(row.brief),
+    status: row.status as AssignmentStatus,
+    runBudget: Number(row.run_budget),
+    runsUsed: Number(row.runs_used),
+    result: row.result as string | null,
+    review: row.review as string | null,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
   };
 }
 

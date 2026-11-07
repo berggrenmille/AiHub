@@ -5,3 +5,15 @@ export const SUPERVISOR_LIMIT = 8;
 
 /** Model turns per local day across the office. Background work defers when it runs out. */
 export const DAILY_TURN_LIMIT = 80;
+
+/** Questions one staff member may have waiting for answers at once. */
+export const OPEN_QUESTIONS_LIMIT = 3;
+
+/** Tasks the Chief of Staff may have under way at once. */
+export const OPEN_TASKS_LIMIT = 4;
+
+/** Runs a question may use: the answer, with no follow-up. */
+export const QUESTION_RUNS = 1;
+
+/** Runs a task may use by default, including follow-ups once what it asked for arrives. */
+export const TASK_RUNS = 3;

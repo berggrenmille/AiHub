@@ -1,4 +1,4 @@
-import type { AgentRole, Proposal, RecruitProposal, RunProfile } from "@aihub/shared";
+import type { AgentRole, Assignment, Proposal, RecruitProposal, RunKind, RunProfile } from "@aihub/shared";
 import { z } from "zod";
 import type { Notebook } from "../notes/notebook.ts";
 import type { ToolCall, ToolOutcome, ToolSpec } from "../runtime/types.ts";
@@ -13,12 +13,19 @@ export interface Caller {
   sourceData?: boolean;
 }
 
+/** Questions and tasks between staff. Each records an assignment; the asking turn then ends. */
+export interface DelegationService {
+  ask(caller: Caller, input: { colleague: string; question: string }): Assignment;
+  assign(caller: Caller, input: { colleague: string; title: string; deliverable: string; runBudget?: number }): Assignment;
+}
+
 /** What tools may ask the office to do. The office checks its rules, records, and publishes each change. */
 export interface OfficeServices {
   /** The staff's notes, when the office keeps a vault. */
   notebook: Notebook | null;
   /** Records a recruitment proposal and shows it to the operator as an approval card. */
   proposeSupervisor: ((caller: Caller, proposal: RecruitProposal) => Proposal) | null;
+  delegation: DelegationService | null;
 }
 
 export interface ToolContext extends OfficeServices {
@@ -35,6 +42,8 @@ export interface GatewayTool<Input extends z.ZodType = z.ZodType> {
   roles: readonly AgentRole[];
   /** Run profiles the tool is offered in. Data runs only ever get tools that cannot act outside AiHub. */
   profiles: readonly RunProfile[];
+  /** Run kinds the tool works in, such as no questions from a run that answers one. All when omitted. */
+  kinds?: readonly RunKind[];
   run: (input: z.output<Input>, context: ToolContext) => string | Promise<string>;
 }
 
@@ -61,19 +70,23 @@ export class Gateway {
     }
   }
 
-  /** The tools to offer a run. */
-  specsFor(caller: Caller): ToolSpec[] {
+  /**
+   * The tools to offer a run. A chat thread keeps one tool list for every turn, so a chat follow-up
+   * is offered tools as a chat run (`asKind`), and the call check refuses what its kind doesn't allow.
+   */
+  specsFor(caller: Caller, asKind?: RunKind): ToolSpec[] {
     const agent = this.store.getAgentRecord(caller.agentId);
     if (!agent) return [];
+    const kind = asKind ?? this.store.getRun(caller.runId)?.kind;
     return [...this.tools.values()]
-      .filter((tool) => permits(tool, agent, caller))
+      .filter((tool) => permits(tool, agent, caller, kind))
       .map((tool) => ({ name: tool.name, description: tool.description, inputSchema: jsonSchemaOf(tool.input) }));
   }
 
   async call(caller: Caller, call: ToolCall): Promise<ToolOutcome> {
     const tool = this.tools.get(call.name);
     const agent = this.store.getAgentRecord(caller.agentId);
-    if (!tool || !agent || !permits(tool, agent, caller)) {
+    if (!tool || !agent || !permits(tool, agent, caller, this.store.getRun(caller.runId)?.kind)) {
       return this.refuse(caller, call.name, `${call.name} is not available to this run.`);
     }
     // A run under an ended or expired responsibility, such as a mandate, can do nothing more.
@@ -86,7 +99,11 @@ export class Gateway {
       return this.refuse(caller, call.name, `Invalid arguments for ${call.name}: ${z.prettifyError(input.error)}`);
     }
     try {
-      const services = { notebook: this.services.notebook ?? null, proposeSupervisor: this.services.proposeSupervisor ?? null };
+      const services = {
+        notebook: this.services.notebook ?? null,
+        proposeSupervisor: this.services.proposeSupervisor ?? null,
+        delegation: this.services.delegation ?? null,
+      };
       const text = await tool.run(input.data, { caller, agent, store: this.store, ...services });
       this.record(caller, "tool_call", `Used ${call.name}`, { tool: call.name, arguments: input.data });
       return { ok: true, text };
@@ -105,8 +122,13 @@ export class Gateway {
   }
 }
 
-function permits(tool: GatewayTool, agent: AgentRecord, caller: Caller): boolean {
-  return agent.status === "active" && tool.roles.includes(agent.role) && tool.profiles.includes(caller.profile);
+function permits(tool: GatewayTool, agent: AgentRecord, caller: Caller, kind: RunKind | undefined): boolean {
+  return (
+    agent.status === "active" &&
+    tool.roles.includes(agent.role) &&
+    tool.profiles.includes(caller.profile) &&
+    (!tool.kinds || (kind !== undefined && tool.kinds.includes(kind)))
+  );
 }
 
 function jsonSchemaOf(schema: z.ZodType): Record<string, unknown> {

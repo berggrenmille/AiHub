@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import type { RunKind, RunProfile } from "@aihub/shared";
 import { Store } from "../store/store.ts";
 import { Gateway, type Caller } from "./gateway.ts";
 import { OFFICE_TOOLS } from "./tools.ts";
@@ -23,10 +24,39 @@ describe("Gateway", () => {
   it("offers each run only the tools its role and profile allow", () => {
     const { gateway, chief, supervisor } = office();
 
-    assert.deepEqual(gateway.specsFor(chief).map((tool) => tool.name), ["aihub_get_roster", "aihub_list_activity", "aihub_propose_supervisor", ...NOTE_TOOLS]);
-    assert.deepEqual(gateway.specsFor({ ...chief, profile: "data" }).map((tool) => tool.name), NOTE_TOOLS);
+    assert.deepEqual(gateway.specsFor(chief).map((tool) => tool.name), [
+      "aihub_get_roster",
+      "aihub_list_activity",
+      "aihub_propose_supervisor",
+      "aihub_ask_colleague",
+      "aihub_assign_task",
+      ...NOTE_TOOLS,
+    ]);
+    assert.deepEqual(gateway.specsFor({ ...chief, profile: "data" }).map((tool) => tool.name), ["aihub_ask_colleague", ...NOTE_TOOLS]);
     assert.deepEqual(gateway.specsFor(supervisor).map((tool) => tool.name), ["aihub_submit_report", ...NOTE_TOOLS]);
     assert.deepEqual(gateway.specsFor({ ...supervisor, profile: "conversation" }).map((tool) => tool.name), NOTE_TOOLS);
+  });
+
+  it("offers each kind of run only the tools that kind allows", async () => {
+    const { gateway, store, chief } = office();
+    const asRun = (agentId: string, kind: RunKind, profile: RunProfile): Caller => ({
+      agentId,
+      runId: store.createRun({ agentId, kind, title: kind }).id,
+      profile,
+    });
+    const names = (caller: Caller, asKind?: RunKind) => gateway.specsFor(caller, asKind).map((tool) => tool.name);
+
+    // A task may ask a colleague and read its sources; an answer to a question may only read.
+    assert.deepEqual(names(asRun("schedule", "assignment", "data")), ["aihub_ask_colleague", "aihub_read_calendar", ...NOTE_TOOLS]);
+    assert.deepEqual(names(asRun("schedule", "question", "data")), ["aihub_read_calendar", ...NOTE_TOOLS]);
+    assert.deepEqual(names(asRun("schedule", "follow_up", "data")), ["aihub_read_calendar", ...NOTE_TOOLS]);
+
+    // A chat follow-up is offered the chat's tools, so the thread stays the same, but can't delegate again.
+    const followUp = asRun("chief", "follow_up", "conversation");
+    assert.deepEqual(names(followUp, "chat"), names(chief));
+    const refused = await gateway.call(followUp, { name: "aihub_ask_colleague", arguments: { colleague: "Work Schedule", question: "Free on Friday?" } });
+    assert.equal(refused.ok, false);
+    assert.match(refused.text, /not available to this run/);
   });
 
   it("describes tool input as JSON Schema", () => {

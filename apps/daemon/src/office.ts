@@ -28,6 +28,7 @@ import { DAILY_TURN_LIMIT, SUPERVISOR_LIMIT } from "./limits.ts";
 import { Notebook } from "./notes/notebook.ts";
 import { CHIEF_OF_STAFF, CHIEF_OF_STAFF_CONVERSATION_ID } from "./staff/chief-of-staff.ts";
 import { instructionsFor } from "./staff/identity.ts";
+import { Delegation } from "./staff/delegation.ts";
 import { proposeSupervisor } from "./staff/proposals.ts";
 import type { Scheduler } from "./scheduler.ts";
 import type { ConversationRecord, Store } from "./store/store.ts";
@@ -51,6 +52,19 @@ export interface Task {
   responsibilityId?: string | null;
   /** The input holds source data or reports written from it, so the run's notes count as source data. */
   sourceData?: boolean;
+  /** The question or task the run works on. */
+  assignmentId?: string | null;
+}
+
+/** What a chat turn answers: the operator's message, or news AiHub brings to the conversation. */
+interface ChatPrompt {
+  text: string;
+  /** Introduces `text` when a rebuilt context replays the earlier messages first. */
+  label: string;
+  /** The message `text` came from, left out of the replayed history. */
+  messageId: number | null;
+  journal: string;
+  sourceData: boolean;
 }
 
 export interface TaskOutcome {
@@ -89,6 +103,7 @@ export class Office {
   private runtimeStatus: RuntimeStatus | null = null;
   /** Set by the daemon once it schedules routines. */
   scheduler: Scheduler | null = null;
+  readonly delegation: Delegation;
 
   constructor(options: OfficeOptions) {
     this.store = options.store;
@@ -98,9 +113,11 @@ export class Office {
     this.turnTimeoutMs = options.turnTimeoutMs;
     const vaultDir = options.vaultDir ?? mkdtempSync(join(tmpdir(), "aihub-vault-"));
     this.notebook = new Notebook(vaultDir, this.store, (note) => this.bus.publish({ type: "note", note }));
+    this.delegation = new Delegation(this);
     this.gateway = new Gateway(this.store, options.tools ?? OFFICE_TOOLS, (entry) => this.bus.publish({ type: "activity", entry }), {
       notebook: this.notebook,
       proposeSupervisor: (caller, proposal) => proposeSupervisor(this, caller, proposal),
+      delegation: this.delegation,
     });
   }
 
@@ -124,6 +141,7 @@ export class Office {
         dailyTurnBudget: 6,
       });
     }
+    this.delegation.resume();
   }
 
   /** Writes every staff member's profile note from its record. */
@@ -173,7 +191,7 @@ export class Office {
       routines: this.store.listRoutines().map((routine) => ({ ...routine, nextRunAt: this.scheduler?.nextRunAt(routine) ?? null })),
       proposals: this.store.listProposals(),
       items: this.store.listItems(),
-      assignments: [],
+      assignments: this.store.listAssignments(),
       notes: this.notebook.list(),
       office: this.officeStats(),
       runtime: this.runtimeStatus,
@@ -240,21 +258,43 @@ export class Office {
     const message = this.store.addMessage({ conversationId, author: "operator", agentId: null, body: text, runId: run.id });
     this.bus.publish({ type: "message", message });
     this.publishRun(run);
-    this.queue.enqueue("interactive", () => this.reply(run.id, conversation.id, message));
+    const prompt: ChatPrompt = {
+      text,
+      label: "The operator's new message:",
+      messageId: message.id,
+      journal: `Talked with the operator about "${clip(text.replace(/\s+/g, " "), 80)}".`,
+      sourceData: false,
+    };
+    this.queue.enqueue("interactive", () => this.reply(run.id, conversation.id, prompt).then(() => {}));
     return { message, run };
   }
 
-  private async reply(runId: string, conversationId: string, message: ChatMessage) {
+  /**
+   * Brings news into a chat, such as a colleague's answer, as a new turn of the same thread. The agent
+   * tells the operator; nothing is posted as if the operator had said it. Resolves when the turn ends.
+   */
+  continueChat(conversationId: string, prompt: { title: string; input: string; journal: string; assignmentId?: string | null }): Promise<TaskOutcome> {
+    const conversation = this.store.getConversation(conversationId);
+    if (!conversation) throw new NotFoundError(`No conversation ${conversationId}`);
+    const run = this.store.createRun({ agentId: conversation.agentId, kind: "follow_up", title: prompt.title, assignmentId: prompt.assignmentId ?? null });
+    this.publishRun(run);
+    const turn: ChatPrompt = { text: prompt.input, label: "New from AiHub:", messageId: null, journal: prompt.journal, sourceData: true };
+    return new Promise((resolve, reject) => this.queue.enqueue("interactive", () => this.reply(run.id, conversationId, turn).then(resolve, reject)));
+  }
+
+  private async reply(runId: string, conversationId: string, prompt: ChatPrompt): Promise<TaskOutcome> {
     const conversation = this.store.getConversation(conversationId)!;
     const agent = this.store.getAgentRecord(conversation.agentId)!;
-    const caller = { agentId: agent.id, runId, profile: agent.profile };
+    const run = this.store.getRun(runId)!;
+    const caller = { agentId: agent.id, runId, profile: agent.profile, sourceData: prompt.sourceData };
+    // Every turn of a thread is offered the same tools, so a follow-up doesn't restart the thread.
     const options: ContextOptions = {
       profile: agent.profile,
       instructions: instructionsFor(agent, this.store.activeResponsibilityOf(agent.id)),
-      tools: this.gateway.specsFor(caller),
+      tools: this.gateway.specsFor(caller, "chat"),
     };
     this.setRunState(runId, "working");
-    this.activity(agent.id, runId, "run_started", `${agent.name} is replying in chat`);
+    this.activity(agent.id, runId, "run_started", run.kind === "chat" ? `${agent.name} is replying in chat` : `${agent.name}: ${run.title}`);
 
     const turn = (contextId: string, input: string): Promise<TurnResult> =>
       this.runtime.runTurn(contextId, {
@@ -267,8 +307,9 @@ export class Office {
         },
       });
 
+    let text = "";
     try {
-      let context = await this.openContext(conversation, options, message);
+      let context = await this.openContext(conversation, options, prompt, runId);
       let result: TurnResult;
       try {
         result = await turn(context.contextId, context.input);
@@ -276,17 +317,18 @@ export class Office {
         // The runtime lost the thread mid-session, for example after a crash it could not resume.
         if (!(error instanceof ContextUnavailableError)) throw error;
         this.liveContexts.delete(context.contextId);
-        context = await this.rebuildContext(conversation, options, message);
+        context = await this.rebuildContext(conversation, options, prompt, runId);
         result = await turn(context.contextId, context.input);
       }
       this.publishRun(this.store.addTurn(runId, result.usage));
+      text = result.text;
       if (result.text) this.postMessage(conversationId, agent.id, result.text, runId);
-      const journal = `Talked with the operator about "${clip(message.body.replace(/\s+/g, " "), 80)}".`;
-      if (result.status === "completed") this.finishRun(runId, "done", undefined, journal);
-      else this.finishRun(runId, "failed", result.error ?? `The turn was ${result.status}`, journal);
+      if (result.status === "completed") this.finishRun(runId, "done", undefined, prompt.journal);
+      else this.finishRun(runId, "failed", result.error ?? `The turn was ${result.status}`, prompt.journal);
     } catch (error) {
       this.finishRun(runId, "failed", errorText(error));
     }
+    return { run: this.store.getRun(runId)!, text };
   }
 
   /**
@@ -296,15 +338,17 @@ export class Office {
   runTask(task: Task): Promise<TaskOutcome> {
     const agent = this.store.getAgentRecord(task.agentId);
     if (!agent) throw new NotFoundError(`No agent ${task.agentId}`);
-    const run = task.runId ? this.store.getRun(task.runId)! : this.openRun(agent.id, task.kind, task.title, task.responsibilityId);
+    const run = task.runId
+      ? this.store.getRun(task.runId)!
+      : this.openRun(agent.id, task.kind, task.title, task.responsibilityId, task.assignmentId);
     return new Promise((resolve, reject) =>
       this.queue.enqueue("background", () => this.executeTask(run.id, task).then(resolve, reject)),
     );
   }
 
   /** Records a new queued run. */
-  openRun(agentId: string, kind: RunKind, title: string, responsibilityId: string | null = null): Run {
-    const run = this.store.createRun({ agentId, kind, title, responsibilityId });
+  openRun(agentId: string, kind: RunKind, title: string, responsibilityId: string | null = null, assignmentId: string | null = null): Run {
+    const run = this.store.createRun({ agentId, kind, title, responsibilityId, assignmentId });
     this.publishRun(run);
     return run;
   }
@@ -365,22 +409,22 @@ ${task.instructions}`,
    * Model threads are a cache (DESIGN.md › Context assembly). Resume the saved thread if it was
    * started with the same charter and tools; otherwise start a new one from the saved messages.
    */
-  private async openContext(conversation: ConversationRecord, options: ContextOptions, message: ChatMessage) {
+  private async openContext(conversation: ConversationRecord, options: ContextOptions, prompt: ChatPrompt, runId: string) {
     const saved = conversation.contextFingerprint === fingerprintOf(options) ? conversation.contextId : null;
-    if (saved && this.liveContexts.has(saved)) return { contextId: saved, input: message.body };
+    if (saved && this.liveContexts.has(saved)) return { contextId: saved, input: prompt.text };
     if (saved) {
       try {
         await this.runtime.resumeContext(saved, options);
         this.liveContexts.add(saved);
-        return { contextId: saved, input: message.body };
+        return { contextId: saved, input: prompt.text };
       } catch (error) {
         if (!(error instanceof ContextUnavailableError)) throw error;
       }
     }
-    return this.rebuildContext(conversation, options, message);
+    return this.rebuildContext(conversation, options, prompt, runId);
   }
 
-  private async rebuildContext(conversation: ConversationRecord, options: ContextOptions, message: ChatMessage) {
+  private async rebuildContext(conversation: ConversationRecord, options: ContextOptions, prompt: ChatPrompt, runId: string) {
     const contextId = await this.runtime.startContext(options);
     this.store.setConversationContext(conversation.id, contextId, fingerprintOf(options));
     this.liveContexts.add(contextId);
@@ -390,11 +434,11 @@ ${task.instructions}`,
     const withMemory = (input: string) => (memory ? `${memory}\n\n${input}` : input);
     const history = this.store
       .recentMessages(this.historyLimit + 1, conversation.id)
-      .filter((earlier) => earlier.id !== message.id)
+      .filter((earlier) => earlier.id !== prompt.messageId)
       .slice(-this.historyLimit);
-    if (history.length === 0) return { contextId, input: withMemory(message.body) };
+    if (history.length === 0) return { contextId, input: withMemory(prompt.text) };
 
-    this.activity(conversation.agentId, message.runId, "context_rebuilt", `Restored the chat from ${history.length} saved messages`);
+    this.activity(conversation.agentId, runId, "context_rebuilt", `Restored the chat from ${history.length} saved messages`);
     const agentName = this.store.getAgentRecord(conversation.agentId)?.name ?? "Agent";
     const transcript = history
       .map((earlier) => `${earlier.author === "operator" ? "Operator" : agentName}: ${clip(earlier.body, 2000)}`)
@@ -407,8 +451,8 @@ ${task.instructions}`,
           "",
           transcript,
           "",
-          "The operator's new message:",
-          message.body,
+          prompt.label,
+          prompt.text,
         ].join("\n"),
       ),
     };
