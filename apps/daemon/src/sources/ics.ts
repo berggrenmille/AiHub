@@ -190,16 +190,17 @@ export function diffCalendar(previous: CalendarCursor | null, records: CalendarR
     changes.push({ change: "removed", record, was: { title: before.title, start: before.start, end: before.end } });
   }
 
-  // Conflicts are a condition code can check, so the model doesn't have to find them.
+  // Conflicts are a condition code can check, so the model doesn't have to find them. Every timed
+  // event that is still on gets the list, even an empty one, so "no conflicts" reads as checked.
   const busy = records.filter((record) => record.status !== "cancelled" && !record.allDay);
   for (const change of changes) {
-    if (change.record.status === "cancelled" || change.record.allDay) continue;
+    if (change.change === "removed" || change.record.status === "cancelled" || change.record.allDay) continue;
     const start = Date.parse(change.record.start);
     const end = Date.parse(change.record.end);
     const overlaps = busy
       .filter((other) => other.key !== change.record.key && Date.parse(other.start) < end && Date.parse(other.end) > start)
       .map(({ key, title, start, end }) => ({ key, title, start, end }));
-    if (overlaps.length) change.overlaps = overlaps;
+    change.overlaps = overlaps;
   }
 
   const cursor: CalendarCursor = {

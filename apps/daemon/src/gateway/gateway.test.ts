@@ -40,14 +40,25 @@ describe("Gateway", () => {
   });
 
   it("runs a permitted call and records it in the activity feed", async () => {
-    const { gateway, chief, store } = office();
+    const { gateway, chief, supervisor, store } = office();
 
+    const calendar = store.createConnection({ kind: "ics_file", label: "Work calendar", path: "C:/work.ics" });
+    store.setConnectionStatus(calendar.id, "connected", "8 events in the next 7 days");
+    store.grant(supervisor.agentId, calendar.id, ["read"]);
     const outcome = await gateway.call(chief, { name: "aihub_get_roster", arguments: {} });
 
     assert.equal(outcome.ok, true);
     assert.deepEqual(JSON.parse(outcome.text), [
-      { name: "Chief of Staff", title: "", role: "chief_of_staff", manager: null, responsibility: null, state: "queued" },
-      { name: "Work Schedule", title: "", role: "supervisor", manager: "Chief of Staff", responsibility: null, state: "queued" },
+      { name: "Chief of Staff", title: "", role: "chief_of_staff", manager: null, responsibility: null, state: "queued", sources: [] },
+      {
+        name: "Work Schedule",
+        title: "",
+        role: "supervisor",
+        manager: "Chief of Staff",
+        responsibility: null,
+        state: "queued",
+        sources: [{ label: "Work calendar", status: "connected", detail: "8 events in the next 7 days" }],
+      },
     ]);
     assert.equal(store.recentActivity(1)[0]?.kind, "tool_call");
   });
@@ -81,7 +92,7 @@ describe("Gateway", () => {
 
     assert.equal(again.ok, false);
     assert.match(again.text, /already filed/);
-    assert.deepEqual(store.resultForRun(supervisor.runId)?.body, { ...report, decisionsNeeded: [] });
+    assert.deepEqual(store.resultForRun(supervisor.runId)?.body, { ...report, decisionsNeeded: [], noLongerApplies: [] });
   });
 
   it("applies argument defaults", async () => {

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { SourceConnection } from "@aihub/shared";
 import type { Store } from "../store/store.ts";
 import { TIMEZONE } from "../time.ts";
@@ -59,9 +60,10 @@ export function collect(store: Store, responsibilityId: string, connection: Sour
   const identities = new Map<string, { version: string; expiresAt: string | null }>();
   const records = changes.map((change): SourceRecord => {
     const { record } = change;
-    identities.set(record.key, { version: `${change.change}:${record.version}`, expiresAt: record.end });
+    const id = recordRef(record.key);
+    identities.set(id, { version: `${change.change}:${record.version}`, expiresAt: record.end });
     return {
-      id: record.key,
+      id,
       change: change.change,
       title: record.title,
       when: describeTime(record.start, record.end, record.allDay),
@@ -81,6 +83,14 @@ export function collect(store: Store, responsibilityId: string, connection: Sour
     identities,
     commit: () => store.setCursor(responsibilityId, connection.id, cursor),
   };
+}
+
+/**
+ * The id the model sees and cites: stable for an event, so its item keeps its identity, but opaque.
+ * The raw key holds the original time of a moved occurrence, which reads as a contradiction.
+ */
+export function recordRef(key: string): string {
+  return `evt-${createHash("sha256").update(key).digest("hex").slice(0, 10)}`;
 }
 
 const dayFormat = new Intl.DateTimeFormat("en-GB", { timeZone: TIMEZONE, weekday: "short", day: "numeric", month: "short" });

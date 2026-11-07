@@ -281,10 +281,10 @@ export class Office {
       this.publishRun(this.store.addTurn(runId, result.usage));
       if (result.text) this.postMessage(conversationId, agent.id, result.text, runId);
       const journal = `Talked with the operator about "${clip(message.body.replace(/\s+/g, " "), 80)}".`;
-      if (result.status === "completed") this.finish(runId, "done", undefined, journal);
-      else this.finish(runId, "failed", result.error ?? `The turn was ${result.status}`, journal);
+      if (result.status === "completed") this.finishRun(runId, "done", undefined, journal);
+      else this.finishRun(runId, "failed", result.error ?? `The turn was ${result.status}`, journal);
     } catch (error) {
-      this.finish(runId, "failed", errorText(error));
+      this.finishRun(runId, "failed", errorText(error));
     }
   }
 
@@ -352,10 +352,10 @@ ${task.instructions}`,
       });
       this.publishRun(this.store.addTurn(runId, result.usage));
       text = result.text;
-      if (result.status === "completed") this.finish(runId, "done");
-      else this.finish(runId, "failed", result.error ?? `The turn was ${result.status}`);
+      if (result.status === "completed") this.finishRun(runId, "done");
+      else this.finishRun(runId, "failed", result.error ?? `The turn was ${result.status}`);
     } catch (error) {
-      this.finish(runId, "failed", errorText(error));
+      this.finishRun(runId, "failed", errorText(error));
     }
     return { run: this.store.getRun(runId)!, text };
   }
@@ -413,7 +413,8 @@ ${task.instructions}`,
     };
   }
 
-  private finish(runId: string, state: "done" | "failed", error?: string, journal?: string) {
+  /** Closes a run: its state, a journal line, and an activity entry. */
+  finishRun(runId: string, state: "done" | "failed", error?: string, journal?: string) {
     this.setRunState(runId, state, error);
     const run = this.store.getRun(runId)!;
     this.notebook.journal(run.agentId, `${journal ?? `${run.title}.`}${state === "failed" ? " It failed." : ""}`, runId);

@@ -76,12 +76,14 @@ describe("Morning briefing", () => {
     const report = [...runtime.contexts.values()].find((context) => context.options.profile === "data")!;
     assert.match(report.options.instructions, /This is your first look/);
 
-    // Same calendar, same day: no data turn, and the open items are carried over in short.
+    // Same calendar, same day: no turn at all. Code writes the quiet briefing and lists what is open.
     const turns = turnCount(runtime);
     const second = await runMorningBriefing(office, { now: MONDAY });
     assert.equal(second.sections[0]?.status, "nothing_new");
-    assert.equal(turnCount(runtime), turns + 1, "only the compose turn");
-    assert.match(second.text, /Checked; nothing new[\s\S]*Still open from earlier briefings: .*Q4 planning \(new\)/);
+    assert.equal(second.run.state, "done");
+    assert.equal(turnCount(runtime), turns, "no turn on a quiet morning");
+    assert.match(second.text, /^Nothing new since the last briefing\. Checked: Work schedule\.\n\nWork schedule\nStill open: .*Q4 planning \(new\)/);
+    assert.equal(store.recentMessages(1, CHIEF_OF_STAFF_CONVERSATION_ID)[0]?.body, second.text);
   });
 
   it("keeps a dismissed item out until its event changes", async () => {
@@ -103,6 +105,46 @@ describe("Morning briefing", () => {
     assert.equal(store.getItem(erik.id)!.state, "open", "new again, then delivered");
   });
 
+  it("closes open items the supervisor says no longer apply, and nothing else", async () => {
+    const { office, store, runtime, responsibility, calendar } = setUp();
+    await runMorningBriefing(office, { now: MONDAY });
+    const open = () => store.itemsOf(responsibility.id, ["open"]);
+    const planning = open().find((item) => item.title.startsWith("Q4 planning"))!;
+    const review = open().find((item) => item.title.startsWith("Project review"))!;
+
+    writeFileSync(calendar, readFileSync(calendar, "utf8").replace("SUMMARY:Project review", "SUMMARY:Project review\r\nSTATUS:CANCELLED"));
+    let shown: Array<{ sourceRef: string }> = [];
+    runtime.respond = async (input, options) => {
+      if (!input.includes("BEGIN SOURCE DATA")) return respond(input, options);
+      const data = input.slice(input.indexOf("BEGIN SOURCE DATA") + 18, input.indexOf("END SOURCE DATA"));
+      const [cancelled] = JSON.parse(data) as Array<{ id: string; status?: string; overlapsWith?: string[] }>;
+      assert.deepEqual([cancelled?.id, cancelled?.status, cancelled?.overlapsWith], [review.sourceKey, "cancelled", undefined]);
+      shown = JSON.parse(input.slice(input.indexOf("BEGIN OPEN ITEMS DATA") + 22, input.indexOf("END OPEN ITEMS DATA")));
+      const filed = await options.onToolCall({
+        name: "aihub_submit_report",
+        arguments: {
+          summary: "The review is off.",
+          items: [{ title: "Project review cancelled", detail: "", urgency: "fyi", sourceRef: review.sourceKey }],
+          noLongerApplies: [
+            { sourceRef: planning.sourceKey, reason: "Project review was cancelled." },
+            { sourceRef: review.sourceKey, reason: "Reported again in this report." },
+            { sourceRef: "nothing-collected", reason: "Not an item." },
+          ],
+        },
+      });
+      return { status: "completed", text: filed.text, error: null, usage };
+    };
+    const next = await runMorningBriefing(office, { now: MONDAY });
+
+    assert.ok(shown.some((item) => item.sourceRef === planning.sourceKey), "the open items were shown");
+    assert.deepEqual([store.getItem(planning.id)?.state, store.getItem(planning.id)?.resolution], ["resolved", "Project review was cancelled."]);
+    assert.deepEqual([store.getItem(review.id)?.state, store.getItem(review.id)?.title], ["open", "Project review cancelled"]);
+    assert.match(next.text, /Resolved since the last briefing: Q4 planning \(new\) \(Project review was cancelled\.\)/);
+    assert.doesNotMatch(next.text.match(/Still open from earlier briefings: .*/)?.[0] ?? "", /Q4 planning/);
+    const journal = office.notebook.list().find((note) => note.ownerId === "work-schedule" && note.kind === "journal")!;
+    assert.match(office.notebook.read(journal.path)?.body ?? "", /Closed "Q4 planning \(new\)": Project review was cancelled\./);
+  });
+
   it("reports an unreadable source and skips an ended responsibility", async () => {
     const { office, store, runtime, responsibility, calendar } = setUp();
     rmSync(calendar);
@@ -115,6 +157,6 @@ describe("Morning briefing", () => {
     const turns = turnCount(runtime);
     const ended = await runMorningBriefing(office, { now: MONDAY });
     assert.deepEqual(ended.sections, []);
-    assert.equal(turnCount(runtime), turns + 1);
+    assert.equal(turnCount(runtime), turns);
   });
 });

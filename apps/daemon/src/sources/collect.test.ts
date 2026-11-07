@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { Store } from "../store/store.ts";
-import { collect, describeTime, verifyConnection } from "./collect.ts";
+import { collect, describeTime, recordRef, verifyConnection } from "./collect.ts";
 
 const SAMPLE = fileURLToPath(new URL("../../test/fixtures/work.ics", import.meta.url));
 const MONDAY = new Date("2026-11-09T05:00:00.000Z");
@@ -46,7 +46,7 @@ describe("Calendar collector", () => {
     assert.equal(first.firstCheck, true);
     const planning = first.records.find((record) => record.title === "Q4 planning")!;
     assert.deepEqual(planning, {
-      id: "q4-planning@work.example/2026-11-09T13:00:00.000Z",
+      id: recordRef("q4-planning@work.example/2026-11-09T13:00:00.000Z"),
       change: "new",
       title: "Q4 planning",
       when: "Mon 9 Nov 10:00-11:30",
@@ -56,6 +56,10 @@ describe("Calendar collector", () => {
     const identity = first.identities.get(planning.id)!;
     assert.match(identity.version, /^new:[0-9a-f]{16}$/);
     assert.equal(identity.expiresAt, "2026-11-09T10:30:00.000Z");
+    // Checked and clear reads differently from not checked: the list is there, empty.
+    const tuesdayStandup = first.records.find((record) => record.title === "Standup" && String(record.when).startsWith("Tue"))!;
+    assert.deepEqual(tuesdayStandup.overlapsWith, []);
+    assert.equal(first.records.find((record) => record.title === "Company offsite")?.overlapsWith, undefined, "all-day events don't conflict");
 
     assert.equal(collect(store, responsibility.id, connection, MONDAY).records.length, 8, "not committed yet");
     first.commit();

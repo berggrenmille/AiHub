@@ -6,7 +6,8 @@ import { defineTool, type GatewayTool } from "./gateway.ts";
 
 export const getRoster = defineTool({
   name: "aihub_get_roster",
-  description: "List the AiHub staff with each member's name, title, role, manager, responsibility, and current run state.",
+  description:
+    "List the AiHub staff with each member's name, title, role, manager, responsibility, current run state, and the sources they read with whether each is connected.",
   input: z.object({}).strict(),
   roles: ["chief_of_staff"],
   profiles: ["conversation"],
@@ -21,6 +22,7 @@ export const getRoster = defineTool({
         manager: agent.managerId ? (names.get(agent.managerId) ?? null) : null,
         responsibility: store.activeResponsibilityOf(agent.id)?.title ?? null,
         state: agent.state,
+        sources: store.connectionsOf(agent.id).map((connection) => ({ label: connection.label, status: connection.status, detail: connection.detail })),
       })),
     );
   },
@@ -62,6 +64,18 @@ export const ReportInput = z
       )
       .max(20),
     decisionsNeeded: z.array(z.string().max(300)).max(10).default([]).describe("Questions only the operator can answer."),
+    noLongerApplies: z
+      .array(
+        z
+          .object({
+            sourceRef: z.string().max(200).describe("The sourceRef of an item listed as still open."),
+            reason: z.string().trim().min(1).max(300).describe("Why it no longer applies, in one sentence."),
+          })
+          .strict(),
+      )
+      .max(20)
+      .default([])
+      .describe("Items still open from earlier briefings that no longer apply, such as a conflict whose other meeting was cancelled. AiHub closes them."),
   })
   .strict();
 
