@@ -5,6 +5,7 @@ import {
   ACTIVE_RUN_STATES,
   type ActivityEntry,
   type Agent,
+  type Assignment,
   type ChatMessage,
   type ChatResponse,
   type Conversation,
@@ -20,6 +21,7 @@ import {
   type SourceConnection,
   type StateSnapshot,
 } from "@aihub/shared";
+import { compareAssignments, isOpenAssignment } from "./lib/assignments.ts";
 
 export type ConnectionStatus = "connecting" | "connected" | "reconnecting";
 
@@ -52,6 +54,13 @@ export interface OfficeState {
   /** Newest first. */
   proposals: Proposal[];
   items: Item[];
+  /** Open and waiting assignments first, newest first, then settled ones, most recently settled first. */
+  assignments: Assignment[];
+  /**
+   * Staff who left since the last snapshot, such as workers whose results were accepted. A late
+   * update for one of them doesn't bring them back.
+   */
+  departed: string[];
   /** Summaries only. A note's body is fetched when it is opened. */
   notes: NoteSummary[];
   /** Null until the first snapshot arrives. */
@@ -67,6 +76,8 @@ export type OfficeAction =
 
 /** How many activity entries the feed keeps. */
 export const ACTIVITY_LIMIT = 200;
+/** How many settled assignments the view keeps. Open ones are always kept. */
+export const SETTLED_ASSIGNMENT_LIMIT = 200;
 
 export const initialOfficeState: OfficeState = {
   loaded: false,
@@ -84,6 +95,8 @@ export const initialOfficeState: OfficeState = {
   routines: [],
   proposals: [],
   items: [],
+  assignments: [],
+  departed: [],
   notes: [],
   office: null,
 };
@@ -141,6 +154,8 @@ function applySnapshot(state: OfficeState, snapshot: StateSnapshot): OfficeState
     routines: snapshot.routines ?? [],
     proposals: [...(snapshot.proposals ?? [])].sort(newestFirst),
     items: snapshot.items ?? [],
+    assignments: keepAssignments(snapshot.assignments ?? []),
+    departed: [],
     notes: snapshot.notes ?? [],
     office: snapshot.office ?? null,
   };
@@ -149,7 +164,19 @@ function applySnapshot(state: OfficeState, snapshot: StateSnapshot): OfficeState
 function applyEvent(state: OfficeState, event: DaemonEvent): OfficeState {
   switch (event.type) {
     case "agent":
+      if (state.departed.includes(event.agent.id)) return state;
       return { ...state, agents: upsert(state.agents, event.agent, (agent) => agent.id) };
+    case "agent_left": {
+      // Leaving the list is what walks the character out of the office.
+      const agents = state.agents.filter((agent) => agent.id !== event.agentId);
+      if (agents.length === state.agents.length && state.departed.includes(event.agentId)) return state;
+      return { ...state, agents, departed: [...state.departed.filter((id) => id !== event.agentId), event.agentId] };
+    }
+    case "assignment": {
+      const existing = state.assignments.find((assignment) => assignment.id === event.assignment.id);
+      if (existing && existing.updatedAt > event.assignment.updatedAt) return state;
+      return { ...state, assignments: keepAssignments(upsert(state.assignments, event.assignment, (assignment) => assignment.id)) };
+    }
     case "run": {
       const runs = { ...state.runs, [event.run.id]: event.run };
       if (isActive(event.run) || !state.streaming[event.run.id]) return { ...state, runs };
@@ -252,6 +279,13 @@ function addMessage(state: OfficeState, message: ChatMessage): OfficeState {
   const messages = { ...state.messages, [message.conversationId]: [...list, message].sort(byId) };
   const finished = message.author === "agent" && message.runId !== null && state.streaming[message.runId];
   return { ...state, messages, streaming: finished ? without(state.streaming, message.runId!) : state.streaming };
+}
+
+/** In the snapshot's order, with every open assignment and the most recent settled ones. */
+function keepAssignments(assignments: Assignment[]): Assignment[] {
+  const sorted = [...assignments].sort(compareAssignments);
+  const open = sorted.filter(isOpenAssignment);
+  return [...open, ...sorted.slice(open.length, open.length + SETTLED_ASSIGNMENT_LIMIT)];
 }
 
 /** Replaces the record with the same key in place, or appends it. */

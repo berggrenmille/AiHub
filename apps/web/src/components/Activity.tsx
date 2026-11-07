@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ActivityEntry, ActivityKind } from "@aihub/shared";
-import { activityTone, formatDateTime, formatFeedTime } from "../format.ts";
+import { activityLine, activityTone, formatDateTime, formatFeedTime } from "../format.ts";
 import { Icon } from "./Icon.tsx";
 
 // Activity as a ticker along the bottom, toasts for what matters, and the full log on demand.
@@ -20,16 +20,19 @@ export function ActivityTicker({ entries, agentName, onOpenLog }: TickerProps) {
       </button>
       <ol className="ticker-items">
         {latest.length === 0 && <li className="muted">Quiet so far.</li>}
-        {latest.map((entry) => (
-          <li key={entry.id} className={`ticker-item tone-${activityTone(entry.kind)}`}>
-            <span className="feed-marker" aria-hidden="true" />
-            <time dateTime={entry.at} title={formatDateTime(entry.at)}>
-              {formatFeedTime(entry.at).slice(0, 5)}
-            </time>
-            <span className="ticker-agent">{agentName(entry.agentId)}</span>
-            <span className="ticker-summary">{entry.summary}</span>
-          </li>
-        ))}
+        {latest.map((entry) => {
+          const line = activityLine(agentName(entry.agentId), entry.summary);
+          return (
+            <li key={entry.id} className={`ticker-item tone-${activityTone(entry.kind)} kind-${entry.kind}`}>
+              <span className="feed-marker" aria-hidden="true" />
+              <time dateTime={entry.at} title={formatDateTime(entry.at)}>
+                {formatFeedTime(entry.at).slice(0, 5)}
+              </time>
+              {line.who && <span className="ticker-agent">{line.who}</span>}
+              <span className="ticker-summary">{line.text}</span>
+            </li>
+          );
+        })}
       </ol>
     </footer>
   );
@@ -88,6 +91,9 @@ const TOAST_KINDS: ReadonlySet<ActivityKind> = new Set([
   "blocked",
   "tool_refused",
   "responsibility_ended",
+  // Questions asked, tasks delivered or failed, and workers joining or leaving a team.
+  "assignment",
+  "worker",
 ]);
 
 const TOAST_MS = 6000;
@@ -115,18 +121,21 @@ export function Toasts({ entries, loaded, agentName }: { entries: ActivityEntry[
 
   return (
     <div className="toasts" role="status" aria-live="polite">
-      {toasts.map((toast) => (
-        <div key={toast.id} className={`toast tone-${activityTone(toast.kind)}`}>
-          <span className="feed-marker" aria-hidden="true" />
-          <p>
-            <strong>{agentName(toast.agentId)}</strong> {toast.summary}
-          </p>
-          <button type="button" className="icon-button small" onClick={() => setToasts((current) => current.filter((other) => other !== toast))} title="Dismiss">
-            <Icon name="close" size={14} />
-            <span className="visually-hidden">Dismiss</span>
-          </button>
-        </div>
-      ))}
+      {toasts.map((toast) => {
+        const line = activityLine(agentName(toast.agentId), toast.summary);
+        return (
+          <div key={toast.id} className={`toast tone-${activityTone(toast.kind)} kind-${toast.kind}`}>
+            <span className="feed-marker" aria-hidden="true" />
+            <p>
+              {line.who && <strong>{line.who}</strong>} {line.text}
+            </p>
+            <button type="button" className="icon-button small" onClick={() => setToasts((current) => current.filter((other) => other !== toast))} title="Dismiss">
+              <Icon name="close" size={14} />
+              <span className="visually-hidden">Dismiss</span>
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }

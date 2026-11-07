@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Markdown } from "../components/Markdown.tsx";
-import { inlineText, parseInline, parseMarkdown, parseWikilink, safeHref } from "./markdown.ts";
+import { inlineText, parseInline, parseMarkdown, parseWikilink, plainText, safeHref } from "./markdown.ts";
 
 const render = (source: string, resolveLink?: (target: string) => { exists: boolean }) =>
   renderToStaticMarkup(createElement(Markdown, { source, resolveLink, onOpenLink: () => {} }));
@@ -93,5 +93,12 @@ describe("markdown rendering", () => {
     assert.match(html, /<button[^>]*>Anna<\/button>/);
     assert.ok(!/<button[^>]*>Nobody<\/button>/.test(html), html);
     assert.ok(html.includes("Nobody"));
+  });
+});
+
+describe("plain text", () => {
+  it("flattens a document to one line without markup", () => {
+    assert.equal(plainText("## Answer\n\n**Thursday** is free, see [[Anna Lindqvist|Anna]].\n\n- 10:00\n- 14:00\n\n---\n"), "Answer Thursday is free, see Anna. 10:00; 14:00");
+    assert.equal(plainText(""), "");
   });
 });

@@ -1,14 +1,18 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Agent, Responsibility } from "@aihub/shared";
+import { clip, errandOf, type Errand } from "../../lib/assignments.ts";
 import { hashSeed, lookFor, type Look } from "../../lib/avatar.ts";
 import { daylightAt, stockholmTime } from "../../lib/daylight.ts";
 import { layoutOffice, STATION, type Seat } from "../../lib/layout.ts";
 import { bubbleText, currentRun, openItemCounts, presenceOf, speechOf, type Presence } from "../../lib/presence.ts";
+import { plainText } from "../../lib/markdown.ts";
+import { doorOffset, walkerAt } from "../../lib/walk.ts";
 import { ROLE_LABELS, STATE_LABELS, URGENCY_LABELS } from "../../format.ts";
 import type { OfficeState } from "../../state.ts";
-import { Figure } from "./Figure.tsx";
+import { WalkingFigure } from "./Figure.tsx";
 import { FloorPlan } from "./FloorPlan.tsx";
-import { Workstation } from "./Station.tsx";
+import { Workstation, type Cue } from "./Station.tsx";
+import { QuestionThreads, useQuestionMoments, useReducedMotion, Visitor, type Answer, type Visit } from "./Visits.tsx";
 
 interface OfficeFloorProps {
   state: OfficeState;
@@ -48,7 +52,20 @@ export function OfficeFloor({ state, now, onSelectAgent, onOpenChat, onOpenInbox
   }, [layout.pods, looks]);
   const chief = state.agents.find((agent) => agent.role === "chief_of_staff");
 
-  const { arriving, leaving } = useComings(state.agents, layout.seats, looks, state.loaded);
+  // Temporary workers wear a lanyard in their supervisor's color.
+  const lanyards = useMemo(() => {
+    const colors = new Map<string, string>();
+    for (const agent of state.agents) {
+      const color = agent.role === "worker" && agent.managerId ? looks.get(agent.managerId)?.accent : undefined;
+      if (color) colors.set(agent.id, color);
+    }
+    return colors;
+  }, [state.agents, looks]);
+
+  const still = useReducedMotion();
+  const seated = useMemo(() => new Set(layout.seats.map((seat) => seat.agentId)), [layout.seats]);
+  const { visits, answers } = useQuestionMoments(state.assignments, seated, state.loaded, still);
+  const { arriving, leaving } = useComings(state.agents, layout.seats, looks, lanyards, state.loaded);
   const { viewportRef, scale } = useFitScale(layout.width, layout.height);
 
   return (
@@ -99,6 +116,8 @@ export function OfficeFloor({ state, now, onSelectAgent, onOpenChat, onOpenInbox
             const run = currentRun(agent.id, state.runs);
             const speech = speechOf(agent.id, state.streaming, state.runs);
             const arrival = arriving.has(agent.id);
+            const visit = visits.find((candidate) => candidate.askerId === agent.id) ?? null;
+            const answer = answers.find((candidate) => candidate.ownerId === agent.id) ?? null;
             return (
               <StationButton
                 key={agent.id}
@@ -107,7 +126,11 @@ export function OfficeFloor({ state, now, onSelectAgent, onOpenChat, onOpenInbox
                 seat={seat}
                 presence={presence}
                 task={run?.title ?? null}
-                speech={speech ? bubbleText(speech.text, seat.size === "small" ? 90 : 150) : null}
+                errand={errandOf(agent.id, state.runs, state.assignments)}
+                visit={visit}
+                speech={speech && !visit ? bubbleText(speech.text, seat.size === "small" ? 90 : 150) : null}
+                answer={answer}
+                lanyard={lanyards.get(agent.id)}
                 dark={dark}
                 arriving={arrival ? { dx: layout.door.x - seat.x, dy: layout.door.y - seat.y } : null}
                 onSelect={() => onSelectAgent(agent.id)}
@@ -115,25 +138,30 @@ export function OfficeFloor({ state, now, onSelectAgent, onOpenChat, onOpenInbox
             );
           })}
 
-          {leaving.map((ghost) => (
-            <div
-              key={`${ghost.agentId}-${ghost.since}`}
-              className="walker leaving"
-              style={
-                {
-                  left: ghost.seat.x + STATION[ghost.seat.size].w / 2 - 40,
-                  top: ghost.seat.y + 10,
-                  "--to-x": `${layout.door.x - ghost.seat.x - STATION[ghost.seat.size].w / 2 + 40}px`,
-                  "--to-y": `${layout.door.y - ghost.seat.y - 90}px`,
-                } as CSSProperties
-              }
-              aria-hidden="true"
-            >
-              <svg viewBox="30 10 80 100" width={80} height={100}>
-                <Figure look={ghost.look} pose="rest" />
-              </svg>
-            </div>
-          ))}
+          {still && <QuestionThreads assignments={state.assignments} seats={layout.seats} width={layout.width} height={layout.height} />}
+
+          {visits.map((visit) => {
+            const from = layout.seats.find((seat) => seat.agentId === visit.askerId);
+            const to = layout.seats.find((seat) => seat.agentId === visit.ownerId);
+            const look = looks.get(visit.askerId);
+            if (!from || !to || !look) return null;
+            return <Visitor key={visit.id} visit={visit} look={look} from={from} to={to} lanyard={lanyards.get(visit.askerId)} />;
+          })}
+
+          {leaving.map((ghost) => {
+            const box = walkerAt(ghost.seat);
+            const { dx, dy } = doorOffset(ghost.seat, layout.door);
+            return (
+              <div
+                key={`${ghost.agentId}-${ghost.since}`}
+                className="walker leaving"
+                style={{ left: box.left, top: box.top, width: box.width, height: box.height, "--to-x": `${dx}px`, "--to-y": `${dy}px` } as CSSProperties}
+                aria-hidden="true"
+              >
+                <WalkingFigure look={ghost.look} lanyard={ghost.lanyard} />
+              </div>
+            );
+          })}
 
           {chief && pendingProposals > 0 && (() => {
             const seat = layout.seats.find((candidate) => candidate.agentId === chief.id);
@@ -160,17 +188,61 @@ interface StationButtonProps {
   seat: Seat;
   presence: Presence;
   task: string | null;
+  /** What an assignment has them doing, if anything. */
+  errand: Errand | null;
+  /** Over at a colleague's desk with a question. */
+  visit: Visit | null;
   speech: string | null;
+  /** An answer they just gave a colleague. */
+  answer: Answer | null;
+  lanyard?: string;
   dark: boolean;
   arriving: { dx: number; dy: number } | null;
   onSelect(): void;
 }
 
-function StationButton({ agent, look, seat, presence, task, speech, dark, arriving, onSelect }: StationButtonProps) {
+const CUES: Record<Errand["kind"], Cue> = {
+  answering: "answering",
+  reviewing: null,
+  waiting_on_team: "waiting_on_team",
+  awaiting_answer: null,
+};
+
+/**
+ * What the station says the person is doing: the run, or what an assignment has them doing. The
+ * nameplate gets the short form; the label and tooltip get the whole line.
+ */
+function statusLine(presence: Presence, task: string | null, errand: Errand | null, visit: Visit | null): { plate: string; full: string } | null {
+  const line = (plate: string, detail?: string | null) => ({ plate, full: detail ? `${plate}: ${detail}` : plate });
+  if (visit) return line(`Asking ${visit.ownerName}`, visit.title);
+  switch (errand?.kind) {
+    case "answering":
+      return line(`Answering ${errand.assignment.requesterName}`, errand.assignment.title);
+    case "reviewing":
+      return line("Reviewing", errand.assignment?.title ?? task);
+    case "waiting_on_team": {
+      const { total, settled } = errand.wait;
+      const count = total > 0 ? ` · ${settled}/${total} in` : "";
+      return { plate: `Waiting on team${count}`, full: `Waiting on the team${total > 0 ? `, ${settled} of ${total} in` : ""}: ${errand.wait.task.title}` };
+    }
+    case "awaiting_answer":
+      return line(`Waiting for ${errand.assignment.ownerName}'s answer`, errand.assignment.title);
+  }
+  if (presence === "idle") return null;
+  return line(STATE_LABELS[presence], task && presence !== "done" && presence !== "failed" ? task : null);
+}
+
+/** Ends text with a full stop unless it already ends a sentence, such as a question's title. */
+function sentence(text: string): string {
+  return /[.!?…]$/.test(text) ? text : `${text}.`;
+}
+
+function StationButton({ agent, look, seat, presence, task, errand, visit, speech, answer, lanyard, dark, arriving, onSelect }: StationButtonProps) {
   const size = STATION[seat.size];
-  const active = presence !== "idle";
-  const status = active ? `${STATE_LABELS[presence]}${task && presence !== "done" && presence !== "failed" ? `: ${task}` : ""}` : null;
-  const label = `${agent.name}, ${agent.title || ROLE_LABELS[agent.role]}. ${status ?? "Idle"}. Open profile.`;
+  const line = statusLine(presence, task, errand, visit);
+  const status = line?.full ?? null;
+  const answered = answer ? `Just answered ${answer.requesterName}. ` : "";
+  const label = `${agent.name}, ${agent.title || ROLE_LABELS[agent.role]}${agent.role === "worker" ? ", temporary worker" : ""}. ${sentence(status ?? "Idle")} ${answered}Open profile.`;
   // A per-person offset so blinks and breaths don't run in step across the office.
   const style: CSSProperties & Record<string, string | number> = {
     left: seat.x,
@@ -183,25 +255,42 @@ function StationButton({ agent, look, seat, presence, task, speech, dark, arrivi
     style["--from-x"] = `${arriving.dx}px`;
     style["--from-y"] = `${arriving.dy}px`;
   }
+  const bubble = speech ?? null;
   return (
     <button
       type="button"
-      className={`station size-${seat.size} presence-${presence}${arriving ? " arriving" : ""}${speech ? " speaking" : ""}`}
+      className={`station size-${seat.size} presence-${presence}${errand ? ` errand-${errand.kind}` : ""}${arriving ? " arriving" : ""}${bubble || answer ? " speaking" : ""}${visit ? " away" : ""}`}
       style={style}
       aria-label={label}
       title={`${agent.name} — ${status ?? "Idle"}`}
       onClick={onSelect}
     >
-      <Workstation look={look} presence={presence} talking={speech !== null} dark={dark} grand={seat.size === "large"} />
+      <Workstation
+        look={look}
+        presence={presence}
+        talking={bubble !== null || answer !== null}
+        dark={dark}
+        grand={seat.size === "large"}
+        away={visit !== null}
+        lanyard={lanyard}
+        cue={errand ? CUES[errand.kind] : null}
+      />
       <span className="nameplate" aria-hidden="true">
         <span className="nameplate-name">{agent.name}</span>
-        {seat.size !== "small" && <span className="nameplate-line">{status ?? (agent.title || ROLE_LABELS[agent.role])}</span>}
+        {seat.size !== "small" && <span className="nameplate-line">{line?.plate ?? (agent.title || ROLE_LABELS[agent.role])}</span>}
       </span>
-      {speech && (
+      {bubble ? (
         <span className="speech" aria-hidden="true">
-          {speech}
+          {bubble}
           <span className="caret" />
         </span>
+      ) : (
+        answer && (
+          <span className="speech answer-bubble" aria-hidden="true">
+            <span className="answer-to">To {answer.requesterName}</span>
+            {clip(plainText(answer.text), seat.size === "small" ? 80 : 130)}
+          </span>
+        )
       )}
     </button>
   );
@@ -227,24 +316,26 @@ interface Ghost {
   agentId: string;
   look: Look;
   seat: Seat;
+  lanyard?: string;
   since: number;
 }
 
 /**
  * Who is walking in or out. Staff on the roster when the office first loads are already seated;
- * anyone hired later walks in from the door, and anyone who leaves the roster walks out to it.
+ * anyone hired later walks in from the door, and anyone who leaves the roster, such as a worker
+ * whose result was accepted, walks out to it.
  */
-function useComings(agents: Agent[], seats: Seat[], looks: Map<string, Look>, loaded: boolean) {
-  const known = useRef<Map<string, { look: Look; seat: Seat }> | null>(null);
+function useComings(agents: Agent[], seats: Seat[], looks: Map<string, Look>, lanyards: Map<string, string>, loaded: boolean) {
+  const known = useRef<Map<string, Omit<Ghost, "agentId" | "since">> | null>(null);
   const [arriving, setArriving] = useState<Set<string>>(() => new Set());
   const [leaving, setLeaving] = useState<Ghost[]>([]);
 
   useEffect(() => {
     if (!loaded) return;
-    const current = new Map<string, { look: Look; seat: Seat }>();
+    const current = new Map<string, Omit<Ghost, "agentId" | "since">>();
     for (const seat of seats) {
       const look = looks.get(seat.agentId);
-      if (look) current.set(seat.agentId, { look, seat });
+      if (look) current.set(seat.agentId, { look, seat, lanyard: lanyards.get(seat.agentId) });
     }
     const previous = known.current;
     known.current = current;
@@ -257,11 +348,11 @@ function useComings(agents: Agent[], seats: Seat[], looks: Map<string, Look>, lo
       setTimeout(() => setArriving((set) => new Set([...set].filter((id) => !arrived.includes(id)))), WALK_MS);
     }
     if (left.length) {
-      const ghosts = left.map(([agentId, { look, seat }]) => ({ agentId, look, seat, since }));
+      const ghosts = left.map(([agentId, entry]) => ({ agentId, ...entry, since }));
       setLeaving((list) => [...list, ...ghosts]);
       setTimeout(() => setLeaving((list) => list.filter((ghost) => !ghosts.includes(ghost))), WALK_MS);
     }
-  }, [agents, seats, looks, loaded]);
+  }, [agents, seats, looks, lanyards, loaded]);
 
   return { arriving, leaving };
 }

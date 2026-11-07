@@ -5,6 +5,7 @@ import { forceLayout } from "./graph.ts";
 import { closedItems, groupOpenItems, openCount } from "./inbox.ts";
 import { STATION, layoutOffice } from "./layout.ts";
 import { DONE_GLOW_MS, FAILED_MARK_MS, bubbleText, currentRun, openItemCounts, presenceOf } from "./presence.ts";
+import { doorOffset, visitOffset, WALKER, walkerAt } from "./walk.ts";
 
 function agent(id: string, overrides: Partial<Agent> = {}): Agent {
   return {
@@ -101,11 +102,56 @@ describe("office layout", () => {
     for (const r of rects) assert.ok(r.x >= 0 && r.x + r.w <= layout.width && r.y + r.h <= layout.height);
   });
 
+  it("seats a new worker at a spare desk in its supervisor's pod", () => {
+    const before = layoutOffice([chief, agent("schedule")], 8);
+    const pod = before.pods.find((p) => p.supervisorId === "schedule")!;
+    assert.equal(pod.spareDesks.length, 2);
+    const after = layoutOffice([chief, agent("schedule"), agent("w1", { role: "worker", managerId: "schedule" })], 8);
+    const seat = after.seats.find((s) => s.agentId === "w1")!;
+    assert.deepEqual([seat.x, seat.y, seat.size, seat.podId], [pod.spareDesks[0]!.x, pod.spareDesks[0]!.y, "small", pod.id]);
+    assert.equal(after.pods.find((p) => p.supervisorId === "schedule")!.spareDesks.length, 1);
+  });
+
   it("makes room for more supervisors than the limit", () => {
     const supervisors = Array.from({ length: 14 }, (_, index) => agent(`s${index}`));
     const layout = layoutOffice([chief, ...supervisors], 8);
     assert.equal(layout.pods.length, 14);
     assert.ok(layout.pods.every((p) => p.supervisorId !== null));
+  });
+});
+
+describe("walking", () => {
+  const chief = agent("chief", { role: "chief_of_staff", managerId: null });
+  const layout = layoutOffice([chief, agent("schedule"), agent("w1", { role: "worker", managerId: "schedule" })], 8);
+  const seat = (id: string) => layout.seats.find((s) => s.agentId === id)!;
+
+  it("stands up where the seated figure was", () => {
+    for (const id of ["chief", "schedule", "w1"]) {
+      const s = seat(id);
+      const box = walkerAt(s);
+      const scale = STATION[s.size].w / 160;
+      assert.ok(Math.abs(box.left + WALKER.headX * box.scale - (s.x + 70 * scale)) < 0.01, id);
+      assert.ok(Math.abs(box.top + WALKER.headY * box.scale - (s.y + 37 * scale)) < 0.01, id);
+    }
+  });
+
+  it("walks to the near side of a colleague's desk", () => {
+    // The chief's office is on the left, so she stands left of a supervisor's desk, and back.
+    const toSupervisor = visitOffset(seat("chief"), seat("schedule"));
+    const there = walkerAt(seat("chief")).left + toSupervisor.dx + WALKER.headX * walkerAt(seat("chief")).scale;
+    assert.ok(there < seat("schedule").x + 4);
+    assert.ok(there > seat("schedule").x - 40);
+    const toChief = visitOffset(seat("schedule"), seat("chief"));
+    const back = walkerAt(seat("schedule")).left + toChief.dx + WALKER.headX * walkerAt(seat("schedule")).scale;
+    assert.ok(back > seat("chief").x + STATION.large.w - 4);
+  });
+
+  it("walks out through the door", () => {
+    const s = seat("w1");
+    const box = walkerAt(s);
+    const { dx, dy } = doorOffset(s, layout.door);
+    assert.ok(Math.abs(box.left + dx + box.width / 2 - (layout.door.x + 40)) < 0.01);
+    assert.ok(box.top + dy + box.height <= layout.door.y);
   });
 });
 

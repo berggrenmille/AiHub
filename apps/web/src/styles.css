@@ -71,6 +71,10 @@
   --plate-sub: #a9b4c6;
   --bubble-bg: #fbfcff;
   --bubble-fg: #182030;
+  /* Questions between colleagues */
+  --ask: #5cc8f5;
+  --ask-bg: rgba(56, 189, 248, 0.15);
+  --ask-plate: #7dd3fc;
 }
 
 :root[data-theme="light"] {
@@ -138,6 +142,9 @@
   --plate-sub: #6e5f45;
   --bubble-bg: #ffffff;
   --bubble-fg: #182030;
+  --ask: #0369a1;
+  --ask-bg: rgba(3, 105, 161, 0.1);
+  --ask-plate: #0369a1;
 }
 
 /* Base */
@@ -870,6 +877,7 @@ summary.hud-chip::-webkit-details-marker {
   /* Icons alone on narrower screens; the labels stay for screen readers. */
   .hud-tab > span:not(.count-badge),
   .chat-button > span:not(.count-badge),
+  .hud-button > span:not(.count-badge),
   .hud-name {
     position: absolute;
     width: 1px;
@@ -3124,6 +3132,441 @@ button.wikilink:hover {
   }
 }
 
+/* Teams and delegation: assignments in the HUD, on profiles, in a drawer, and on the floor */
+
+.hud-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.hud-button .icon {
+  color: var(--accent);
+}
+
+.hud-button:hover {
+  border-color: var(--accent);
+}
+
+.hud-button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.count-badge.tone-open {
+  background: var(--working-bg);
+  color: var(--working-fg);
+}
+
+.assignment-list,
+.assignment-tree {
+  display: grid;
+  gap: 8px;
+}
+
+.assignment-card {
+  --indent: 36px;
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--working-fg);
+  animation: fade-up 0.2s ease-out;
+}
+
+.assignment-card.status-waiting {
+  border-left-color: var(--waiting-fg);
+}
+
+.assignment-card.status-delivered,
+.assignment-card.status-accepted {
+  border-left-color: var(--done-fg);
+}
+
+.assignment-card.status-failed {
+  border-left-color: var(--failed-fg);
+}
+
+.assignment-card:has(.assignment-owner) {
+  --indent: 44px;
+}
+
+.assignment-top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+}
+
+.assignment-main {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.assignment-title {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.assignment-meta {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.person-name {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.person-name.link-button {
+  color: var(--accent);
+  font-size: inherit;
+  text-decoration-thickness: 1px;
+}
+
+.person-name.gone {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.kind-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.kind-icon.kind-question {
+  background: var(--ask-bg);
+  color: var(--ask);
+}
+
+.assignment-owner {
+  position: relative;
+  display: inline-block;
+  width: 34px;
+  height: 34px;
+}
+
+.assignment-owner .portrait {
+  background: var(--surface-3);
+}
+
+.assignment-owner .kind-icon {
+  position: absolute;
+  right: -6px;
+  bottom: -5px;
+  width: 19px;
+  height: 19px;
+  border-radius: 6px;
+  border: 2px solid var(--surface-2);
+  background: var(--surface);
+}
+
+.portrait-gone {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1.5px dashed var(--border-strong);
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.assignment-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  padding-left: var(--indent);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.runs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.run-meter {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.run-meter span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.run-meter.spent span {
+  background: var(--today);
+}
+
+.assignment-more {
+  padding-left: var(--indent);
+}
+
+.assignment-more summary {
+  width: fit-content;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.assignment-body {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.assignment-body .eyebrow {
+  display: block;
+  margin-bottom: 3px;
+}
+
+.assignment-brief {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.callout.wait {
+  background: var(--waiting-bg);
+  color: var(--waiting-fg);
+}
+
+.assignments-drawer {
+  width: min(520px, 94vw);
+}
+
+.drawer-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.drawer-toolbar {
+  padding: 10px 14px 0;
+}
+
+.tree-children {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0 16px;
+  padding-left: 14px;
+  border-left: 2px solid var(--border-strong);
+}
+
+.tree-children > .tree-node {
+  position: relative;
+}
+
+.tree-children > .tree-node::before {
+  content: "";
+  position: absolute;
+  left: -14px;
+  top: 24px;
+  width: 12px;
+  border-top: 2px solid var(--border-strong);
+}
+
+/* On the floor */
+
+.station.away .nameplate {
+  opacity: 0.75;
+}
+
+.errand-answering .nameplate-line,
+.errand-awaiting_answer .nameplate-line {
+  color: var(--ask-plate);
+}
+
+.errand-waiting_on_team .nameplate-line {
+  color: var(--waiting-fg);
+}
+
+.visitor {
+  position: absolute;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.visitor.phase-out {
+  animation: visit-out 1.8s ease-in-out both;
+}
+
+.visitor.phase-there {
+  transform: translate(var(--dx), var(--dy));
+}
+
+.visitor.phase-back {
+  animation: visit-back 1.8s ease-in-out both;
+}
+
+.visitor.walking .walking-figure {
+  animation: step 0.36s ease-in-out infinite alternate;
+}
+
+.walking-figure {
+  display: block;
+  overflow: visible;
+}
+
+.visitor.walking .leg-left,
+.walker .leg-left {
+  transform-box: fill-box;
+  transform-origin: 50% 0;
+  animation: stride 0.36s ease-in-out infinite alternate;
+}
+
+.visitor.walking .leg-right,
+.walker .leg-right {
+  transform-box: fill-box;
+  transform-origin: 50% 0;
+  animation: stride 0.36s ease-in-out infinite alternate-reverse;
+}
+
+.speech.visit-bubble {
+  bottom: calc(100% - 4px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 230px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ask-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #0ea5e9;
+  color: #fff;
+  font-weight: 900;
+}
+
+.speech.answer-bubble {
+  border: 2px solid #22c55e;
+}
+
+.answer-to {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #15803d;
+}
+
+.question-threads {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.thread-line {
+  fill: none;
+  stroke: #0ea5e9;
+  stroke-width: 2.5;
+  stroke-dasharray: 7 6;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+
+.thread-end {
+  fill: #0ea5e9;
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+.thread-mark {
+  font: 900 14px var(--font);
+  fill: #fff;
+}
+
+.cue-waiting .hourglass {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: flip 2.6s ease-in-out infinite;
+}
+
+@keyframes visit-out {
+  from {
+    transform: none;
+  }
+  to {
+    transform: translate(var(--dx), var(--dy));
+  }
+}
+
+@keyframes visit-back {
+  from {
+    transform: translate(var(--dx), var(--dy));
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes stride {
+  from {
+    transform: rotate(-13deg);
+  }
+  to {
+    transform: rotate(13deg);
+  }
+}
+
+@keyframes flip {
+  0%,
+  70% {
+    transform: none;
+  }
+  100% {
+    transform: rotate(180deg);
+  }
+}
+
 /* Motion off for those who ask */
 
 @media (prefers-reduced-motion: reduce) {
@@ -3156,7 +3599,9 @@ button.wikilink:hover {
   .quest-marker,
   .pod-items,
   .loading-dot,
-  .walker svg {
+  .walker svg,
+  .leg,
+  .hourglass {
     animation: none !important;
   }
   .station:hover {

@@ -1,4 +1,4 @@
-import type { ActivityKind, AgentRole, RoutineTrigger, RunKind, RunState, SourceConnection, Urgency } from "@aihub/shared";
+import type { ActivityKind, AgentRole, AssignmentKind, AssignmentStatus, RoutineTrigger, RunKind, RunState, SourceConnection, Urgency } from "@aihub/shared";
 
 export type AgentState = RunState | "idle";
 
@@ -129,6 +129,39 @@ export const CONNECTION_STATUS_LABELS: Record<SourceConnection["status"], string
   unverified: "Not verified",
   failed: "Failed",
 };
+
+export const ASSIGNMENT_STATUS_LABELS: Record<AssignmentStatus, string> = {
+  open: "Open",
+  waiting: "Waiting on team",
+  delivered: "Delivered",
+  accepted: "Accepted",
+  failed: "Failed",
+};
+
+const ASSIGNMENT_TONES: Record<AssignmentStatus, Tone> = {
+  open: "working",
+  waiting: "waiting",
+  delivered: "done",
+  accepted: "done",
+  failed: "failed",
+};
+
+export function assignmentTone(status: AssignmentStatus): Tone {
+  return ASSIGNMENT_TONES[status];
+}
+
+export const ASSIGNMENT_KIND_LABELS: Record<AssignmentKind, string> = {
+  question: "Question",
+  task: "Task",
+};
+
+/**
+ * Who did it and what, for one activity line. Summaries that already start with the name, such as
+ * "Nora joined as Calendar Supervisor", don't get it twice.
+ */
+export function activityLine(name: string, summary: string): { who: string | null; text: string } {
+  return summary.startsWith(`${name} `) ? { who: null, text: summary } : { who: name, text: summary };
+}
 
 export const RUN_KIND_LABELS: Record<RunKind, string> = {
   chat: "Chat",

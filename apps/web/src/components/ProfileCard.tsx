@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import type { ActivityEntry, Agent, NoteSummary, Responsibility, Routine, Run, SourceConnection, UpdateAgentRequest } from "@aihub/shared";
+import type { ActivityEntry, Agent, Assignment, NoteSummary, Responsibility, Routine, Run, SourceConnection, UpdateAgentRequest } from "@aihub/shared";
 import { errorText } from "../api.ts";
+import { assignmentsOf, teamWaitOf } from "../lib/assignments.ts";
 import { lookFor } from "../lib/avatar.ts";
 import { levelOf, XP_STEP } from "../lib/level.ts";
 import { presenceOf, runsOf } from "../lib/presence.ts";
@@ -14,6 +15,7 @@ import {
   RUN_KIND_LABELS,
   triggerLabel,
 } from "../format.ts";
+import { AssignmentList } from "./Assignments.tsx";
 import { Icon } from "./Icon.tsx";
 import { Portrait } from "./office/Figure.tsx";
 import { StateBadge } from "./StateBadge.tsx";
@@ -29,6 +31,7 @@ interface ProfileCardProps {
   connections: SourceConnection[];
   runs: Record<string, Run>;
   activity: ActivityEntry[];
+  assignments: Assignment[];
   notes: NoteSummary[];
   hasChat: boolean;
   now: number;
@@ -73,6 +76,8 @@ export function ProfileCard(props: ProfileCardProps) {
   const activity = props.activity.filter((entry) => entry.agentId === agent.id).slice(0, 8);
   const notes = props.notes.filter((note) => note.ownerId === agent.id);
   const presence = presenceOf(agent, props.runs, now);
+  const assignments = assignmentsOf(agent.id, props.assignments);
+  const teamWait = teamWaitOf(agent.id, props.assignments);
 
   return (
     <dialog
@@ -208,6 +213,23 @@ export function ProfileCard(props: ProfileCardProps) {
               <p className="muted">{agent.role === "chief_of_staff" ? "The morning briefing and any mandates you grant." : "None yet."}</p>
             )}
             {routines.length > 0 && <RoutineList routines={routines} onRun={props.onRunRoutine} now={now} />}
+          </section>
+
+          <section className="profile-section" aria-labelledby={`${titleId}-assignments`}>
+            <h3 id={`${titleId}-assignments`}>Assignments</h3>
+            {teamWait && (
+              <p className="callout wait">
+                <Icon name="hourglass" size={16} /> Waiting on the team for “{teamWait.task.title}”
+                {teamWait.total > 0 && `: ${teamWait.settled} of ${teamWait.total} in`}.
+              </p>
+            )}
+            {assignments.length === 0 ? (
+              <p className="muted">
+                {agent.role === "worker" ? "No assignment on record." : `Nothing asked of ${agent.name}, and nothing ${agent.name} asked for, yet.`}
+              </p>
+            ) : (
+              <AssignmentList key={agent.id} assignments={assignments} agents={agents} agentId={agent.id} now={now} onSelectAgent={props.onSelectAgent} />
+            )}
           </section>
 
           <section className="profile-section" aria-label="Connections">

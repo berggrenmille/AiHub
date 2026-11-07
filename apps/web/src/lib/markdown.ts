@@ -271,6 +271,31 @@ function findClosing(text: string, from: number, marker: string): number {
   return -1;
 }
 
+/** A whole document as one line of plain text, for a speech bubble or a preview. */
+export function plainText(source: string): string {
+  const blockText = (block: Block): string => {
+    switch (block.type) {
+      case "heading":
+      case "paragraph":
+        return inlineText(block.children);
+      case "list":
+        return block.items.map((item) => inlineText(item.children)).join("; ");
+      case "quote":
+        return block.children.map(blockText).join(" ");
+      case "code":
+        return block.text;
+      case "rule":
+        return "";
+    }
+  };
+  return parseMarkdown(source)
+    .map(blockText)
+    .filter((text) => text.trim() !== "")
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** The plain text of inline nodes, such as for a tooltip or a search. */
 export function inlineText(nodes: Inline[]): string {
   return nodes

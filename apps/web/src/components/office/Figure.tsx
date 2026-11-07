@@ -12,12 +12,14 @@ interface FigureProps {
   talking?: boolean;
   /** A worried mouth, for a failed run. */
   frown?: boolean;
+  /** A visitor's lanyard in this color, for temporary workers. */
+  lanyard?: string;
 }
 
 const HEAD = { x: 70, y: 44, r: 16 };
 const INK = "#2a2230";
 
-export function Figure({ look, pose, talking = false, frown = false }: FigureProps) {
+export function Figure({ look, pose, talking = false, frown = false, lanyard }: FigureProps) {
   return (
     <g className={`figure pose-${pose}`}>
       <g className="figure-body">
@@ -25,6 +27,7 @@ export function Figure({ look, pose, talking = false, frown = false }: FigurePro
         <Torso look={look} />
         <rect x={65} y={55} width={10} height={12} rx={3} fill={look.skinShade} />
         <NeckAccessory look={look} />
+        {lanyard && <Lanyard color={lanyard} />}
         {pose === "holding" && <Paper />}
         {pose === "clipboard" && <Clipboard />}
         <g className="figure-head">
@@ -191,6 +194,18 @@ function Arms({ look, pose }: { look: Look; pose: Pose }) {
         </g>
       );
   }
+}
+
+/** A temporary worker's badge on a strap, in its supervisor's color. */
+function Lanyard({ color }: { color: string }) {
+  return (
+    <g className="lanyard">
+      <path d="M62.5 67.5 L67 79 M77.5 67.5 L73 79" stroke={color} strokeWidth={1.7} strokeLinecap="round" fill="none" />
+      <rect x={65} y={78} width={10} height={11.5} rx={1.6} fill="#f8fafc" stroke={color} strokeWidth={0.9} />
+      <rect x={65} y={78} width={10} height={3.2} rx={1.2} fill={color} />
+      <path d="M67.2 84.5 H72.8 M67.2 86.8 H71" stroke="#94a3b8" strokeWidth={0.8} strokeLinecap="round" />
+    </g>
+  );
 }
 
 function Paper() {
@@ -377,6 +392,28 @@ function NeckAccessory({ look }: { look: Look }) {
     default:
       return null;
   }
+}
+
+/**
+ * A staff member on their feet, walking out or over to a colleague: the seated figure with legs,
+ * in an 80 × 124 frame (viewBox 30 10 80 124) with the head centred at (40, 34).
+ */
+export function WalkingFigure({ look, lanyard }: { look: Look; lanyard?: string }) {
+  const trousers = shade(look.clothingShade, 0.35);
+  return (
+    <svg className="walking-figure" viewBox="30 10 80 124" width="100%" height="100%" aria-hidden="true" focusable="false">
+      <ellipse cx={70} cy={130} rx={17} ry={3.4} fill="#000" opacity={0.22} />
+      <g className="leg leg-left">
+        <rect x={57.5} y={98} width={10} height={27} rx={4} fill={trousers} />
+        <ellipse cx={61.5} cy={126} rx={6.4} ry={3.2} fill="#232833" />
+      </g>
+      <g className="leg leg-right">
+        <rect x={72.5} y={98} width={10} height={27} rx={4} fill={trousers} />
+        <ellipse cx={78.5} cy={126} rx={6.4} ry={3.2} fill="#232833" />
+      </g>
+      <Figure look={look} pose="rest" lanyard={lanyard} />
+    </svg>
+  );
 }
 
 /** A head-and-shoulders portrait for profile cards and lists. */
