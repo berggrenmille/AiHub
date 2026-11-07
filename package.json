@@ -1,0 +1,29 @@
+{
+  "name": "aihub",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n daemon,web -c blue,magenta \"npm:dev:daemon\" \"npm:dev:web\"",
+    "dev:daemon": "npm run dev -w @aihub/daemon",
+    "dev:web": "npm run dev -w @aihub/web",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc -p spikes/codex-app-server",
+    "codex": "node scripts/codex.mjs",
+    "codex:protocol": "node scripts/codex.mjs app-server generate-ts --experimental --out spikes/codex-app-server/protocol",
+    "spike:codex": "tsx spikes/codex-app-server/spike.ts"
+  },
+  "devDependencies": {
+    "@openai/codex": "0.167.0",
+    "@types/node": "^26.6.6",
+    "concurrently": "^10.0.7",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

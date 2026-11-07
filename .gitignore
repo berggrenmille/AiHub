@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.tsbuildinfo
+*.log
+
+# Local secrets and runtime state. AiHub state stays on this PC (DESIGN.md › Purpose and scope).
+.env
+.env.*
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# AiHub's own CODEX_HOME: holds the Codex sign-in, sessions, and config. Never commit it.
+.codex-home/

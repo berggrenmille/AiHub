@@ -1,0 +1,16 @@
+{
+  "name": "@aihub/daemon",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@aihub/shared": "*",
+    "fastify": "^5.12.8",
+    "tsx": "^4.23.15"
+  }
+}
