@@ -4,6 +4,7 @@ import { loadConfig } from "./config.ts";
 import { Office } from "./office.ts";
 import { seedDemoOffice, startDemoActivity } from "./demo.ts";
 import { CodexRuntime, pinnedCodexCommand } from "./runtime/codex-runtime.ts";
+import { Scheduler } from "./scheduler.ts";
 import { demo, FakeRuntime } from "./runtime/fake-runtime.ts";
 import { installToken } from "./security.ts";
 import { buildServer } from "./server.ts";
@@ -22,6 +23,7 @@ if (config.fakeRuntime) {
   startDemoActivity(office);
 }
 office.notebook.watch();
+office.scheduler = new Scheduler(office);
 
 // The daemon only listens on loopback (DESIGN.md › Architecture).
 const app = await buildServer({
@@ -34,11 +36,13 @@ const app = await buildServer({
 });
 await app.listen({ host: config.host, port: config.port });
 void office.refreshRuntimeStatus();
+office.scheduler.start();
 
 let stopping = false;
 async function stop() {
   if (stopping) return;
   stopping = true;
+  office.scheduler?.stop();
   await app.close();
   office.notebook.close();
   await runtime.close();

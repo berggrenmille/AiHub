@@ -29,6 +29,7 @@ import { Notebook } from "./notes/notebook.ts";
 import { CHIEF_OF_STAFF, CHIEF_OF_STAFF_CONVERSATION_ID } from "./staff/chief-of-staff.ts";
 import { instructionsFor } from "./staff/identity.ts";
 import { proposeSupervisor } from "./staff/proposals.ts";
+import type { Scheduler } from "./scheduler.ts";
 import type { ConversationRecord, Store } from "./store/store.ts";
 import { addDays, isWeekday, localDate, TIMEZONE, zonedInstant } from "./time.ts";
 
@@ -86,6 +87,8 @@ export class Office {
   /** Contexts started or resumed by this daemon process, so they need no resume before a turn. */
   private readonly liveContexts = new Set<string>();
   private runtimeStatus: RuntimeStatus | null = null;
+  /** Set by the daemon once it schedules routines. */
+  scheduler: Scheduler | null = null;
 
   constructor(options: OfficeOptions) {
     this.store = options.store;
@@ -109,6 +112,18 @@ export class Office {
       this.activity(run.agentId, run.id, "run_failed", `${run.title}: stopped by a daemon restart`);
     }
     this.syncProfiles();
+    // Every office has the weekday briefing. It runs once a supervisor reports to it.
+    const hasBriefing = this.store.listRoutines().some((routine) => routine.ownerId === CHIEF_OF_STAFF.id && routine.trigger.type === "weekdays");
+    if (!hasBriefing) {
+      this.store.createRoutine({
+        ownerId: CHIEF_OF_STAFF.id,
+        responsibilityId: null,
+        title: "Morning briefing",
+        trigger: { type: "weekdays", time: "07:00" },
+        timezone: TIMEZONE,
+        dailyTurnBudget: 6,
+      });
+    }
   }
 
   /** Writes every staff member's profile note from its record. */
@@ -126,6 +141,11 @@ export class Office {
     this.notebook.syncProfile(agentId);
     this.bus.publish({ type: "agent", agent });
     return agent;
+  }
+
+  /** The plan's usage window, as the runtime reports it. */
+  usageLimits() {
+    return this.runtime.usageLimits();
   }
 
   /** Asks the runtime who is signed in and publishes the answer. */
@@ -150,7 +170,7 @@ export class Office {
       activity: this.store.recentActivity(50),
       responsibilities: this.store.listResponsibilities(),
       connections: this.store.listConnections(),
-      routines: this.store.listRoutines(),
+      routines: this.store.listRoutines().map((routine) => ({ ...routine, nextRunAt: this.scheduler?.nextRunAt(routine) ?? null })),
       proposals: this.store.listProposals(),
       items: this.store.listItems(),
       notes: this.notebook.list(),

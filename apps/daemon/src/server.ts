@@ -154,6 +154,15 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     }
   });
 
+  app.post<{ Params: { id: string } }>("/api/routines/:id/run", async (request, reply) => {
+    try {
+      if (!office.scheduler) throw new ConflictError("This daemon runs no routines.");
+      return reply.code(202).send({ occurrenceId: office.scheduler.runNow(request.params.id) });
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
   // Notes live at their vault path, such as /api/notes/Staff/chief-of-staff/Vera.md.
   app.get<{ Params: { "*": string } }>("/api/notes/*", async (request, reply) => {
     const path = notePath(request.params["*"]);

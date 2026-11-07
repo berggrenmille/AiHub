@@ -754,6 +754,7 @@ export interface Occurrence {
   attempts: number;
   runId: string | null;
   detail: string | null;
+  updatedAt: string;
 }
 
 function toOccurrence(row: Row): Occurrence {
@@ -765,6 +766,7 @@ function toOccurrence(row: Row): Occurrence {
     attempts: Number(row.attempts),
     runId: row.run_id as string | null,
     detail: row.detail as string | null,
+    updatedAt: String(row.updated_at),
   };
 }
 

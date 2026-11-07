@@ -5,6 +5,7 @@ import type { ChatResponse, DaemonEvent, StateSnapshot } from "@aihub/shared";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { FakeRuntime } from "./runtime/fake-runtime.ts";
 import { Office } from "./office.ts";
+import { Scheduler } from "./scheduler.ts";
 import { buildServer } from "./server.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID as CHAT } from "./staff/chief-of-staff.ts";
 import { Store } from "./store/store.ts";
@@ -293,5 +294,20 @@ describe("HTTP server: decisions", () => {
     assert.equal((await post(`/api/responsibilities/${responsibility.id}/end`)).json().status, "ended");
     assert.equal((await post(`/api/responsibilities/${responsibility.id}/end`)).statusCode, 409);
     assert.equal(store.getAgent("rut")!.state, "done");
+  });
+
+  it("runs a routine on request", async () => {
+    let office: Office;
+    ({ app, office } = await server());
+    const routine = office.store.listRoutines()[0]!;
+    const run = () => app!.inject({ method: "POST", url: `/api/routines/${routine.id}/run`, headers: PAGE });
+    assert.equal((await run()).statusCode, 409, "no scheduler");
+
+    office.scheduler = new Scheduler(office, { briefing: () => new Promise(() => {}) });
+    const started = await run();
+    assert.equal(started.statusCode, 202);
+    assert.match(started.json().occurrenceId, new RegExp(`^${routine.id}:manual:`));
+    assert.equal((await run()).statusCode, 409, "already running");
+    assert.equal((await app.inject({ method: "POST", url: "/api/routines/nope/run", headers: PAGE })).statusCode, 404);
   });
 });

@@ -31,14 +31,6 @@ export function seedDemoOffice(office: Office) {
       dailyTurnBudget: 4,
     });
   }
-  store.createRoutine({
-    ownerId: CHIEF_OF_STAFF_ID,
-    responsibilityId: null,
-    title: "Morning briefing",
-    trigger: { type: "weekdays", time: "07:00" },
-    timezone: "Europe/Stockholm",
-    dailyTurnBudget: 6,
-  });
 
   const calendar = store.createConnection({ kind: "ics_file", label: "Work calendar", path: "C:/Users/demo/work.ics" });
   store.setConnectionStatus(calendar.id, "connected", "42 events in the next week");
