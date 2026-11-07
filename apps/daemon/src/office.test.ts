@@ -170,3 +170,61 @@ describe("Office", () => {
     assert.equal(events.at(-1)?.type, "runtime");
   });
 });
+
+describe("Chat with any staff member", () => {
+  function withSupervisor() {
+    const started = startOffice();
+    const { store } = started;
+    store.upsertAgent({ id: "schedule", name: "Elin", title: "Schedule Supervisor", role: "supervisor", managerId: CHIEF_OF_STAFF_ID, profile: "data", charter: "You watch the calendar." });
+    store.createResponsibility({ ownerId: "schedule", title: "Work schedule", scope: "", standingInstructions: "", expiresAt: null });
+    return started;
+  }
+
+  it("opens one chat per staff member, and the Chief of Staff keeps hers", () => {
+    const { office, events } = withSupervisor();
+    assert.equal(office.openChat(CHIEF_OF_STAFF_ID).id, CHAT);
+    const chat = office.openChat("schedule");
+    assert.deepEqual(chat, { id: "chat-schedule", agentId: "schedule", title: "Elin" });
+    assert.deepEqual(office.openChat("schedule"), chat, "the same chat again");
+    assert.equal(events.filter((event) => event.type === "conversation").length, 1);
+    assert.throws(() => office.openChat("nobody"), /No agent nobody/);
+  });
+
+  it("runs a supervisor's chat in its data profile, with its sources, counting as source data", async () => {
+    const { office, store, runtime } = withSupervisor();
+    const chat = office.openChat("schedule");
+    let written: { ok: boolean } | null = null;
+    runtime.respond = async (input, options) => {
+      written = await options.onToolCall({ name: "aihub_write_note", arguments: { title: "Fridays", body: "Keep them free." } });
+      return { status: "completed", text: "Friday is free.", error: null, usage: { inputTokens: 5, cachedInputTokens: 0, outputTokens: 3 } };
+    };
+    const response = office.chat(chat.id, "Am I free on Friday?");
+    await office.queue.idle();
+
+    assert.equal(store.getRun(response.run.id)!.state, "done");
+    assert.deepEqual(written, { ok: true, text: 'Saved "Fridays".' });
+    const [context] = runtime.contexts.values();
+    assert.equal(context!.options.profile, "data");
+    assert.match(context!.options.instructions, /^You are Elin, Schedule Supervisor[\s\S]*The operator is talking with you directly in chat\./);
+    assert.deepEqual(
+      context!.options.tools.map((tool) => tool.name),
+      ["aihub_ask_colleague", "aihub_read_source", ...NOTE_TOOLS],
+    );
+    assert.equal(office.notebook.list().find((note) => note.title === "Fridays")?.provenance, "source_data");
+    assert.deepEqual(
+      store.recentMessages(5, chat.id).map((message) => message.body),
+      ["Am I free on Friday?", "Friday is free."],
+    );
+  });
+
+  it("closes the chat once its staff member has left", () => {
+    const { office, store } = withSupervisor();
+    const chat = office.openChat("schedule");
+    store.archiveAgent("schedule");
+    assert.throws(() => office.chat(chat.id, "Still there?"), /Elin has left the office, so the chat is closed/);
+    assert.equal(office.openChat("schedule").id, chat.id, "the old chat stays readable");
+    store.upsertAgent({ id: "gone", name: "Pip", role: "worker", managerId: "schedule", profile: "data", charter: "" });
+    store.archiveAgent("gone");
+    assert.throws(() => office.openChat("gone"), /Pip has left the office/);
+  });
+});

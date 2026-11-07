@@ -7,6 +7,7 @@ import type {
   Agent,
   ChatMessage,
   ChatResponse,
+  Conversation,
   Item,
   MessageKind,
   OfficeStats,
@@ -27,6 +28,7 @@ import { ContextUnavailableError, type AgentRuntime, type ContextOptions, type T
 import { DAILY_TURN_LIMIT, SUPERVISOR_LIMIT } from "./limits.ts";
 import { Notebook } from "./notes/notebook.ts";
 import { CHIEF_OF_STAFF, CHIEF_OF_STAFF_CONVERSATION_ID } from "./staff/chief-of-staff.ts";
+import { DIRECT_CHAT_INSTRUCTIONS } from "./staff/supervisor.ts";
 import { instructionsFor } from "./staff/identity.ts";
 import { Delegation } from "./staff/delegation.ts";
 import { proposeSupervisor } from "./staff/proposals.ts";
@@ -257,10 +259,25 @@ export class Office {
     return responsibility;
   }
 
+  /** Opens the operator's chat with a staff member, or finds the one already open. */
+  openChat(agentId: string): Conversation {
+    const agent = this.store.getAgentRecord(agentId);
+    if (!agent) throw new NotFoundError(`No agent ${agentId}`);
+    const existing = this.store.listConversations().find((conversation) => conversation.agentId === agentId);
+    if (existing) return existing;
+    if (agent.status !== "active") throw new ConflictError(`${agent.name} has left the office.`);
+    const conversation = { id: `chat-${agentId}`, agentId, title: agent.name };
+    this.store.ensureConversation(conversation);
+    this.bus.publish({ type: "conversation", conversation });
+    return conversation;
+  }
+
   /** Records the operator's message and queues the reply. Returns before the reply starts. */
   chat(conversationId: string, text: string): ChatResponse {
     const conversation = this.store.getConversation(conversationId);
     if (!conversation) throw new NotFoundError(`No conversation ${conversationId}`);
+    const member = this.store.getAgentRecord(conversation.agentId);
+    if (member?.status !== "active") throw new ConflictError(`${member?.name ?? "This staff member"} has left the office, so the chat is closed.`);
     const run = this.store.createRun({ agentId: conversation.agentId, kind: "chat", title: "Reply in chat" });
     const message = this.store.addMessage({ conversationId, author: "operator", agentId: null, body: text, runId: run.id });
     this.bus.publish({ type: "message", message });
@@ -293,11 +310,13 @@ export class Office {
     const conversation = this.store.getConversation(conversationId)!;
     const agent = this.store.getAgentRecord(conversation.agentId)!;
     const run = this.store.getRun(runId)!;
-    const caller = { agentId: agent.id, runId, profile: agent.profile, sourceData: prompt.sourceData };
+    // A data run's chat reads its sources, so everything it writes counts as source data.
+    const caller = { agentId: agent.id, runId, profile: agent.profile, sourceData: prompt.sourceData || agent.profile === "data" };
+    const charter = instructionsFor(agent, this.store.activeResponsibilityOf(agent.id));
     // Every turn of a thread is offered the same tools, so a follow-up doesn't restart the thread.
     const options: ContextOptions = {
       profile: agent.profile,
-      instructions: instructionsFor(agent, this.store.activeResponsibilityOf(agent.id)),
+      instructions: agent.role === "chief_of_staff" ? charter : `${charter}\n\n${DIRECT_CHAT_INSTRUCTIONS}`,
       tools: this.gateway.specsFor(caller, "chat"),
     };
     this.setRunState(runId, "working");

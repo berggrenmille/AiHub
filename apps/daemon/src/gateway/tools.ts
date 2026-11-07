@@ -342,7 +342,7 @@ export const readSourceTool = defineTool({
     .strict(),
   roles: ["supervisor", "worker"],
   profiles: ["data"],
-  kinds: ["question", "assignment", "follow_up"],
+  kinds: ["chat", "question", "assignment", "follow_up"],
   run: async ({ source, from, days, words, limit }, { caller, store, sourceContext }) => {
     const sources = store.connectionsOf(caller.agentId);
     const connection = sources.find((candidate) => candidate.label.toLowerCase() === source.toLowerCase());

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import fastifyStatic from "@fastify/static";
-import type { Agent, ChatResponse, HealthResponse, Note, NoteSummary, StateSnapshot } from "@aihub/shared";
+import type { Agent, ChatResponse, HealthResponse, Note, NoteSummary, OpenChatResponse, StateSnapshot } from "@aihub/shared";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { z } from "zod";
 import type { SequencedEvent } from "./events.ts";
@@ -92,6 +92,15 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     try {
       const response: ChatResponse = office.chat(body.data.conversationId, body.data.text);
       return reply.code(202).send(response);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/agents/:id/chat", async (request, reply) => {
+    try {
+      const response: OpenChatResponse = { conversation: office.openChat(request.params.id) };
+      return response;
     } catch (error) {
       return sendError(reply, error);
     }

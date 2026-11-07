@@ -361,6 +361,8 @@ export type DaemonEvent =
   | { type: "note"; note: NoteSummary }
   | { type: "office"; office: OfficeStats }
   | { type: "assignment"; assignment: Assignment }
+  /** A conversation was opened, such as the operator's first chat with a supervisor. */
+  | { type: "conversation"; conversation: Conversation }
   /** A staff member left the office, such as a worker whose task is accepted. Its records stay. */
   | { type: "agent_left"; agentId: string }
   /** The stream can't catch up from the client's last event. Reload `/api/state`, then reconnect. */
@@ -375,6 +377,11 @@ export interface ChatRequest {
 export interface ChatResponse {
   message: ChatMessage;
   run: Run;
+}
+
+/** `POST /api/agents/:id/chat` opens the operator's chat with that staff member, or finds it. */
+export interface OpenChatResponse {
+  conversation: Conversation;
 }
 
 /** `POST /api/proposals/:id/approve`. A proposal with a source needs the file or folder to read. */
