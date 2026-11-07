@@ -48,6 +48,14 @@ const ACTIVITY_TONES: Record<ActivityKind, Tone> = {
   tool_refused: "failed",
   blocked: "failed",
   context_rebuilt: "idle",
+  proposal: "waiting",
+  approved: "done",
+  declined: "idle",
+  collected: "working",
+  item: "working",
+  responsibility_ended: "done",
+  briefing: "done",
+  health: "failed",
 };
 
 export function activityTone(kind: ActivityKind): Tone {

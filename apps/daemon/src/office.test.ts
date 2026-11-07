@@ -61,7 +61,7 @@ describe("Office", () => {
     await say(office, "Who is on staff?");
 
     const [, reply] = office.store.recentMessages(2, CHAT);
-    assert.match(reply!.body, /"name":"Chief of Staff"/);
+    assert.match(reply!.body, /"name":"Vera","title":"Chief of Staff"/);
     assert.match(reply!.body, /aihub_send_mail is not available to this run/);
     const kinds = office.store.recentActivity(10).map((entry) => entry.kind);
     assert.ok(kinds.includes("tool_call") && kinds.includes("tool_refused"));
@@ -99,7 +99,7 @@ describe("Office", () => {
     assert.deepEqual(fresh.calls, ["resume old-1", "start new-1", "turn new-1"]);
     const [input] = fresh.contexts.get("new-1")!.inputs;
     assert.match(input!, /restored this conversation/);
-    assert.match(input!, /Operator: Remember the number 42\n\nChief of Staff: Echo: Remember the number 42/);
+    assert.match(input!, /Operator: Remember the number 42\n\nVera: Echo: Remember the number 42/);
     assert.match(input!, /The operator's new message:\nWhat number\?$/);
     assert.equal(store.getConversation(CHAT)?.contextId, "new-1");
     assert.equal(store.recentActivity(20).filter((entry) => entry.kind === "context_rebuilt").length, 1);

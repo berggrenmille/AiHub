@@ -146,6 +146,9 @@ function applyEvent(state: OfficeState, event: DaemonEvent): OfficeState {
     case "resync":
       // The connection reloads the snapshot and applies it; until then the current view stands.
       return state;
+    default:
+      // Milestone 2 records arrive before the views that show them.
+      return state;
   }
 }
 

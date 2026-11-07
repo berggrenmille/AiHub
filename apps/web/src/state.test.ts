@@ -6,13 +6,28 @@ import { ACTIVITY_LIMIT, initialOfficeState, officeReducer, rosterOrder, type Of
 const CHAT = "chief-of-staff";
 
 function agent(overrides: Partial<Agent> = {}): Agent {
-  return { id: "chief-of-staff", name: "Chief of Staff", role: "chief_of_staff", managerId: null, profile: "conversation", state: "idle", ...overrides };
+  return {
+    id: "chief-of-staff",
+    name: "Vera",
+    title: "Chief of Staff",
+    description: "Runs the office.",
+    workingStyle: "Brief.",
+    avatar: "chief-of-staff",
+    hiredAt: "2026-11-07T16:00:00.000Z",
+    experience: 0,
+    role: "chief_of_staff",
+    managerId: null,
+    profile: "conversation",
+    state: "idle",
+    ...overrides,
+  };
 }
 
 function run(overrides: Partial<Run> = {}): Run {
   return {
     id: "run-1",
     agentId: "chief-of-staff",
+    responsibilityId: null,
     kind: "chat",
     title: "Reply in chat",
     state: "queued",
@@ -32,8 +47,10 @@ function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
     conversationId: CHAT,
     author: "operator",
     agentId: null,
+    kind: "chat",
     body: "Hello",
     runId: "run-1",
+    refId: null,
     createdAt: "2026-11-07T16:00:00.000Z",
     ...overrides,
   };
@@ -54,6 +71,13 @@ function snapshot(overrides: Partial<StateSnapshot> = {}): StateSnapshot {
     messages: [],
     runs: [],
     activity: [],
+    responsibilities: [],
+    connections: [],
+    routines: [],
+    proposals: [],
+    items: [],
+    notes: [],
+    office: { turnsToday: 0, dailyTurnLimit: 80, activeSupervisors: 0, supervisorLimit: 8, briefingStreak: 0 },
     runtime: { signedIn: true, detail: "operator@example.com" },
     lastEventId: "boot-0",
     ...overrides,

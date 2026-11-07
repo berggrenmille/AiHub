@@ -5,14 +5,42 @@ import type { BriefingSection } from "./briefing.ts";
 // Sample staff and source changes for the simulated briefing (DESIGN.md › The office experience).
 // Used to measure usage and to test isolation before any real source is connected.
 
-const supervisor = (id: string, name: string, charter: string) =>
-  ({ id, name, role: "supervisor", managerId: CHIEF_OF_STAFF_ID, profile: "data", charter }) as const;
+const supervisor = (id: string, name: string, title: string, description: string, workingStyle: string, charter: string) =>
+  ({ id, name, title, description, workingStyle, role: "supervisor", managerId: CHIEF_OF_STAFF_ID, profile: "data", charter }) as const;
 
 export const SAMPLE_STAFF = [
-  supervisor("work-schedule", "Work Schedule", "You are the Work Schedule supervisor. You watch the operator's work calendar for changes, conflicts, and meetings that need preparation."),
-  supervisor("work-inbox", "Work Inbox", "You are the Work Inbox supervisor. You triage the operator's work mailbox by work priorities: decisions and deadlines first, noise left out."),
-  supervisor("personal-inbox", "Personal Inbox", "You are the Personal Inbox supervisor. You watch the operator's personal mailbox for bills, renewals, deliveries, and anything that needs a reply."),
-  supervisor("portfolio", "Portfolio", "You are the Portfolio supervisor. You review holdings and watchlist events against the operator's review rules: flag a holding that falls 7% or more in a day, and earnings within two days."),
+  supervisor(
+    "work-schedule",
+    "Elin",
+    "Work Schedule Supervisor",
+    "Watches the operator's work calendar for changes, conflicts, and meetings that need preparation.",
+    "Precise about times. Flags a clash before it happens.",
+    "You watch the operator's work calendar for changes, conflicts, and meetings that need preparation.",
+  ),
+  supervisor(
+    "work-inbox",
+    "Oskar",
+    "Work Inbox Supervisor",
+    "Triages the operator's work mailbox: decisions and deadlines first, noise left out.",
+    "Ruthless with noise. Quotes the exact ask and the deadline.",
+    "You triage the operator's work mailbox by work priorities: decisions and deadlines first, noise left out.",
+  ),
+  supervisor(
+    "personal-inbox",
+    "Saga",
+    "Personal Inbox Supervisor",
+    "Watches the operator's personal mailbox for bills, renewals, deliveries, and anything that needs a reply.",
+    "Practical. Says what to do and by when.",
+    "You watch the operator's personal mailbox for bills, renewals, deliveries, and anything that needs a reply.",
+  ),
+  supervisor(
+    "portfolio",
+    "Nils",
+    "Portfolio Supervisor",
+    "Reviews holdings and watchlist events against the operator's review rules.",
+    "Sticks to the rules and the numbers. Never gives advice.",
+    "You review holdings and watchlist events against the operator's review rules: flag a holding that falls 7% or more in a day, and earnings within two days.",
+  ),
 ];
 
 export function seedSampleStaff(store: Store) {

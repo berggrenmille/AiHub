@@ -15,6 +15,7 @@
     "@aihub/shared": "*",
     "@fastify/static": "^10.1.10",
     "fastify": "^5.12.8",
+    "ical.js": "^2.2.1",
     "tsx": "^4.23.15",
     "zod": "^4.6.7"
   }

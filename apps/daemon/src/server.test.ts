@@ -127,7 +127,8 @@ describe("HTTP server", () => {
     const response = await app.inject({ url: "/api/state", headers: PAGE });
 
     const state = response.json<StateSnapshot>();
-    assert.equal(state.agents[0]?.name, "Chief of Staff");
+    assert.equal(state.agents[0]?.name, "Vera");
+    assert.equal(state.agents[0]?.title, "Chief of Staff");
     assert.match(state.lastEventId, /^[0-9a-f]{8}-\d+$/);
   });
 

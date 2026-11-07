@@ -62,7 +62,7 @@ describe("runBriefing", () => {
     for (const context of runtime.contexts.values()) {
       if (context.options.profile !== "data") continue;
       assert.deepEqual(context.options.tools.map((tool) => tool.name), ["aihub_submit_report"]);
-      assert.match(context.options.instructions, /You are the .* supervisor[\s\S]*Call aihub_submit_report exactly once/);
+      assert.match(context.options.instructions, /You are \w+, .* Supervisor[\s\S]*Call aihub_submit_report exactly once/);
     }
   });
 

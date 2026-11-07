@@ -1,12 +1,15 @@
 import { createHash } from "node:crypto";
-import type { ActivityKind, ChatMessage, ChatResponse, Run, RunKind, RunState, RuntimeStatus, StateSnapshot } from "@aihub/shared";
+import type { ActivityKind, ChatMessage, ChatResponse, OfficeStats, Run, RunKind, RunState, RuntimeStatus, StateSnapshot } from "@aihub/shared";
 import { EventBus } from "./events.ts";
 import { Gateway, type GatewayTool } from "./gateway/gateway.ts";
 import { OFFICE_TOOLS } from "./gateway/tools.ts";
 import { RunQueue } from "./queue.ts";
 import { ContextUnavailableError, type AgentRuntime, type ContextOptions, type TurnResult } from "./runtime/types.ts";
+import { DAILY_TURN_LIMIT, SUPERVISOR_LIMIT } from "./limits.ts";
 import { CHIEF_OF_STAFF, CHIEF_OF_STAFF_CONVERSATION_ID } from "./staff/chief-of-staff.ts";
+import { instructionsFor } from "./staff/identity.ts";
 import type { ConversationRecord, Store } from "./store/store.ts";
+import { addDays, isWeekday, localDate, TIMEZONE, zonedInstant } from "./time.ts";
 
 export class NotFoundError extends Error {}
 
@@ -94,8 +97,36 @@ export class Office {
       messages: this.store.recentMessages(50),
       runs: this.store.recentRuns(30),
       activity: this.store.recentActivity(50),
+      responsibilities: this.store.listResponsibilities(),
+      connections: this.store.listConnections(),
+      routines: this.store.listRoutines(),
+      proposals: this.store.listProposals(),
+      items: this.store.listItems(),
+      notes: [],
+      office: this.officeStats(),
       runtime: this.runtimeStatus,
       lastEventId: this.bus.lastEventId,
+    };
+  }
+
+  /** The office's shared counters, from records. */
+  officeStats(now = new Date()): OfficeStats {
+    const today = localDate(now, TIMEZONE);
+    const delivered = new Set(this.store.briefingDeliveries().map((at) => localDate(new Date(at), TIMEZONE)));
+    // A streak counts weekdays in a row with a briefing. Today counts once delivered, and doesn't break it before.
+    let day = delivered.has(today) ? today : addDays(today, -1);
+    let briefingStreak = 0;
+    for (; ; day = addDays(day, -1)) {
+      if (!isWeekday(day)) continue;
+      if (!delivered.has(day)) break;
+      briefingStreak++;
+    }
+    return {
+      turnsToday: this.store.usageSince(zonedInstant(today, "00:00", TIMEZONE)).turns,
+      dailyTurnLimit: DAILY_TURN_LIMIT,
+      activeSupervisors: this.store.countActive("supervisor"),
+      supervisorLimit: SUPERVISOR_LIMIT,
+      briefingStreak,
     };
   }
 
@@ -115,7 +146,7 @@ export class Office {
     const conversation = this.store.getConversation(conversationId)!;
     const agent = this.store.getAgentRecord(conversation.agentId)!;
     const caller = { agentId: agent.id, runId, profile: agent.profile };
-    const options: ContextOptions = { profile: agent.profile, instructions: agent.charter, tools: this.gateway.specsFor(caller) };
+    const options: ContextOptions = { profile: agent.profile, instructions: instructionsFor(agent), tools: this.gateway.specsFor(caller) };
     this.setRunState(runId, "working");
     this.activity(agent.id, runId, "run_started", `${agent.name} is replying in chat`);
 
@@ -191,7 +222,7 @@ export class Office {
     try {
       const contextId = await this.runtime.startContext({
         profile: agent.profile,
-        instructions: `${agent.charter}
+        instructions: `${instructionsFor(agent)}
 
 ${task.instructions}`,
         tools: this.gateway.specsFor(caller),

@@ -45,8 +45,8 @@ describe("Gateway", () => {
 
     assert.equal(outcome.ok, true);
     assert.deepEqual(JSON.parse(outcome.text), [
-      { name: "Chief of Staff", role: "chief_of_staff", manager: null, state: "queued" },
-      { name: "Work Schedule", role: "supervisor", manager: "Chief of Staff", state: "queued" },
+      { name: "Chief of Staff", title: "", role: "chief_of_staff", manager: null, responsibility: null, state: "queued" },
+      { name: "Work Schedule", title: "", role: "supervisor", manager: "Chief of Staff", responsibility: null, state: "queued" },
     ]);
     assert.equal(store.recentActivity(1)[0]?.kind, "tool_call");
   });

@@ -5,7 +5,7 @@ import { defineTool, type GatewayTool } from "./gateway.ts";
 
 export const getRoster = defineTool({
   name: "aihub_get_roster",
-  description: "List the AiHub staff with each member's role, manager, and current run state.",
+  description: "List the AiHub staff with each member's name, title, role, manager, responsibility, and current run state.",
   input: z.object({}).strict(),
   roles: ["chief_of_staff"],
   profiles: ["conversation"],
@@ -15,8 +15,10 @@ export const getRoster = defineTool({
     return JSON.stringify(
       agents.map((agent) => ({
         name: agent.name,
+        title: agent.title,
         role: agent.role,
         manager: agent.managerId ? (names.get(agent.managerId) ?? null) : null,
+        responsibility: store.activeResponsibilityOf(agent.id)?.title ?? null,
         state: agent.state,
       })),
     );
