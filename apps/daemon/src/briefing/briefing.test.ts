@@ -40,8 +40,8 @@ describe("runBriefing", () => {
 
     const outcome = await runBriefing(office, sections);
 
-    assert.equal(outcome.run.state, "done");
-    assert.equal(outcome.run.kind, "briefing");
+    assert.equal(outcome.run!.state, "done");
+    assert.equal(outcome.run!.kind, "briefing");
     assert.deepEqual(outcome.sections.map((section) => section.status), ["reported", "reported", "reported", "nothing_new"]);
     const contexts = [...runtime.contexts.values()];
     assert.equal(contexts.filter((context) => context.options.profile === "data").length, 3);
@@ -50,7 +50,7 @@ describe("runBriefing", () => {
     assert.match(outcome.text, /Section 4: Portfolio\nChecked; nothing new/);
     const [posted] = store.recentMessages(1, CHIEF_OF_STAFF_CONVERSATION_ID);
     assert.equal(posted?.body, outcome.text);
-    assert.equal(posted?.runId, outcome.run.id);
+    assert.equal(posted?.runId, outcome.run!.id);
     assert.equal(store.usageSince(new Date(0)).turns, 4);
     assert.equal(store.getAgent(CHIEF_OF_STAFF_ID)?.state, "idle");
   });

@@ -75,6 +75,14 @@ function reply(threadId, turnId, text) {
   completeTurn(threadId, turnId, "completed");
 }
 
+/** A codexErrorInfo: "offline" has no HTTP status, a number is an HTTP status, anything else is the info itself. */
+function errorInfo(name) {
+  if (!name) return null;
+  if (name === "offline") return { httpConnectionFailed: { httpStatusCode: null } };
+  if (/^\d+$/.test(name)) return { responseStreamConnectionFailed: { httpStatusCode: Number(name) } };
+  return name;
+}
+
 async function runTurn(threadId, turnId, input) {
   const [command, name, ...rest] = input.split(" ");
   switch (command) {
@@ -105,8 +113,9 @@ async function runTurn(threadId, turnId, input) {
       hangingTurns.set(turnId, threadId);
       return;
     case "fail":
+      // "fail" alone fails for no stated reason; "fail <info>" fails as Codex does for that cause.
       modelRequest(threadId, turnId);
-      return completeTurn(threadId, turnId, "failed", { message: "The model refused", codexErrorInfo: null, additionalDetails: null, misalignment: null });
+      return completeTurn(threadId, turnId, "failed", { message: name ? `Failed: ${name}` : "The model refused", codexErrorInfo: errorInfo(name), additionalDetails: null, misalignment: null });
     case "crash":
       process.exit(3);
     default:

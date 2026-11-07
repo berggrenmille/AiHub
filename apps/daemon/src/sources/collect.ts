@@ -31,19 +31,41 @@ export interface Collection {
   identities: Map<string, Identity>;
   /** How the changes were cut, such as some held back for the next check. */
   notes: string[];
+  /** Why what the source holds may be out of date, such as an old export, or null. */
+  warning: string | null;
   /** Saves the cursor. Call it once the changes have been reported, so a failed run sees them again. */
   commit: () => void;
 }
 
 /** Reads the connection to check it works, and records what it found. */
 export async function verifyConnection(store: Store, connectionId: string, context: SourceContext = { now: new Date() }): Promise<SourceConnection> {
+  return (await checkConnection(store, connectionId, context)).connection;
+}
+
+/** Verifies a connection, and also says whether what it holds may be out of date. */
+export async function checkConnection(
+  store: Store,
+  connectionId: string,
+  context: SourceContext = { now: new Date() },
+): Promise<{ connection: SourceConnection; warning: string | null }> {
   const connection = store.getConnection(connectionId);
   if (!connection) throw new Error(`No connection ${connectionId}`);
   const adapter = adapterFor(connection.kind);
+  let detail: string;
   try {
-    return store.setConnectionStatus(connectionId, "connected", await adapter.verify(connection, context));
+    detail = await adapter.verify(connection, context);
   } catch (error) {
-    return store.setConnectionStatus(connectionId, "failed", adapter.describeError(error));
+    return { connection: store.setConnectionStatus(connectionId, "failed", adapter.describeError(error)), warning: null };
+  }
+  const warning = stalenessOf(adapter, connection, context);
+  return { connection: store.setConnectionStatus(connectionId, "connected", warning ? `${detail}. ${warning}` : detail), warning };
+}
+
+function stalenessOf(adapter: SourceAdapter, connection: SourceConnection, context: SourceContext): string | null {
+  try {
+    return adapter.staleness?.(connection, context) ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -83,7 +105,7 @@ export async function previewProposedSource(source: ProposedSource, path: string
 /** Collects what changed on a connection for a responsibility since its cursor. */
 export async function collect(store: Store, responsibilityId: string, connection: SourceConnection, context: SourceContext = { now: new Date() }): Promise<Collection> {
   const adapter = adapterFor(connection.kind);
-  const base = { firstCheck: false, firstCheckNote: adapter.firstCheckNote, records: [], identities: new Map(), notes: [], commit: () => {} };
+  const base = { firstCheck: false, firstCheckNote: adapter.firstCheckNote, records: [], identities: new Map(), notes: [], warning: null, commit: () => {} };
   let changes;
   try {
     changes = await adapter.changes(connection, store.getCursor(responsibilityId, connection.id), context);
@@ -101,6 +123,7 @@ export async function collect(store: Store, responsibilityId: string, connection
     records: changes.records,
     identities: changes.identities,
     notes: changes.notes,
+    warning: stalenessOf(adapter, connection, context),
     commit: () => store.setCursor(responsibilityId, connection.id, cursor),
   };
 }

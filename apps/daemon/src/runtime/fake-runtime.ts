@@ -190,6 +190,9 @@ export class FakeRuntime implements AgentRuntime {
   readonly contexts = new Map<string, { options: ContextOptions & { ephemeral?: boolean }; inputs: string[] }>();
   readonly calls: string[] = [];
   respond: Responder = echo;
+  /** What account() and usageLimits() report; tests change them. */
+  signedIn = true;
+  usage: UsageLimits | null = { usedPercent: 10, resetsAt: null };
   private nextContext = 1;
 
   constructor(private readonly prefix = "ctx") {}
@@ -218,11 +221,11 @@ export class FakeRuntime implements AgentRuntime {
   }
 
   async account(): Promise<RuntimeAccount> {
-    return { signedIn: true, detail: "operator@example.com, plan plus" };
+    return this.signedIn ? { signedIn: true, detail: "operator@example.com, plan plus" } : { signedIn: false, detail: "Not signed in. Run `npm run codex -- login`." };
   }
 
   async usageLimits(): Promise<UsageLimits | null> {
-    return { usedPercent: 10, resetsAt: null };
+    return this.usage;
   }
 
   async close(): Promise<void> {}

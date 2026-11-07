@@ -112,9 +112,10 @@ describe("Store records", () => {
     });
     assert.equal(store.claimOccurrence(`${routine.id}:2026-11-09`, routine.id, "2026-11-09T06:00:00.000Z"), true);
     assert.equal(store.claimOccurrence(`${routine.id}:2026-11-09`, routine.id, "2026-11-09T06:00:00.000Z"), false);
-    store.updateOccurrence(`${routine.id}:2026-11-09`, { status: "running", attempt: true });
-    assert.equal(store.failRunningOccurrences("Restarted"), 1);
-    assert.equal(store.getOccurrence(`${routine.id}:2026-11-09`)!.attempts, 1);
+    assert.equal(store.startOccurrence(store.getOccurrence(`${routine.id}:2026-11-09`)!), true);
+    assert.equal(store.failRunningOccurrences("Restarted", 15 * 60_000, 2), 1);
+    const failed = store.getOccurrence(`${routine.id}:2026-11-09`)!;
+    assert.deepEqual([failed.status, failed.attempts, failed.retryAt !== null], ["failed", 1, true]);
   });
 
   it("never reports an unchanged item as new twice", () => {

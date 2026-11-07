@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
-import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { Office } from "../office.ts";
+import { RecordingPlatform } from "../platform.ts";
+import { Scheduler } from "../scheduler.ts";
 import { FakeRuntime } from "../runtime/fake-runtime.ts";
 import type { RunTurnOptions, TurnResult } from "../runtime/types.ts";
 import { verifyConnection } from "../sources/collect.ts";
@@ -43,7 +45,8 @@ async function setUp() {
   const store = new Store(":memory:");
   const runtime = new FakeRuntime();
   runtime.respond = respond;
-  const office = new Office({ store, runtime, vaultDir: join(dir, "vault") });
+  const platform = new RecordingPlatform();
+  const office = new Office({ store, runtime, vaultDir: join(dir, "vault"), platform });
   office.start();
   store.upsertAgent({ id: "work-schedule", name: "Elin", title: "Work Schedule Supervisor", role: "supervisor", managerId: CHIEF_OF_STAFF_ID, profile: "data", charter: "" });
   const responsibility = store.createResponsibility({ ownerId: "work-schedule", title: "Work schedule", scope: "", standingInstructions: "", expiresAt: null });
@@ -51,7 +54,7 @@ async function setUp() {
   const connection = store.createConnection({ kind: "ics_file", label: "Work calendar", path: calendar });
   store.grant("work-schedule", connection.id, ["read"]);
   await verifyConnection(store, connection.id, { now: MONDAY });
-  return { store, runtime, office, responsibility, calendar };
+  return { store, runtime, office, responsibility, calendar, connection, platform };
 }
 
 const turnCount = (runtime: FakeRuntime) => runtime.calls.filter((call) => call.startsWith("turn ")).length;
@@ -80,7 +83,7 @@ describe("Morning briefing", () => {
     const turns = turnCount(runtime);
     const second = await runMorningBriefing(office, { now: MONDAY });
     assert.equal(second.sections[0]?.status, "nothing_new");
-    assert.equal(second.run.state, "done");
+    assert.equal(second.run!.state, "done");
     assert.equal(turnCount(runtime), turns, "no turn on a quiet morning");
     assert.match(second.text, /^Nothing new since the last briefing\. Checked: Work schedule\.\n\nWork schedule\nStill open: .*Q4 planning \(new\)/);
     assert.equal(store.recentMessages(1, CHIEF_OF_STAFF_CONVERSATION_ID)[0]?.body, second.text);
@@ -158,5 +161,109 @@ describe("Morning briefing", () => {
     const ended = await runMorningBriefing(office, { now: MONDAY });
     assert.deepEqual(ended.sections, []);
     assert.equal(turnCount(runtime), turns);
+  });
+});
+
+describe("Morning briefing when something is wrong", () => {
+  const FOUR_ITEMS = ["1:1 with Erik (new)", "Company offsite (new)", "Project review (new)", "Q4 planning (new)"];
+  const briefings = (store: Store) => store.recentMessages(20, CHIEF_OF_STAFF_CONVERSATION_ID).filter((message) => message.kind === "briefing");
+  const reportContexts = (runtime: FakeRuntime) => [...runtime.contexts.values()].filter((context) => context.options.profile === "data").length;
+
+  it("says a supervisor can't read its source once its access is revoked, without a turn of its own", async () => {
+    const { office, store, runtime, connection } = await setUp();
+    store.revokeGrant("work-schedule", connection.id);
+    const outcome = await runMorningBriefing(office, { now: MONDAY });
+    assert.equal(outcome.sections[0]?.status, "unavailable");
+    assert.match(outcome.text, /Source unavailable: Elin has no source to read: its access was removed\./);
+    assert.equal(reportContexts(runtime), 0, "no report turn");
+  });
+
+  it("sends the briefing without a failed supervisor's report, and reports its changes next time", async () => {
+    const { office, store, runtime, responsibility } = await setUp();
+    runtime.respond = async (input, options) =>
+      input.includes("BEGIN SOURCE DATA") ? { status: "failed", text: "", error: "The model refused", usage: null } : respond(input, options);
+    const first = await runMorningBriefing(office, { now: MONDAY });
+    assert.deepEqual([first.sections[0]?.status, first.run?.state, first.waiting], ["missing", "done", null]);
+    assert.match(first.text, /Missing: The model refused/);
+    assert.equal(store.itemsOf(responsibility.id, ["new", "open"]).length, 0);
+
+    runtime.respond = respond;
+    const second = await runMorningBriefing(office, { now: MONDAY });
+    assert.equal(second.sections[0]?.status, "reported");
+    assert.deepEqual(titles(store.itemsOf(responsibility.id, ["open"])), FOUR_ITEMS);
+  });
+
+  it("waits before any turn while Codex usage is used up, and briefs once it resets", async () => {
+    const { office, store, runtime, responsibility } = await setUp();
+    const resetsAt = new Date("2026-11-09T08:12:00.000Z");
+    runtime.usage = { usedPercent: 100, resetsAt, exhausted: true };
+    const waiting = await runMorningBriefing(office, { now: MONDAY });
+    assert.deepEqual([waiting.run, waiting.waiting?.blocker, waiting.waiting?.resetsAt], [null, "usage", resetsAt]);
+    assert.equal(turnCount(runtime), 0);
+    assert.equal(store.recentRuns(10).filter((run) => run.kind === "briefing").length, 0, "no run for a briefing that never started");
+
+    runtime.usage = { usedPercent: 0, resetsAt: null, exhausted: false };
+    const delivered = await runMorningBriefing(office, { now: MONDAY });
+    assert.equal(delivered.run?.state, "done");
+    assert.deepEqual(titles(store.itemsOf(responsibility.id, ["open"])), FOUR_ITEMS);
+  });
+
+  it("holds the briefing back when a turn runs out of usage or reach, and leaves its changes unreported", async () => {
+    const { office, store, runtime, responsibility } = await setUp();
+    const resetsAt = new Date("2026-11-09T08:12:00.000Z");
+    runtime.usage = { usedPercent: 99, resetsAt, exhausted: false };
+    runtime.respond = async (input, options) =>
+      input.includes("BEGIN SOURCE DATA") ? { status: "failed", text: "", error: "Usage limit reached", usage: null, blocker: "usage" } : respond(input, options);
+    const report = await runMorningBriefing(office, { now: MONDAY });
+    assert.deepEqual([report.waiting?.blocker, report.waiting?.resetsAt, report.run?.state], ["usage", resetsAt, "failed"]);
+    assert.equal(report.run?.error, "Waiting: The Codex plan's usage is used up.");
+    assert.equal(briefings(store).length, 0);
+
+    // The reports go through, but composing can't reach the service: the items stay undelivered.
+    runtime.respond = async (input, options) =>
+      input.includes("BEGIN SOURCE DATA") ? respond(input, options) : { status: "failed", text: "", error: "stream disconnected", usage: null, blocker: "offline" };
+    const compose = await runMorningBriefing(office, { now: MONDAY });
+    assert.deepEqual([compose.waiting?.blocker, compose.waiting?.detail], ["offline", "Codex can't reach the internet"]);
+    assert.equal(briefings(store).length, 0);
+    assert.deepEqual(titles(store.itemsOf(responsibility.id, ["new"])), FOUR_ITEMS, "found, not delivered");
+
+    runtime.respond = respond;
+    const delivered = await runMorningBriefing(office, { now: MONDAY });
+    assert.equal(delivered.run?.state, "done");
+    assert.deepEqual(titles(store.itemsOf(responsibility.id, ["open"])), FOUR_ITEMS);
+    assert.equal(briefings(store).length, 1);
+  });
+
+  it("sends a quiet briefing while Codex is signed out, since it needs no turn", async () => {
+    const { office, runtime } = await setUp();
+    await runMorningBriefing(office, { now: MONDAY });
+    runtime.signedIn = false;
+    const turns = turnCount(runtime);
+    const quiet = await runMorningBriefing(office, { now: MONDAY });
+    assert.deepEqual([quiet.run?.state, quiet.waiting], ["done", null]);
+    assert.equal(turnCount(runtime), turns);
+  });
+
+  it("says when a calendar export is more than a week old", async () => {
+    const { office, runtime, calendar } = await setUp();
+    const nineDaysAgo = new Date(MONDAY.getTime() - 9 * 86_400_000);
+    utimesSync(calendar, nineDaysAgo, nineDaysAgo);
+    const first = await runMorningBriefing(office, { now: MONDAY });
+    assert.match(first.text, /Warning: The export is 9 days old, so changes made since then are missing\. Export it again\./);
+
+    const turns = turnCount(runtime);
+    const quiet = await runMorningBriefing(office, { now: MONDAY });
+    assert.equal(turnCount(runtime), turns, "still no turn on a quiet morning");
+    assert.match(quiet.text, /\n\nWork schedule: The export is 9 days old/);
+  });
+
+  it("tells the operator outside the browser that the briefing is in, in counts only", async () => {
+    const { office, store, platform } = await setUp();
+    const scheduler = new Scheduler(office, { now: () => MONDAY });
+    const routine = store.listRoutines().find((candidate) => candidate.trigger.type === "weekdays")!;
+    const id = scheduler.runNow(routine.id);
+    await scheduler.idle();
+    assert.equal(store.getOccurrence(id)?.status, "delivered");
+    assert.deepEqual(platform.notifications, [{ path: "/", title: "Your briefing is ready", body: "4 new items.", tag: "briefing" }]);
   });
 });

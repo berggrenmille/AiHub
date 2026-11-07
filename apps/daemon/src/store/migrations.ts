@@ -236,4 +236,24 @@ export const MIGRATIONS: string[] = [
     updated_at TEXT NOT NULL
   );
   `,
+
+  // v6: a briefing can wait for Codex, and records when it tries again (Milestone 5).
+  `
+  CREATE TABLE occurrences_v6 (
+    id TEXT PRIMARY KEY,
+    routine_id TEXT NOT NULL REFERENCES routines (id),
+    scheduled_for TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'waiting', 'delivered', 'failed', 'skipped')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    run_id TEXT REFERENCES runs (id),
+    detail TEXT,
+    retry_at TEXT,
+    updated_at TEXT NOT NULL
+  );
+  INSERT INTO occurrences_v6 (id, routine_id, scheduled_for, status, attempts, run_id, detail, updated_at)
+    SELECT id, routine_id, scheduled_for, status, attempts, run_id, detail, updated_at FROM occurrences;
+  DROP TABLE occurrences;
+  ALTER TABLE occurrences_v6 RENAME TO occurrences;
+  CREATE INDEX occurrences_by_status ON occurrences (status);
+  `,
 ];

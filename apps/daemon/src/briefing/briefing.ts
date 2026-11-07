@@ -1,6 +1,7 @@
 import type { Item, Run } from "@aihub/shared";
 import { DAILY_TURN_LIMIT } from "../limits.ts";
-import type { Office } from "../office.ts";
+import type { Blocked, Office } from "../office.ts";
+import type { TurnBlocker } from "../runtime/types.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "../staff/chief-of-staff.ts";
 import { ReportInput } from "../gateway/tools.ts";
 import type { z } from "zod";
@@ -34,12 +35,16 @@ export interface BriefingSection {
   firstCheckNote?: string;
   /** How the changes were cut, such as some held back for the next check. */
   notes?: string[];
+  /** Why what the source holds may be out of date, such as an old export. The briefing says so. */
+  warning?: string | null;
   /** Runs once the briefing is delivered, such as saving the collector's cursor. */
   onDelivered?: () => void;
 }
 
 interface SectionBase {
   heading: string;
+  /** Why what the source holds may be out of date. */
+  warning: string | null;
   /** Items reported in an earlier briefing that are still open. */
   carried: Item[];
   /** Items resolved since the last briefing. */
@@ -51,14 +56,17 @@ export type SectionOutcome = SectionBase &
     | { status: "reported"; run: Run; report: Report; newItems: Item[] }
     | { status: "nothing_new"; newItems: Item[] }
     | { status: "unavailable"; reason: string }
-    | { status: "missing"; run: Run | null; reason: string }
+    | { status: "missing"; run: Run | null; reason: string; blocker?: TurnBlocker | null }
   );
 
 export interface BriefingOutcome {
-  run: Run;
+  /** The briefing's run, or null if it waited before starting one. */
+  run: Run | null;
   sections: SectionOutcome[];
   /** The briefing as posted, or empty if composing failed. */
   text: string;
+  /** Why the briefing didn't go out, when trying again later may fix it. Its changes stay unreported. */
+  waiting: Blocked | null;
 }
 
 export const REPORT_INSTRUCTIONS = [
@@ -73,7 +81,7 @@ const FIRST_CHECK_NOTE =
 
 export const BRIEFING_INSTRUCTIONS = [
   "This run composes the operator's morning briefing from your supervisors' reports.",
-  "Write one short section per supervisor, in the order given, under its heading. Within each section, put new urgent items and decisions the operator must make first, then other new items. Summarize items still open from earlier briefings in one line instead of repeating them, and mention items resolved since the last briefing briefly. Mention a section that had nothing new in one line. If a section is missing or its source is unavailable, say which and why, so the operator knows the briefing is incomplete.",
+  "Write one short section per supervisor, in the order given, under its heading. Within each section, put new urgent items and decisions the operator must make first, then other new items. Summarize items still open from earlier briefings in one line instead of repeating them, and mention items resolved since the last briefing briefly. Mention a section that had nothing new in one line. If a section is missing or its source is unavailable, say which and why, so the operator knows the briefing is incomplete. Pass on a section's warning in one line.",
   "Use only what the input says. Keep the whole briefing under 300 words, in plain text with the headings on their own lines.",
 ].join("\n");
 
@@ -83,13 +91,26 @@ export async function runBriefing(
   options: { timeoutMs?: number; now?: Date } = {},
 ): Promise<BriefingOutcome> {
   const { store, bus } = office;
-  const briefing = office.openRun(CHIEF_OF_STAFF_ID, "briefing", "Morning briefing");
-  office.setRunState(briefing.id, "collecting");
-
   for (const item of store.resolveExpiredItems("It's over.")) bus.publish({ type: "item", item });
   const since = store.briefingDeliveries(1)[0] ?? new Date(0).toISOString();
 
+  // Before any turn, check Codex can run one. A quiet morning needs none, so it goes out regardless.
+  if (needsModel(office, sections, since)) {
+    const waiting = await office.readiness();
+    if (waiting) return { run: null, sections: [], text: "", waiting };
+  }
+
+  const briefing = office.openRun(CHIEF_OF_STAFF_ID, "briefing", "Morning briefing");
+  office.setRunState(briefing.id, "collecting");
   const outcomes = await Promise.all(sections.map((section) => reportSection(office, section, since, options.timeoutMs)));
+
+  // A report that couldn't run for a reason waiting may fix holds the whole briefing back.
+  const blocked = outcomes.find((outcome) => outcome.status === "missing" && outcome.blocker);
+  if (blocked?.status === "missing" && blocked.blocker) {
+    const waiting = await office.blocked(blocked.blocker);
+    office.finishRun(briefing.id, "failed", `Waiting: ${waiting.detail}.`);
+    return { run: store.getRun(briefing.id)!, sections: outcomes, text: "", waiting };
+  }
 
   // A quiet morning needs no model: code says so, and lists what is still open.
   const quiet = outcomes.every((outcome) => outcome.status === "nothing_new" && outcome.newItems.length === 0 && outcome.resolved.length === 0);
@@ -106,7 +127,9 @@ export async function runBriefing(
         // The reports were written from source data, so anything the Chief of Staff notes from them is too.
         sourceData: true,
       });
-  if (composed.run.state !== "done" || !composed.text) return { run: composed.run, sections: outcomes, text: "" };
+  if (composed.run.state !== "done" || !composed.text) {
+    return { run: composed.run, sections: outcomes, text: "", waiting: composed.blocker ? await office.blocked(composed.blocker) : null };
+  }
 
   office.postMessage(CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID, composed.text, briefing.id, "briefing");
   // Delivered: new items are now open, and collectors move their cursors past what was reported.
@@ -116,7 +139,20 @@ export async function runBriefing(
     const status = outcomes[index]!.status;
     if (status === "reported" || status === "nothing_new") section.onDelivered?.();
   });
-  return { run: composed.run, sections: outcomes, text: composed.text };
+  return { run: composed.run, sections: outcomes, text: composed.text, waiting: null };
+}
+
+/**
+ * Whether the briefing will run a model turn: a section has changes to report, or something to
+ * say that needs composing. Mirrors what makes a briefing quiet, so a quiet one needs no Codex.
+ */
+function needsModel(office: Office, sections: BriefingSection[], since: string): boolean {
+  const { store } = office;
+  return sections.some((section) => {
+    if (section.unavailable || section.changes.length) return true;
+    const id = section.responsibilityId;
+    return !!id && (store.itemsOf(id, ["new"]).length > 0 || store.closedItemsSince(id, since).length > 0);
+  });
 }
 
 async function reportSection(office: Office, section: BriefingSection, since: string, timeoutMs?: number): Promise<SectionOutcome> {
@@ -124,6 +160,7 @@ async function reportSection(office: Office, section: BriefingSection, since: st
   const responsibilityId = section.responsibilityId ?? null;
   const base: SectionBase = {
     heading: section.heading,
+    warning: section.warning ?? null,
     carried: responsibilityId ? store.itemsOf(responsibilityId, ["open"]) : [],
     resolved: responsibilityId ? store.closedItemsSince(responsibilityId, since) : [],
   };
@@ -137,7 +174,7 @@ async function reportSection(office: Office, section: BriefingSection, since: st
   }
 
   const openItems = base.carried.map((item) => ({ title: item.title, sourceRef: item.sourceKey }));
-  const { run } = await office.runTask({
+  const { run, blocker } = await office.runTask({
     agentId: section.agentId,
     kind: "report",
     title: `Report for the briefing: ${section.heading}`,
@@ -157,7 +194,7 @@ async function reportSection(office: Office, section: BriefingSection, since: st
   const result = store.resultForRun(run.id);
   if (run.state !== "done" || !result) {
     const reason = run.state === "done" ? "The supervisor did not file a report" : (run.error ?? "The run failed");
-    return { ...base, status: "missing", run, reason };
+    return { ...base, status: "missing", run, reason, blocker };
   }
   const report = result.body as Report;
   const newItems = [...undelivered, ...applyItems(office, section, run, report)];
@@ -227,14 +264,15 @@ function applyItems(office: Office, section: BriefingSection, run: Run, report: 
   return fresh;
 }
 
-function quietBriefing(office: Office, runId: string, outcomes: SectionOutcome[]): { run: Run; text: string } {
+function quietBriefing(office: Office, runId: string, outcomes: SectionOutcome[]): { run: Run; text: string; blocker: null } {
   const open = outcomes.filter((outcome) => outcome.carried.length);
   const text = [
     `Nothing new since the last briefing. Checked: ${outcomes.map((outcome) => outcome.heading).join(", ") || "no sources yet"}.`,
     ...open.map((outcome) => `${outcome.heading}\nStill open: ${outcome.carried.map((item) => item.title).join("; ")}.`),
+    ...outcomes.filter((outcome) => outcome.warning).map((outcome) => `${outcome.heading}: ${outcome.warning}`),
   ].join("\n\n");
   office.finishRun(runId, "done", undefined, "Wrote a quiet briefing: nothing new.");
-  return { run: office.store.getRun(runId)!, text };
+  return { run: office.store.getRun(runId)!, text, blocker: null };
 }
 
 function dedupe(items: Item[]): Item[] {
@@ -271,6 +309,7 @@ function composeInput(outcomes: SectionOutcome[]): string {
           lines.push(`Missing: ${outcome.reason}`);
           break;
       }
+      if (outcome.warning) lines.push(`Warning: ${outcome.warning}`);
       if (outcome.carried.length) lines.push(`Still open from earlier briefings: ${outcome.carried.map((item) => item.title).join("; ")}`);
       if (outcome.resolved.length) {
         lines.push(`Resolved since the last briefing: ${outcome.resolved.map((item) => `${item.title}${item.resolution ? ` (${item.resolution})` : ""}`).join("; ")}`);

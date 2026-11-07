@@ -21,7 +21,9 @@ export async function collectSections(office: Office, now = new Date()): Promise
 
     const [connection] = store.connectionsOf(owner.id);
     if (!connection) {
-      sections.push({ agentId: owner.id, heading: responsibility.title, source: "No source", changes: [], responsibilityId: responsibility.id });
+      // Its access was removed, or never granted: say so, without a turn to find out it can't read.
+      const unavailable = `${owner.name} has no source to read: its access was removed. Approve a source for ${owner.name} again, or end the responsibility.`;
+      sections.push({ agentId: owner.id, heading: responsibility.title, source: "No source", changes: [], responsibilityId: responsibility.id, unavailable });
       continue;
     }
     const collection = await collect(store, responsibility.id, connection, office.sourceContext(now));
@@ -37,6 +39,7 @@ export async function collectSections(office: Office, now = new Date()): Promise
       firstCheck: collection.firstCheck,
       firstCheckNote: collection.firstCheckNote,
       notes: collection.notes,
+      warning: collection.warning,
       onDelivered: collection.commit,
     });
   }

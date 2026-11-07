@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { RateLimitSnapshot } from "@aihub/codex-protocol/v2";
 import { AppServerProcess, LOCKED_DOWN_FEATURES, type AppServerCommand } from "./app-server.ts";
 import {
   ContextUnavailableError,
@@ -94,9 +95,7 @@ export class CodexRuntime implements AgentRuntime {
 
   async usageLimits(): Promise<UsageLimits | null> {
     const { rateLimits } = await (await this.process("conversation")).rateLimits();
-    if (!rateLimits.primary) return null;
-    const { usedPercent, resetsAt } = rateLimits.primary;
-    return { usedPercent, resetsAt: resetsAt === null ? null : new Date(resetsAt * 1000) };
+    return usageFrom(rateLimits);
   }
 
   async close(): Promise<void> {
@@ -138,4 +137,22 @@ function groupOf(profile: RunProfile): ProcessGroup {
 
 function asDynamicTool(tool: ContextOptions["tools"][number]) {
   return { type: "function", name: tool.name, description: tool.description, inputSchema: tool.inputSchema };
+}
+
+/**
+ * The plan's usage, from its fullest window: a short one (hours) and a long one (a week) each
+ * limit turns, and the fuller one decides when they can run again.
+ */
+export function usageFrom(snapshot: RateLimitSnapshot): UsageLimits | null {
+  const windows = [snapshot.primary, snapshot.secondary].filter((window) => window !== null);
+  if (!windows.length) return null;
+  const fullest = windows.reduce((a, b) =>
+    b.usedPercent > a.usedPercent || (b.usedPercent === a.usedPercent && (b.resetsAt ?? 0) > (a.resetsAt ?? 0)) ? b : a,
+  );
+  const credits = snapshot.credits?.hasCredits || snapshot.credits?.unlimited;
+  return {
+    usedPercent: fullest.usedPercent,
+    resetsAt: fullest.resetsAt === null ? null : new Date(fullest.resetsAt * 1000),
+    exhausted: snapshot.rateLimitReachedType != null || (fullest.usedPercent >= 100 && !credits),
+  };
 }

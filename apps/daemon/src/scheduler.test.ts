@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { ConflictError } from "./errors.ts";
-import { Office } from "./office.ts";
+import { fileURLToPath } from "node:url";
+import { Office, type Blocked } from "./office.ts";
+import { RecordingPlatform } from "./platform.ts";
 import { FakeRuntime } from "./runtime/fake-runtime.ts";
 import { Scheduler, type SchedulerOptions } from "./scheduler.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "./staff/chief-of-staff.ts";
@@ -26,7 +28,8 @@ function setUp(start: string, briefing?: (done: () => Outcome) => Promise<Outcom
   const clock = { now: new Date(start) };
   const store = new Store(":memory:", () => clock.now);
   const runtime = new FakeRuntime();
-  const office = new Office({ store, runtime, vaultDir: dir });
+  const platform = new RecordingPlatform();
+  const office = new Office({ store, runtime, vaultDir: dir, platform });
   office.start();
   const calls: string[] = [];
   const done = (): Outcome => ({ run: { id: store.createRun({ agentId: CHIEF_OF_STAFF_ID, kind: "briefing", title: "Morning briefing" }).id, state: "done", error: null } });
@@ -44,8 +47,10 @@ function setUp(start: string, briefing?: (done: () => Outcome) => Promise<Outcom
     await scheduler.tick();
     await scheduler.idle();
   };
-  return { store, runtime, office, scheduler, routine, calls, at, clock, done };
+  return { store, runtime, office, scheduler, routine, calls, at, clock, done, platform, dir };
 }
+
+const notices = (store: Store) => store.recentMessages(20, CHIEF_OF_STAFF_CONVERSATION_ID).filter((message) => message.kind === "notice").map((message) => message.body);
 
 describe("The scheduler", () => {
   it("gives every office one weekday briefing at 07:00", () => {
@@ -117,7 +122,7 @@ describe("The scheduler", () => {
     fail = false;
     clock.now = new Date("2026-11-10T06:00:00.000Z");
     store.claimOccurrence(`${routine.id}:2026-11-10`, routine.id, clock.now.toISOString());
-    store.updateOccurrence(`${routine.id}:2026-11-10`, { status: "running", attempt: true });
+    store.startOccurrence(store.getOccurrence(`${routine.id}:2026-11-10`)!);
     const restarted = new Scheduler(office, { now: () => clock.now, briefing: () => (calls.push("restarted"), Promise.resolve(done())) });
     restarted.start();
     restarted.stop();
@@ -166,5 +171,167 @@ describe("The scheduler", () => {
     assert.equal(office.snapshot().routines.find((candidate) => candidate.id === routine.id)?.nextRunAt, "2026-11-16T06:00:00.000Z");
     store.setRoutinePaused(routine.id, true);
     assert.equal(scheduler.nextRunAt(store.getRoutine(routine.id)!), null);
+  });
+});
+
+describe("The scheduler when Codex can't run", () => {
+  const usedUp = (resetsAt: Date | null): Blocked => ({ blocker: "usage", detail: "The Codex plan's usage is used up", resetsAt });
+  const signedOut: Blocked = { blocker: "signed_out", detail: "Codex isn't signed in", resetsAt: null };
+
+  it("waits for Codex usage to reset, says so once, and delivers after", async () => {
+    let blocked = true;
+    // 08:12Z is 09:12 in Stockholm.
+    const resetsAt = new Date("2026-11-09T08:12:00.000Z");
+    const { store, scheduler, routine, calls, at, platform } = setUp(MONDAY_0700, (done) =>
+      Promise.resolve(blocked ? { run: null, waiting: usedUp(calls.length === 1 ? resetsAt : null) } : done()),
+    );
+    const id = `${routine.id}:2026-11-09`;
+    await at(MONDAY_0700);
+    const waiting = store.getOccurrence(id)!;
+    assert.deepEqual([waiting.status, waiting.retryAt, waiting.attempts], ["waiting", "2026-11-09T08:13:00.000Z", 0]);
+    assert.deepEqual(notices(store), ["The briefing is waiting for Codex usage to reset at 09:12."]);
+    assert.deepEqual(platform.notifications, [{ path: "/", title: "Your briefing is waiting", body: "The briefing is waiting for Codex usage to reset at 09:12.", tag: "briefing" }]);
+    assert.equal(scheduler.nextRunAt(routine), "2026-11-09T08:13:00.000Z");
+    assert.equal(platform.awake, false, "the PC may sleep while the wait is long");
+    assert.equal(platform.wake?.toISOString(), "2026-11-09T08:11:00.000Z", "and wakes for the next try");
+
+    await at("2026-11-09T07:00:00.000Z");
+    assert.equal(calls.length, 1, "not before the reset");
+    await at("2026-11-09T08:13:00.000Z");
+    assert.equal(calls.length, 2);
+    assert.deepEqual([store.getOccurrence(id)?.status, store.getOccurrence(id)?.retryAt], ["waiting", "2026-11-09T08:43:00.000Z"]);
+    assert.equal(notices(store).length, 1, "the same reason isn't said twice");
+
+    blocked = false;
+    await at("2026-11-09T08:43:00.000Z");
+    assert.deepEqual([store.getOccurrence(id)?.status, store.getOccurrence(id)?.attempts], ["delivered", 1]);
+    assert.equal(platform.notifications.at(-1)?.title, "Your briefing is ready");
+    assert.equal(platform.awake, false);
+    assert.equal(platform.wake?.toISOString(), "2026-11-10T04:58:00.000Z", "Tuesday, before its health check");
+  });
+
+  it("keeps waiting across a restart, and gives up at the end of the day", async () => {
+    const { store, office, routine, calls, at, clock, platform } = setUp(MONDAY_0700, () => Promise.resolve({ run: null, waiting: signedOut }));
+    const id = `${routine.id}:2026-11-09`;
+    await at(MONDAY_0700);
+    assert.deepEqual([store.getOccurrence(id)?.status, store.getOccurrence(id)?.retryAt], ["waiting", "2026-11-09T06:15:00.000Z"]);
+    assert.deepEqual(notices(store), [
+      "The briefing is waiting. Codex isn't signed in. Sign in with `npm run codex -- login`. It tries again at 07:15, and until the end of the day.",
+    ]);
+    assert.equal(platform.awake, true, "a short wait keeps the PC awake");
+
+    // The daemon restarts: the waiting briefing is still there, and tries again when due.
+    clock.now = new Date("2026-11-09T06:15:00.000Z");
+    const restarted = new Scheduler(office, { now: () => clock.now, briefing: () => (calls.push("restarted"), Promise.resolve({ run: null, waiting: signedOut })) });
+    restarted.start();
+    restarted.stop();
+    await restarted.idle();
+    assert.deepEqual(calls.at(-1), "restarted");
+
+    clock.now = new Date("2026-11-09T22:55:00.000Z");
+    await restarted.tick();
+    await restarted.idle();
+    const gaveUp = store.getOccurrence(id)!;
+    assert.deepEqual([gaveUp.status, gaveUp.retryAt, gaveUp.detail], ["failed", null, "Gave up. Codex isn't signed in."]);
+    assert.equal(notices(store).at(-1), "Today's briefing didn't go out. Codex isn't signed in. The next briefing covers what it would have.");
+    assert.equal(platform.notifications.at(-1)?.title, "No briefing today");
+    assert.equal(notices(store).length, 2);
+  });
+
+  it("gives up on a waiting briefing from an earlier day, such as after a night with the daemon off", async () => {
+    const { store, routine, at } = setUp(MONDAY_0700, () => Promise.resolve({ run: null, waiting: signedOut }));
+    await at(MONDAY_0700);
+    await at("2026-11-10T05:00:00.000Z");
+    assert.equal(store.getOccurrence(`${routine.id}:2026-11-09`)?.status, "failed");
+    assert.match(notices(store).at(-1)!, /^That day's briefing didn't go out\. Codex isn't signed in\./);
+  });
+
+  it("starts each briefing once with two schedulers on one database", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "aihub-scheduler-"));
+    dirs.push(dir);
+    const clock = { now: new Date(MONDAY_0700) };
+    const calls: string[] = [];
+    let fail = true;
+    const daemons = [1, 2].map((n) => {
+      const store = new Store(join(dir, "aihub.db"), () => clock.now);
+      const office = new Office({ store, runtime: new FakeRuntime(), vaultDir: join(dir, `vault-${n}`) });
+      office.start();
+      const scheduler = new Scheduler(office, {
+        now: () => clock.now,
+        briefing: async () => {
+          calls.push(`daemon ${n}`);
+          if (fail) throw new Error("Codex timed out");
+          return { run: { id: store.createRun({ agentId: CHIEF_OF_STAFF_ID, kind: "briefing", title: "Morning briefing" }).id, state: "done", error: null } };
+        },
+      });
+      return { store, scheduler };
+    });
+    const both = async (iso: string) => {
+      clock.now = new Date(iso);
+      await Promise.all(daemons.map(({ scheduler }) => scheduler.tick()));
+      await Promise.all(daemons.map(({ scheduler }) => scheduler.idle()));
+    };
+    try {
+      const { store } = daemons[0]!;
+      const routine = store.listRoutines().find((candidate) => candidate.trigger.type === "weekdays")!;
+      assert.equal(store.listRoutines().length, 1, "the second daemon added no routine");
+      await both(MONDAY_0700);
+      assert.equal(calls.length, 1);
+      fail = false;
+      await both("2026-11-09T06:16:00.000Z");
+      assert.equal(calls.length, 2, "the retry ran once too");
+      await both("2026-11-09T06:40:00.000Z");
+      assert.equal(calls.length, 2);
+      assert.equal(store.getOccurrence(`${routine.id}:2026-11-09`)?.status, "delivered");
+    } finally {
+      for (const { store } of daemons) store.close();
+    }
+  });
+
+  it("keeps the PC awake from just before the health check until the briefing is in, and sets the next wake", async () => {
+    let finish!: () => void;
+    const { at, platform, scheduler } = setUp("2026-11-09T04:50:00.000Z", (done) => new Promise((resolve) => (finish = () => resolve(done()))));
+    await at("2026-11-09T04:50:00.000Z");
+    assert.deepEqual([platform.awake, platform.wake?.toISOString()], [false, "2026-11-09T04:58:00.000Z"]);
+    await at("2026-11-09T04:58:00.000Z");
+    assert.deepEqual([platform.awake, platform.wake?.toISOString()], [true, "2026-11-10T04:58:00.000Z"]);
+
+    // Friday's briefing: the next wake is Monday's.
+    await at("2026-11-13T05:59:00.000Z");
+    assert.equal(platform.awake, true);
+    const briefing = at("2026-11-13T06:00:00.000Z");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(platform.awake, true, "awake while it runs");
+    finish();
+    await briefing;
+    await scheduler.idle();
+    assert.deepEqual([platform.awake, platform.wake?.toISOString()], [false, "2026-11-16T04:58:00.000Z"]);
+  });
+
+  it("catches an expired sign-in and an old calendar export in the health check, and says so outside the browser", async () => {
+    const { store, runtime, at, platform, dir } = setUp("2026-11-09T05:10:00.000Z");
+    runtime.signedIn = false;
+    const calendar = join(dir, "work.ics");
+    copyFileSync(fileURLToPath(new URL("../test/fixtures/work.ics", import.meta.url)), calendar);
+    const tenDaysAgo = new Date(Date.parse("2026-11-09T05:10:00.000Z") - 10 * 86_400_000);
+    utimesSync(calendar, tenDaysAgo, tenDaysAgo);
+    const connection = store.createConnection({ kind: "ics_file", label: "Work calendar", path: calendar });
+
+    await at("2026-11-09T05:10:00.000Z");
+    const [notice] = notices(store);
+    assert.match(notice!, /^Before 07:00, a few things need you:\n- Codex isn't signed in \(Not signed in\. Run `npm run codex -- login`\.\)\./);
+    assert.match(notice!, /\n- Work calendar: The export is 10 days old, so changes made since then are missing\. Export it again\.$/);
+    assert.deepEqual([store.getConnection(connection.id)?.status, store.getConnection(connection.id)?.detail?.endsWith("Export it again.")], ["connected", true]);
+    const [alert] = platform.notifications;
+    assert.deepEqual([alert?.title, alert?.tag, alert?.path], ["Before 07:00, 2 things need you", "health", "/"]);
+    assert.match(alert!.body, /^Codex isn't signed in/);
+  });
+
+  it("tells the operator a manual briefing can't run, without waiting or retrying", async () => {
+    const { store, scheduler, routine } = setUp("2026-11-09T12:00:00.000Z", () => Promise.resolve({ run: null, waiting: signedOut }));
+    const id = scheduler.runNow(routine.id);
+    await scheduler.idle();
+    assert.deepEqual([store.getOccurrence(id)?.status, store.getOccurrence(id)?.retryAt], ["failed", null]);
+    assert.equal(notices(store).at(-1), "The briefing can't run now. Codex isn't signed in. Sign in with `npm run codex -- login`.");
   });
 });

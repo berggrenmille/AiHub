@@ -24,7 +24,7 @@ import { EventBus } from "./events.ts";
 import { Gateway, type GatewayTool } from "./gateway/gateway.ts";
 import { OFFICE_TOOLS } from "./gateway/tools.ts";
 import { RunQueue } from "./queue.ts";
-import { ContextUnavailableError, type AgentRuntime, type ContextOptions, type TurnResult } from "./runtime/types.ts";
+import { ContextUnavailableError, type AgentRuntime, type ContextOptions, type TurnBlocker, type TurnResult } from "./runtime/types.ts";
 import { DAILY_TURN_LIMIT, SUPERVISOR_LIMIT } from "./limits.ts";
 import { Notebook } from "./notes/notebook.ts";
 import { CHIEF_OF_STAFF, CHIEF_OF_STAFF_CONVERSATION_ID } from "./staff/chief-of-staff.ts";
@@ -76,7 +76,25 @@ export interface TaskOutcome {
   run: Run;
   /** The agent's final message. */
   text: string;
+  /** Why the turn couldn't run, when waiting may fix it. */
+  blocker: TurnBlocker | null;
 }
+
+/** Why Codex can't run a turn now, when waiting may fix it. */
+export interface Blocked {
+  blocker: TurnBlocker;
+  /** What stands in the way, for the operator. */
+  detail: string;
+  /** When the plan's usage resets, if that is what stands in the way. */
+  resetsAt: Date | null;
+}
+
+const BLOCKED_DETAIL: Record<TurnBlocker, string> = {
+  usage: "The Codex plan's usage is used up",
+  signed_out: "Codex isn't signed in",
+  offline: "Codex can't reach the internet",
+  busy: "Codex is busy",
+};
 
 export interface OfficeOptions {
   store: Store;
@@ -187,6 +205,24 @@ export class Office {
   /** The plan's usage window, as the runtime reports it. */
   usageLimits() {
     return this.runtime.usageLimits();
+  }
+
+  /**
+   * Checks, without a model turn, whether Codex could run one now: someone is signed in and the
+   * plan has usage left. Being offline only shows once a turn tries.
+   */
+  async readiness(): Promise<Blocked | null> {
+    const account = await this.refreshRuntimeStatus();
+    if (!account.signedIn) return { blocker: "signed_out", detail: `${BLOCKED_DETAIL.signed_out}. ${account.detail}`, resetsAt: null };
+    const usage = await this.runtime.usageLimits().catch(() => null);
+    if (usage?.exhausted) return { blocker: "usage", detail: BLOCKED_DETAIL.usage, resetsAt: usage.resetsAt };
+    return null;
+  }
+
+  /** Describes a blocker a turn ran into, with when usage resets if that is the one. */
+  async blocked(blocker: TurnBlocker): Promise<Blocked> {
+    const usage = blocker === "usage" ? await this.runtime.usageLimits().catch(() => null) : null;
+    return { blocker, detail: BLOCKED_DETAIL[blocker], resetsAt: usage?.resetsAt ?? null };
   }
 
   /** Asks the runtime who is signed in and publishes the answer. */
@@ -349,6 +385,7 @@ export class Office {
       });
 
     let text = "";
+    let blocker: TurnBlocker | null = null;
     try {
       let context = await this.openContext(conversation, options, prompt, runId);
       let result: TurnResult;
@@ -363,13 +400,14 @@ export class Office {
       }
       this.publishRun(this.store.addTurn(runId, result.usage));
       text = result.text;
+      blocker = result.blocker ?? null;
       if (result.text) this.postMessage(conversationId, agent.id, result.text, runId);
       if (result.status === "completed") this.finishRun(runId, "done", undefined, prompt.journal);
       else this.finishRun(runId, "failed", result.error ?? `The turn was ${result.status}`, prompt.journal);
     } catch (error) {
       this.finishRun(runId, "failed", errorText(error));
     }
-    return { run: this.store.getRun(runId)!, text };
+    return { run: this.store.getRun(runId)!, text, blocker };
   }
 
   /**
@@ -422,6 +460,7 @@ export class Office {
     this.setRunState(runId, "working");
     this.activity(agent.id, runId, "run_started", `${agent.name}: ${task.title}`);
     let text = "";
+    let blocker: TurnBlocker | null = null;
     try {
       // A worker has no responsibility of its own: it works under its supervisor's, the run's.
       const responsibility =
@@ -445,12 +484,13 @@ ${task.instructions}`,
       });
       this.publishRun(this.store.addTurn(runId, result.usage));
       text = result.text;
+      blocker = result.blocker ?? null;
       if (result.status === "completed") this.finishRun(runId, "done");
       else this.finishRun(runId, "failed", result.error ?? `The turn was ${result.status}`);
     } catch (error) {
       this.finishRun(runId, "failed", errorText(error));
     }
-    return { run: this.store.getRun(runId)!, text };
+    return { run: this.store.getRun(runId)!, text, blocker };
   }
 
   /**

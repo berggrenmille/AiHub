@@ -463,6 +463,13 @@ export class Store {
       .run(agentId, connectionId, JSON.stringify(operations), this.timestamp());
   }
 
+  /** Takes back an agent's access to a connection. */
+  revokeGrant(agentId: string, connectionId: string) {
+    this.db
+      .prepare("UPDATE grants SET revoked_at = ? WHERE agent_id = ? AND connection_id = ? AND revoked_at IS NULL")
+      .run(this.timestamp(), agentId, connectionId);
+  }
+
   /** A staff member leaves: off the roster, with every grant revoked. Its records and notes stay. */
   archiveAgent(id: string) {
     const now = this.timestamp();
@@ -525,20 +532,52 @@ export class Store {
     return row ? toOccurrence(row) : null;
   }
 
-  updateOccurrence(id: string, update: { status: Occurrence["status"]; runId?: string | null; detail?: string | null; attempt?: boolean }) {
+  /**
+   * Sets an occurrence's outcome. `attempts` adds to its count of attempts, such as -1 to give back
+   * one that only waited. `retryAt` is when it runs again; left out, it won't.
+   */
+  updateOccurrence(
+    id: string,
+    update: { status: Occurrence["status"]; runId?: string | null; detail?: string | null; attempts?: number; retryAt?: string | null },
+  ) {
     this.db
       .prepare(
-        `UPDATE occurrences SET status = ?, run_id = COALESCE(?, run_id), detail = ?, attempts = attempts + ?, updated_at = ?
+        `UPDATE occurrences SET status = ?, run_id = COALESCE(?, run_id), detail = ?, attempts = MAX(attempts + ?, 0), retry_at = ?, updated_at = ?
          WHERE id = ?`,
       )
-      .run(update.status, update.runId ?? null, update.detail ?? null, update.attempt ? 1 : 0, this.timestamp(), id);
+      .run(update.status, update.runId ?? null, update.detail ?? null, update.attempts ?? 0, update.retryAt ?? null, this.timestamp(), id);
   }
 
-  /** Occurrences left running when the daemon stopped. */
-  failRunningOccurrences(reason: string): number {
+  /**
+   * Starts an occurrence as it was read, counting the attempt. Returns false if it changed since,
+   * such as when another scheduler started it first.
+   */
+  startOccurrence(occurrence: Occurrence): boolean {
     const { changes } = this.db
-      .prepare("UPDATE occurrences SET status = 'failed', detail = ?, updated_at = ? WHERE status = 'running'")
-      .run(reason, this.timestamp());
+      .prepare(
+        `UPDATE occurrences SET status = 'running', attempts = attempts + 1, retry_at = NULL, updated_at = ?
+         WHERE id = ? AND status = ? AND updated_at = ?`,
+      )
+      .run(this.timestamp(), occurrence.id, occurrence.status, occurrence.updatedAt);
+    return changes > 0;
+  }
+
+  occurrencesIn(status: Occurrence["status"]): Occurrence[] {
+    return (this.db.prepare("SELECT * FROM occurrences WHERE status = ? ORDER BY scheduled_for").all(status) as Row[]).map(toOccurrence);
+  }
+
+  /**
+   * Occurrences left running when the daemon stopped. Each fails, and runs again after `retryAfterMs`
+   * if it has had fewer than `maxAttempts`.
+   */
+  failRunningOccurrences(reason: string, retryAfterMs: number, maxAttempts: number): number {
+    const retryAt = new Date(this.now().getTime() + retryAfterMs).toISOString();
+    const { changes } = this.db
+      .prepare(
+        `UPDATE occurrences SET status = 'failed', detail = ?, retry_at = CASE WHEN attempts < ? THEN ? END, updated_at = ?
+         WHERE status = 'running'`,
+      )
+      .run(reason, maxAttempts, retryAt, this.timestamp());
     return Number(changes);
   }
 
@@ -953,10 +992,12 @@ export interface Occurrence {
   id: string;
   routineId: string;
   scheduledFor: string;
-  status: "pending" | "running" | "delivered" | "failed" | "skipped";
+  status: "pending" | "running" | "waiting" | "delivered" | "failed" | "skipped";
   attempts: number;
   runId: string | null;
   detail: string | null;
+  /** When a waiting or failed occurrence runs again. Null means it won't. */
+  retryAt: string | null;
   updatedAt: string;
 }
 
@@ -969,6 +1010,7 @@ function toOccurrence(row: Row): Occurrence {
     attempts: Number(row.attempts),
     runId: row.run_id as string | null,
     detail: row.detail as string | null,
+    retryAt: row.retry_at as string | null,
     updatedAt: String(row.updated_at),
   };
 }

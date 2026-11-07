@@ -5,7 +5,8 @@ import { dirname, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { LOCKED_DOWN_FEATURES } from "./app-server.ts";
-import { CodexRuntime, pinnedCodexCommand } from "./codex-runtime.ts";
+import type { RateLimitSnapshot } from "@aihub/codex-protocol/v2";
+import { CodexRuntime, pinnedCodexCommand, usageFrom } from "./codex-runtime.ts";
 import { ContextUnavailableError, type ContextOptions, type ToolCall, type TurnEvent } from "./types.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -154,6 +155,26 @@ describe("CodexRuntime", () => {
 
     assert.equal(result.status, "failed");
     assert.equal(result.error, "The model refused");
+    assert.equal(result.blocker, null, "no reason waiting would fix");
+  });
+
+  it("says when a failed turn may succeed after waiting", async () => {
+    const contextId = await runtime.startContext(conversation);
+    const blockers: Record<string, string | null> = {
+      usageLimitExceeded: "usage",
+      unauthorized: "signed_out",
+      "401": "signed_out",
+      offline: "offline",
+      serverOverloaded: "busy",
+      "429": "busy",
+      "503": "busy",
+      contextWindowExceeded: null,
+      "400": null,
+    };
+    for (const [info, blocker] of Object.entries(blockers)) {
+      const result = await runtime.runTurn(contextId, { input: `fail ${info}`, onToolCall: noTools });
+      assert.deepEqual([info, result.status, result.blocker], [info, "failed", blocker]);
+    }
   });
 
   it("resumes a saved context in a new process after the app server crashes", async () => {
@@ -197,6 +218,34 @@ describe("CodexRuntime", () => {
 
   it("reads the account and usage limits", async () => {
     assert.deepEqual(await runtime.account(), { signedIn: true, detail: "operator@example.com, plan plus" });
-    assert.deepEqual(await runtime.usageLimits(), { usedPercent: 12, resetsAt: new Date(1_900_000_000_000) });
+    assert.deepEqual(await runtime.usageLimits(), { usedPercent: 12, resetsAt: new Date(1_900_000_000_000), exhausted: false });
+  });
+});
+
+describe("usageFrom", () => {
+  const window = (usedPercent: number, resetsAt: number) => ({ usedPercent, windowDurationMins: null, resetsAt });
+  const snapshot = (overrides: Partial<RateLimitSnapshot>): RateLimitSnapshot => ({
+    limitId: null,
+    limitName: null,
+    normalModelSlug: null,
+    primary: null,
+    secondary: null,
+    credits: null,
+    individualLimit: null,
+    spendControlReached: null,
+    planType: null,
+    rateLimitReachedType: null,
+    ...overrides,
+  });
+
+  it("reports the fuller window, since it decides when turns can run again", () => {
+    assert.deepEqual(usageFrom(snapshot({ primary: window(40, 1_000), secondary: window(100, 9_000) })), {
+      usedPercent: 100,
+      resetsAt: new Date(9_000_000),
+      exhausted: true,
+    });
+    assert.equal(usageFrom(snapshot({ primary: window(100, 1_000), credits: { hasCredits: true, unlimited: false, balance: "5" } }))?.exhausted, false, "credits go on");
+    assert.equal(usageFrom(snapshot({ primary: window(70, 1_000), rateLimitReachedType: "rate_limit_reached" }))?.exhausted, true);
+    assert.equal(usageFrom(snapshot({})), null);
   });
 });

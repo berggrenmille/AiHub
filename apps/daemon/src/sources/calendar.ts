@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { statSync } from "node:fs";
 import type { SourceConnection } from "@aihub/shared";
 import { addDays, localDate, TIMEZONE, zonedInstant } from "../time.ts";
 import { diffCalendar, readCalendarFile, type CalendarCursor, type CalendarWindow } from "./ics.ts";
@@ -11,6 +12,8 @@ import { errorCode, matchesWords, messageOf, NoPathChosen, plural, type Identity
 export const CALENDAR_DAYS = 7;
 /** Most events one read returns, so a long window can't flood the turn. */
 const MAX_EVENTS = 200;
+/** An export older than this many days is likely missing changes made since. */
+export const STALE_EXPORT_DAYS = 7;
 
 export const calendarSource: SourceAdapter = {
   kind: "ics_file",
@@ -22,6 +25,12 @@ export const calendarSource: SourceAdapter = {
     const records = readCalendarFile(pathOf(connection), weekFrom(now));
     const upcoming = records.filter((record) => record.status !== "cancelled").length;
     return `${plural(upcoming, "event")} in the next ${CALENDAR_DAYS} days`;
+  },
+
+  // An export is a copy: what changed in the calendar after it was saved isn't in it.
+  staleness(connection, { now }) {
+    const days = Math.floor((now.getTime() - statSync(pathOf(connection)).mtimeMs) / 86_400_000);
+    return days > STALE_EXPORT_DAYS ? `The export is ${days} days old, so changes made since then are missing. Export it again.` : null;
   },
 
   async changes(connection, previous, { now }) {

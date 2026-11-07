@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { InitializeResponse, ServerNotification, ServerRequest } from "@aihub/codex-protocol";
 import type {
+  CodexErrorInfo,
   DynamicToolCallResponse,
   GetAccountRateLimitsResponse,
   GetAccountResponse,
@@ -13,7 +14,7 @@ import type {
   TurnStartResponse,
 } from "@aihub/codex-protocol/v2";
 import { JsonRpcConnection, type ParamsOf, type ServerRequestReply } from "./json-rpc.ts";
-import type { RunTurnOptions, TurnResult, TurnUsage } from "./types.ts";
+import type { RunTurnOptions, TurnBlocker, TurnResult, TurnUsage } from "./types.ts";
 
 // Codex features that give a run a way around the gateway: ChatGPT apps (the codex_apps MCP server,
 // which includes web search), browser and computer use, shell and file-viewing tools, and anything
@@ -167,7 +168,7 @@ export class AppServerProcess {
         }
       }
       const status = outcome.status === "completed" || outcome.status === "interrupted" ? outcome.status : "failed";
-      return result(active, status, outcome.error?.message ?? null);
+      return result(active, status, outcome.error?.message ?? null, blockerOf(outcome.error?.codexErrorInfo ?? null));
     } catch (error) {
       return result(active, "failed", errorText(error));
     } finally {
@@ -278,9 +279,31 @@ function recordItem(active: ActiveTurn, item: ThreadItem) {
   if (item.type === "agentMessage") active.messages.push({ text: item.text, final: item.phase === "final_answer" });
 }
 
-function result(active: ActiveTurn, status: TurnResult["status"], error: string | null): TurnResult {
+function result(active: ActiveTurn, status: TurnResult["status"], error: string | null, blocker: TurnBlocker | null = null): TurnResult {
   const final = active.messages.findLast((message) => message.final) ?? active.messages.at(-1);
-  return { status, text: final?.text ?? "", error, usage: usageOf(active) };
+  return { status, text: final?.text ?? "", error, usage: usageOf(active), blocker };
+}
+
+/** Sorts a failed turn's cause into what waiting may fix, or null when it won't. */
+export function blockerOf(info: CodexErrorInfo | null): TurnBlocker | null {
+  if (info === null) return null;
+  if (typeof info === "string") {
+    if (info === "usageLimitExceeded") return "usage";
+    if (info === "unauthorized") return "signed_out";
+    if (info === "rateLimitExceeded" || info === "serverOverloaded" || info === "internalServerError") return "busy";
+    return null;
+  }
+  for (const key of ["httpConnectionFailed", "responseStreamConnectionFailed", "responseStreamDisconnected", "responseTooManyFailedAttempts"]) {
+    const failure = (info as Record<string, unknown>)[key] as { httpStatusCode?: number | null } | undefined;
+    if (!failure || typeof failure !== "object") continue;
+    const status = failure.httpStatusCode ?? null;
+    // No HTTP status means the request never reached the service.
+    if (status === null) return "offline";
+    if (status === 401) return "signed_out";
+    if (status === 429 || status >= 500) return "busy";
+    return null;
+  }
+  return null;
 }
 
 function usageOf(active: ActiveTurn): TurnUsage | null {

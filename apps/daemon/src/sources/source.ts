@@ -68,6 +68,8 @@ export interface SourceAdapter {
   read(connection: SourceConnection, query: SourceQuery, context: SourceContext): Promise<SourceReading>;
   /** A read failure in the operator's terms, saying what to do about it. */
   describeError(error: unknown): string;
+  /** Why what a readable source holds may be out of date, such as an old export, or null. */
+  staleness?(connection: SourceConnection, context: SourceContext): string | null;
 }
 
 /** Raised for a connection whose file or folder the operator hasn't picked yet. */

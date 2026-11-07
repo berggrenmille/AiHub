@@ -43,12 +43,20 @@ export interface TurnUsage {
   outputTokens: number;
 }
 
+/**
+ * Why a turn couldn't run, when waiting may fix it: the plan's usage is used up, Codex is signed
+ * out, there is no connection, or the service is busy. Any other failure has no blocker.
+ */
+export type TurnBlocker = "usage" | "signed_out" | "offline" | "busy";
+
 export interface TurnResult {
   status: "completed" | "failed" | "interrupted";
   /** The agent's final message. */
   text: string;
   error: string | null;
   usage: TurnUsage | null;
+  /** Set when the turn failed for a reason waiting may fix. */
+  blocker?: TurnBlocker | null;
 }
 
 export interface RunTurnOptions {
@@ -65,9 +73,12 @@ export interface RuntimeAccount {
 }
 
 export interface UsageLimits {
-  /** Percent of the primary usage window already used. */
+  /** Percent used of the plan's fullest usage window. */
   usedPercent: number;
+  /** When that window resets. */
   resetsAt: Date | null;
+  /** The plan can't run a turn until the window resets. */
+  exhausted?: boolean;
 }
 
 export interface AgentRuntime {
