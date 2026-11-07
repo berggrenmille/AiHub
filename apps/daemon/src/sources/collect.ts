@@ -64,8 +64,20 @@ export async function checkProposedSource(source: ProposedSource, path: string, 
 /** What a connection for a proposed source stores: the path, and for a folder its files and reader. */
 export function connectionFor(source: ProposedSource, path: string): Pick<SourceConnection, "kind" | "label" | "path" | "pattern" | "reader"> {
   if (source.kind !== "folder") return { kind: source.kind, label: source.label, path, pattern: null, reader: null };
-  const reader = isBuiltInReader(source.reader) ? source.reader : "text";
-  return { kind: "folder", label: source.label, path, pattern: source.pattern?.trim() || BUILT_IN_READERS[reader].pattern, reader };
+  const reader = source.reader ?? "text";
+  const pattern = source.pattern?.trim() || (isBuiltInReader(reader) ? BUILT_IN_READERS[reader].pattern : "*");
+  return { kind: "folder", label: source.label, path, pattern, reader };
+}
+
+/** What a proposed source would read at a path, for the operator to look at before approving. */
+export async function previewProposedSource(source: ProposedSource, path: string, context: SourceContext, limit = 8): Promise<SourceReading> {
+  const adapter = adapterFor(source.kind);
+  const candidate = { ...connectionFor(source, path), id: "candidate", status: "unverified" as const, detail: null, verifiedAt: null };
+  try {
+    return await adapter.read(candidate, { days: 7, words: [], limit }, context);
+  } catch (error) {
+    throw new Error(adapter.describeError(error));
+  }
 }
 
 /** Collects what changed on a connection for a responsibility since its cursor. */

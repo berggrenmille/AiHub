@@ -31,6 +31,7 @@ import { CHIEF_OF_STAFF, CHIEF_OF_STAFF_CONVERSATION_ID } from "./staff/chief-of
 import { DIRECT_CHAT_INSTRUCTIONS } from "./staff/supervisor.ts";
 import { instructionsFor } from "./staff/identity.ts";
 import { Delegation } from "./staff/delegation.ts";
+import { Toolsmith } from "./staff/toolsmith.ts";
 import { proposeSupervisor } from "./staff/proposals.ts";
 import type { SourceContext } from "./sources/source.ts";
 import type { Scheduler } from "./scheduler.ts";
@@ -107,6 +108,7 @@ export class Office {
   /** Set by the daemon once it schedules routines. */
   scheduler: Scheduler | null = null;
   readonly delegation: Delegation;
+  readonly toolsmith: Toolsmith;
 
   constructor(options: OfficeOptions) {
     this.store = options.store;
@@ -117,17 +119,24 @@ export class Office {
     const vaultDir = options.vaultDir ?? mkdtempSync(join(tmpdir(), "aihub-vault-"));
     this.notebook = new Notebook(vaultDir, this.store, (note) => this.bus.publish({ type: "note", note }));
     this.delegation = new Delegation(this);
+    this.toolsmith = new Toolsmith(this);
     this.gateway = new Gateway(this.store, options.tools ?? OFFICE_TOOLS, (entry) => this.bus.publish({ type: "activity", entry }), {
       notebook: this.notebook,
       proposeSupervisor: (caller, proposal) => proposeSupervisor(this, caller, proposal),
       delegation: this.delegation,
+      toolsmith: this.toolsmith,
       sourceContext: () => this.sourceContext(),
     });
   }
 
-  /** What source adapters get from the office, such as the readers staff wrote and the operator approved. */
+  /** What source adapters get from the office: the readers staff wrote and the operator approved. */
   sourceContext(now = new Date()): SourceContext {
-    return { now };
+    return { now, staffReader: (id) => this.toolsmith.approved(id) };
+  }
+
+  /** For checking a proposed source before approval: a reader handed in but not yet approved runs too, in the sandbox. */
+  candidateSourceContext(now = new Date()): SourceContext {
+    return { now, staffReader: (id) => this.toolsmith.candidate(id) };
   }
 
   /** Seeds the Chief of Staff and closes out runs that a restart interrupted. */
@@ -201,6 +210,7 @@ export class Office {
       proposals: this.store.listProposals(),
       items: this.store.listItems(),
       assignments: this.store.listAssignments(),
+      readers: this.store.listReaders(),
       notes: this.notebook.list(),
       office: this.officeStats(),
       runtime: this.runtimeStatus,

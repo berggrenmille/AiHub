@@ -1,9 +1,10 @@
-import type { Proposal, RecruitProposal } from "@aihub/shared";
+import type { Proposal, RecruitProposal, SourcePreview } from "@aihub/shared";
 import type { Caller } from "../gateway/gateway.ts";
 import { SUPERVISOR_LIMIT } from "../limits.ts";
 import { ConflictError, InvalidRequestError, NotFoundError } from "../errors.ts";
 import type { Office } from "../office.ts";
-import { checkProposedSource, connectionFor, verifyConnection } from "../sources/collect.ts";
+import { checkProposedSource, connectionFor, previewProposedSource, verifyConnection } from "../sources/collect.ts";
+import { STAFF_READER_PREFIX } from "../sources/folder.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "./chief-of-staff.ts";
 import { SUPERVISOR_CHARTER } from "./supervisor.ts";
 
@@ -43,6 +44,29 @@ export function proposeSupervisor(office: Office, caller: Caller, payload: Recru
   return proposal;
 }
 
+/** The id of the reader staff wrote that a proposed source uses, if it uses one. */
+function staffReaderOf(proposal: Proposal): string | null {
+  const reader = proposal.payload.source?.reader;
+  return reader?.startsWith(STAFF_READER_PREFIX) ? reader.slice(STAFF_READER_PREFIX.length) : null;
+}
+
+/** What the proposed source would read at the path the operator typed, before they approve. */
+export async function previewProposal(office: Office, id: string, sourcePath: string): Promise<SourcePreview> {
+  const proposal = office.store.getProposal(id);
+  if (!proposal) throw new NotFoundError(`No proposal ${id}`);
+  const { source } = proposal.payload;
+  if (!source) throw new InvalidRequestError("This proposal has no source to preview.");
+  const path = sourcePath.trim().replace(/^"(.*)"$/, "$1");
+  if (!path) throw new InvalidRequestError(`Pick the ${source.kind === "folder" ? "folder" : "file"} for ${source.label} first.`);
+  const readerId = staffReaderOf(proposal);
+  const code = readerId ? (office.store.getReader(readerId)?.code ?? null) : null;
+  try {
+    return { ...(await previewProposedSource(source, path, office.candidateSourceContext())), code };
+  } catch (error) {
+    throw new InvalidRequestError(`AiHub can't read ${path}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 /** The operator approves: hire the supervisor with its responsibility, routine, and access. */
 export async function approveProposal(office: Office, id: string, options: { sourcePath?: string } = {}): Promise<Proposal> {
   const { store, bus, notebook } = office;
@@ -57,10 +81,16 @@ export async function approveProposal(office: Office, id: string, options: { sou
   const sourcePath = options.sourcePath?.trim().replace(/^"(.*)"$/, "$1");
   const what = source?.kind === "folder" ? "folder" : "file";
   if (source && !sourcePath) throw new InvalidRequestError(`Pick the ${what} for ${source.label} to approve this proposal.`);
+  const readerId = staffReaderOf(proposal);
+  if (readerId) {
+    const reader = store.getReader(readerId);
+    if (reader?.status !== "proposed" && reader?.status !== "approved") throw new ConflictError(`The reader this source needs isn't ready: it is ${reader?.status ?? "gone"}.`);
+  }
   if (source && sourcePath) {
-    // Read the source before hiring anyone, so a wrong path is fixed on the card, not after.
+    // Read the source before hiring anyone, so a wrong path is fixed on the card, not after. A reader
+    // staff wrote runs here, in the sandbox, before its approval: approving means having seen this.
     try {
-      await checkProposedSource(source, sourcePath, office.sourceContext());
+      await checkProposedSource(source, sourcePath, office.candidateSourceContext());
     } catch (error) {
       throw new InvalidRequestError(`AiHub can't read ${sourcePath}: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -86,6 +116,8 @@ export async function approveProposal(office: Office, id: string, options: { sou
     const decided = store.decideProposal(id, "approved", `Hired ${profile.name} as ${profile.title}.`)!;
     return { agentId, responsibility, routine, connection, decided };
   });
+  // The operator approved the reader with the supervisor, so its code is pinned from now on.
+  if (readerId) office.toolsmith.approve(readerId);
 
   const connection = hired.connection ? await verifyConnection(store, hired.connection.id, office.sourceContext()) : null;
   notebook.syncProfile(hired.agentId);

@@ -23,3 +23,9 @@ export const WORKERS_PER_SUPERVISOR = 2;
 
 /** Runs a worker's task may use: the work and one revision. */
 export const WORKER_RUNS = 2;
+
+/** Readers being written at once. */
+export const READERS_DRAFTING_LIMIT = 2;
+
+/** Runs a toolsmith's task may use. It tests as often as it likes within the one run. */
+export const READER_RUNS = 1;

@@ -11,6 +11,7 @@ import {
 } from "../limits.ts";
 import type { Office, TaskOutcome } from "../office.ts";
 import { WORKER_CHARTER } from "./worker.ts";
+import type { AgentRecord } from "../store/store.ts";
 
 // Delegation (DESIGN.md › Recruitment and delegation, Asking colleagues). A question or a task becomes
 // an assignment and the asking turn ends: no model turn waits on another. The daemon runs the owner,
@@ -85,7 +86,7 @@ export class Delegation implements DelegationService {
     caller: Caller,
     input: { name: string; title: string; description: string; taskTitle: string; task: string; sources: string[] },
   ): Assignment {
-    const { store, notebook, bus } = this.office;
+    const { store } = this.office;
     const run = this.runOf(caller);
     const supervisor = store.getAgentRecord(caller.agentId)!;
     if (run.kind !== "assignment" || supervisor.role !== "supervisor") throw new Error("Only a supervisor working on a task can recruit a worker.");
@@ -93,7 +94,6 @@ export class Delegation implements DelegationService {
     if (workers.length >= WORKERS_PER_SUPERVISOR) {
       throw new Error(`You already have ${workers.length} workers (${workers.map((worker) => worker.name).join(", ")}). Wait for their work first.`);
     }
-    if (store.isNameTaken(input.name)) throw new Error(`Someone on staff is already called ${input.name}. Pick another name.`);
     const own = store.connectionsOf(supervisor.id);
     const shared = input.sources.map((label) => {
       const source = own.find((candidate) => candidate.label.toLowerCase() === label.toLowerCase());
@@ -101,31 +101,7 @@ export class Delegation implements DelegationService {
       return source;
     });
     this.checkBudget();
-
-    const workerId = store.transaction(() => {
-      const id = store.freeAgentId(input.name);
-      store.upsertAgent({
-        id,
-        name: input.name,
-        title: input.title,
-        description: input.description,
-        avatar: input.name,
-        role: "worker",
-        managerId: supervisor.id,
-        profile: "data",
-        charter: WORKER_CHARTER,
-      });
-      for (const source of new Set(shared)) store.grant(id, source.id, ["read"]);
-      return id;
-    });
-    notebook.syncProfile(workerId);
-    for (const agent of [store.getAgent(workerId), store.getAgent(supervisor.id)]) if (agent) bus.publish({ type: "agent", agent });
-    bus.publish({
-      type: "activity",
-      entry: store.addActivity({ agentId: workerId, runId: caller.runId, kind: "worker", summary: `${input.name} joined ${supervisor.name}'s team as ${input.title}` }),
-    });
-    notebook.journal(supervisor.id, `Recruited [[${input.name}]], ${input.title}, for "${input.taskTitle}".`, caller.runId);
-    const worker = store.getAgent(workerId)!;
+    const worker = this.addWorker(caller, supervisor, { ...input, charter: WORKER_CHARTER }, shared.map((source) => source.id));
     return this.open(caller, run, worker, {
       kind: "task",
       title: input.taskTitle,
@@ -134,6 +110,23 @@ export class Delegation implements DelegationService {
       // The worker works under its supervisor's responsibility, and stops with it.
       responsibilityId: run.responsibilityId ?? store.activeResponsibilityOf(supervisor.id)?.id ?? null,
     });
+  }
+
+  /**
+   * The Chief of Staff brings in a worker directly from chat, such as a toolsmith. It reads no
+   * sources, delivers once to the chat, and leaves when its work settles.
+   */
+  commission(
+    caller: Caller,
+    input: { worker: { name: string; title: string; description: string; charter: string }; task: { title: string; brief: string; runBudget: number } },
+  ): Assignment {
+    const { store } = this.office;
+    const run = this.runOf(caller);
+    const chief = store.getAgentRecord(caller.agentId)!;
+    if (run.kind !== "chat" || chief.role !== "chief_of_staff") throw new Error("Only the Chief of Staff, in chat, can bring in a worker directly.");
+    this.checkBudget();
+    const worker = this.addWorker(caller, chief, { ...input.worker, taskTitle: input.task.title }, []);
+    return this.open(caller, run, worker, { kind: "task", ...input.task, responsibilityId: null });
   }
 
   /** A supervisor accepts a worker's work, or sends it back once with feedback. */
@@ -170,6 +163,41 @@ export class Delegation implements DelegationService {
     for (const assignment of store.assignmentsIn(["waiting"])) {
       if (!store.childrenOf(assignment.id).some(unsettled)) this.followUp(assignment, true);
     }
+  }
+
+  /** A worker joins its manager's team with the grants it is given. */
+  private addWorker(
+    caller: Caller,
+    manager: AgentRecord,
+    input: { name: string; title: string; description: string; charter: string; taskTitle: string },
+    grants: string[],
+  ): Agent {
+    const { store, notebook, bus } = this.office;
+    if (store.isNameTaken(input.name)) throw new Error(`Someone on staff is already called ${input.name}. Pick another name.`);
+    const workerId = store.transaction(() => {
+      const id = store.freeAgentId(input.name);
+      store.upsertAgent({
+        id,
+        name: input.name,
+        title: input.title,
+        description: input.description,
+        avatar: input.name,
+        role: "worker",
+        managerId: manager.id,
+        profile: "data",
+        charter: input.charter,
+      });
+      for (const connectionId of new Set(grants)) store.grant(id, connectionId, ["read"]);
+      return id;
+    });
+    notebook.syncProfile(workerId);
+    for (const agent of [store.getAgent(workerId), store.getAgent(manager.id)]) if (agent) bus.publish({ type: "agent", agent });
+    bus.publish({
+      type: "activity",
+      entry: store.addActivity({ agentId: workerId, runId: caller.runId, kind: "worker", summary: `${input.name} joined ${manager.name}'s team as ${input.title}` }),
+    });
+    notebook.journal(manager.id, `Recruited [[${input.name}]], ${input.title}, for "${input.taskTitle}".`, caller.runId);
+    return store.getAgent(workerId)!;
   }
 
   private open(
@@ -274,6 +302,11 @@ export class Delegation implements DelegationService {
       return this.followUp(parent);
     }
     if (assignment.conversationId) this.reportInChat(assignment);
+    // A worker the Chief of Staff brought in from chat has nobody to review it: it leaves now.
+    if (this.isWorker(assignment.ownerId)) {
+      this.office.toolsmith.settled(assignment);
+      this.release(assignment);
+    }
   }
 
   private followUp(parent: Stored, resumed = false) {

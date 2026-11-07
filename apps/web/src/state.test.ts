@@ -79,6 +79,7 @@ function snapshot(overrides: Partial<StateSnapshot> = {}): StateSnapshot {
     proposals: [],
     items: [],
     assignments: [],
+    readers: [],
     notes: [],
     office: { turnsToday: 0, dailyTurnLimit: 80, activeSupervisors: 0, supervisorLimit: 8, briefingStreak: 0 },
     runtime: { signedIn: true, detail: "operator@example.com" },

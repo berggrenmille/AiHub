@@ -25,10 +25,21 @@ import {
   type SourceConnection,
   type SourceKind,
   type StaffProfile,
+  type StaffReader,
+  type StaffReaderStatus,
   type Urgency,
   type Usage,
 } from "@aihub/shared";
+import { createHash } from "node:crypto";
 import { MIGRATIONS } from "./migrations.ts";
+
+/** A reader as the daemon stores it: with its sample files and the fingerprints that pin it. */
+export interface StaffReaderRecord extends StaffReader {
+  samples: Array<{ name: string; text: string }>;
+  codeHash: string | null;
+  /** The fingerprint of the code the operator approved. Only that code runs. */
+  approvedHash: string | null;
+}
 
 /** An agent as the daemon stores it. The UI sees Agent, without the charter. */
 export interface AgentRecord extends StaffProfile {
@@ -687,6 +698,77 @@ export class Store {
     return rows.flatMap(({ id }) => this.closeItem(Number(id), "resolved", resolution) ?? []);
   }
 
+  // Readers staff write ------------------------------------------------------
+
+  createReader(input: { name: string; format: string; pattern: string; samples: Array<{ name: string; text: string }>; requesterId: string }): StaffReaderRecord {
+    const id = crypto.randomUUID();
+    const now = this.timestamp();
+    this.db
+      .prepare(
+        `INSERT INTO readers (id, name, format, pattern, samples, status, requester_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'drafting', ?, ?, ?)`,
+      )
+      .run(id, input.name, input.format, input.pattern, JSON.stringify(input.samples), input.requesterId, now, now);
+    return this.getReader(id)!;
+  }
+
+  getReader(id: string): StaffReaderRecord | null {
+    const row = this.db.prepare("SELECT * FROM readers WHERE id = ?").get(id) as Row | undefined;
+    return row ? toReader(row) : null;
+  }
+
+  /** The newest reader with this name, ignoring case. */
+  findReader(name: string): StaffReaderRecord | null {
+    const row = this.db.prepare("SELECT * FROM readers WHERE lower(name) = lower(?) ORDER BY created_at DESC, id LIMIT 1").get(name.trim()) as Row | undefined;
+    return row ? toReader(row) : null;
+  }
+
+  /** The reader a toolsmith is writing, if it is writing one. */
+  draftReaderOf(authorId: string): StaffReaderRecord | null {
+    const row = this.db.prepare("SELECT * FROM readers WHERE author_id = ? AND status = 'drafting'").get(authorId) as Row | undefined;
+    return row ? toReader(row) : null;
+  }
+
+  listReaders(limit = 50): StaffReader[] {
+    const rows = this.db.prepare("SELECT * FROM readers ORDER BY created_at DESC, id LIMIT ?").all(limit) as Row[];
+    return rows.map((row) => {
+      const { samples: _samples, codeHash: _code, approvedHash: _approved, ...reader } = toReader(row);
+      return reader;
+    });
+  }
+
+  countReaders(statuses: StaffReaderStatus[]): number {
+    const row = this.db.prepare(`SELECT COUNT(*) AS n FROM readers WHERE status IN (${statuses.map(() => "?").join(", ")})`).get(...statuses) as { n: number };
+    return Number(row.n);
+  }
+
+  setReaderAuthor(id: string, author: { id: string; name: string }, assignmentId: string): StaffReaderRecord {
+    this.db.prepare("UPDATE readers SET author_id = ?, author_name = ?, assignment_id = ?, updated_at = ? WHERE id = ?").run(author.id, author.name, assignmentId, this.timestamp(), id);
+    return this.getReader(id)!;
+  }
+
+  /** The toolsmith hands in its code. It waits for the operator's approval before it runs on real files. */
+  submitReaderCode(id: string, code: string, notes: string): StaffReaderRecord {
+    this.db
+      .prepare("UPDATE readers SET code = ?, code_hash = ?, notes = ?, status = 'proposed', updated_at = ? WHERE id = ? AND status = 'drafting'")
+      .run(code, codeHash(code), notes, this.timestamp(), id);
+    return this.getReader(id)!;
+  }
+
+  /** Pins the reader's current code as the one the operator approved. */
+  approveReader(id: string): StaffReaderRecord {
+    const now = this.timestamp();
+    this.db
+      .prepare("UPDATE readers SET status = 'approved', approved_hash = code_hash, approved_at = coalesce(approved_at, ?), updated_at = ? WHERE id = ? AND status IN ('proposed', 'approved')")
+      .run(now, now, id);
+    return this.getReader(id)!;
+  }
+
+  failReader(id: string): StaffReaderRecord | null {
+    this.db.prepare("UPDATE readers SET status = 'failed', updated_at = ? WHERE id = ? AND status = 'drafting'").run(this.timestamp(), id);
+    return this.getReader(id);
+  }
+
   // Assignments -------------------------------------------------------------
 
   createAssignment(input: {
@@ -943,6 +1025,34 @@ function toProposal(row: Row): Proposal {
     outcome: row.outcome as string | null,
     createdAt: String(row.created_at),
     decidedAt: row.decided_at as string | null,
+  };
+}
+
+export function codeHash(code: string): string {
+  return createHash("sha256").update(code).digest("hex");
+}
+
+function toReader(row: Row): StaffReaderRecord {
+  const samples = JSON.parse(String(row.samples)) as Array<{ name: string; text: string }>;
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    format: String(row.format),
+    pattern: String(row.pattern),
+    sampleNames: samples.map((sample) => sample.name),
+    samples,
+    status: row.status as StaffReaderStatus,
+    code: row.code as string | null,
+    codeHash: row.code_hash as string | null,
+    approvedHash: row.approved_hash as string | null,
+    notes: row.notes as string | null,
+    authorId: row.author_id as string | null,
+    authorName: row.author_name as string | null,
+    requesterId: String(row.requester_id),
+    assignmentId: row.assignment_id as string | null,
+    approvedAt: row.approved_at as string | null,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
   };
 }
 

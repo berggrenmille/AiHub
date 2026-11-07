@@ -30,6 +30,7 @@ describe("Gateway", () => {
       "aihub_propose_supervisor",
       "aihub_ask_colleague",
       "aihub_assign_task",
+      "aihub_commission_reader",
       ...NOTE_TOOLS,
     ]);
     assert.deepEqual(gateway.specsFor({ ...chief, profile: "data" }).map((tool) => tool.name), ["aihub_ask_colleague", ...NOTE_TOOLS]);

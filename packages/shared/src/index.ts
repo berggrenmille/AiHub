@@ -231,9 +231,36 @@ export interface Routine {
 export interface ProposedSource {
   kind: SourceKind;
   label: string;
-  /** For a folder: the reader for its files, and which files to read. */
-  reader?: BuiltInReader;
+  /** For a folder: the reader for its files, built in or "staff:<id>" for one a toolsmith wrote, and which files to read. */
+  reader?: string;
   pattern?: string;
+}
+
+export type StaffReaderStatus = "drafting" | "proposed" | "approved" | "failed";
+
+/** A reader a toolsmith wrote for files no built-in reader covers (DESIGN.md › Connectors and capabilities). */
+export interface StaffReader {
+  id: string;
+  name: string;
+  /** What the files look like, as the Chief of Staff described them. */
+  format: string;
+  /** Which files it reads, such as "*.txt". */
+  pattern: string;
+  /** The sample files it was written and tested against. */
+  sampleNames: string[];
+  status: StaffReaderStatus;
+  /** The code, once the toolsmith submitted it. */
+  code: string | null;
+  /** The toolsmith's note on how it works and what it can't handle. */
+  notes: string | null;
+  authorId: string | null;
+  /** Kept on the record, so it reads well after the toolsmith has left. */
+  authorName: string | null;
+  requesterId: string;
+  assignmentId: string | null;
+  approvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** What a recruitment proposal asks the operator to approve. */
@@ -338,6 +365,8 @@ export interface StateSnapshot {
   items: Item[];
   /** Open and waiting assignments, then the most recent settled ones, newest first. */
   assignments: Assignment[];
+  /** Readers staff wrote, newest first. */
+  readers: StaffReader[];
   notes: NoteSummary[];
   office: OfficeStats;
   runtime: RuntimeStatus | null;
@@ -361,6 +390,7 @@ export type DaemonEvent =
   | { type: "note"; note: NoteSummary }
   | { type: "office"; office: OfficeStats }
   | { type: "assignment"; assignment: Assignment }
+  | { type: "reader"; reader: StaffReader }
   /** A conversation was opened, such as the operator's first chat with a supervisor. */
   | { type: "conversation"; conversation: Conversation }
   /** A staff member left the office, such as a worker whose task is accepted. Its records stay. */
@@ -387,6 +417,19 @@ export interface OpenChatResponse {
 /** `POST /api/proposals/:id/approve`. A proposal with a source needs the file or folder to read. */
 export interface ApproveProposalRequest {
   sourcePath?: string;
+}
+
+/**
+ * `POST /api/proposals/:id/preview` with `{ sourcePath }`: what the proposed source would read there,
+ * such as the first records a toolsmith's reader finds in the real folder. Nothing is created.
+ */
+export interface SourcePreview {
+  /** What was read, or why it couldn't be. */
+  summary: string;
+  /** The first records, as the read tool returns them: `{ records }` for a folder, `{ series, events }` for a calendar. */
+  data: unknown;
+  /** The reader's code, for a reader staff wrote, so the operator sees what they approve. */
+  code: string | null;
 }
 
 /** `POST /api/items/:id/resolve`. */

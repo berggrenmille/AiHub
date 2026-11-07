@@ -213,4 +213,27 @@ export const MIGRATIONS: string[] = [
 
   ALTER TABLE runs ADD COLUMN assignment_id TEXT REFERENCES assignments (id);
   `,
+
+  // v5: readers that staff write for folders no built-in reader covers (Milestone 4).
+  `
+  CREATE TABLE readers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    format TEXT NOT NULL,
+    pattern TEXT NOT NULL,
+    samples TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('drafting', 'proposed', 'approved', 'failed')),
+    code TEXT,
+    code_hash TEXT,
+    approved_hash TEXT,
+    notes TEXT,
+    author_id TEXT REFERENCES agents (id),
+    author_name TEXT,
+    requester_id TEXT NOT NULL REFERENCES agents (id),
+    assignment_id TEXT REFERENCES assignments (id),
+    approved_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  `,
 ];

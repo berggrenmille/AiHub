@@ -1,6 +1,9 @@
 import { z } from "zod";
 import type { Notebook } from "../notes/notebook.ts";
 import { readSource } from "../sources/collect.ts";
+import { STAFF_READER_PREFIX } from "../sources/folder.ts";
+import { BUILT_IN_READERS, isBuiltInReader } from "../sources/readers.ts";
+import { READER_CODE_LIMIT } from "../staff/toolsmith.ts";
 import { defineTool, type GatewayTool } from "./gateway.ts";
 
 // Read-only office tools for Milestone 1. Each tool names who may call it; the gateway enforces that.
@@ -205,9 +208,13 @@ export const proposeSupervisorTool = defineTool({
           kind: z.enum(["ics_file", "folder"]).describe("ics_file: a calendar export. folder: a folder of files on this PC."),
           label: z.string().trim().min(1).max(60).describe('Such as "Work calendar" or "Reading list".'),
           reader: z
-            .enum(["markdown", "text", "csv", "json"])
+            .string()
+            .trim()
+            .max(60)
             .optional()
-            .describe("For a folder: how to read its files. markdown: one record per note, with frontmatter as fields. text: one per file. csv: one per row. json: one per object."),
+            .describe(
+              "For a folder: how to read its files. Built in: markdown (one record per note, frontmatter as fields), text (one per file), csv (one per row), json (one per object). Or the name of a reader a toolsmith wrote and handed in.",
+            ),
           pattern: z.string().trim().max(100).optional().describe(`For a folder: which files to read, such as "*.md" or "*.csv, *.txt". The reader's usual extension when left out.`),
         })
         .strict()
@@ -218,13 +225,25 @@ export const proposeSupervisorTool = defineTool({
     .strict(),
   roles: ["chief_of_staff"],
   profiles: ["conversation"],
-  kinds: ["chat"],
-  run: (input, { caller, proposeSupervisor }) => {
+  // Also when a toolsmith's reader comes back: proposing only puts a card in front of the operator.
+  kinds: ["chat", "follow_up"],
+  run: (input, { caller, proposeSupervisor, store }) => {
     if (!proposeSupervisor) throw new Error("Recruiting isn't available in this office");
     const { expiresInDays, ...duty } = input.responsibility;
     const expiresAt = expiresInDays ? new Date(Date.now() + expiresInDays * 86_400_000).toISOString() : null;
-    const { source } = input;
-    if (source?.kind === "folder" && !source.reader) throw new Error("A folder source needs a reader: markdown, text, csv, or json.");
+    let { source } = input;
+    if (source?.kind === "folder") {
+      if (!source.reader) throw new Error("A folder source needs a reader: markdown, text, csv, json, or one a toolsmith wrote.");
+      const builtIn = source.reader.toLowerCase();
+      if (isBuiltInReader(builtIn)) source = { ...source, reader: builtIn };
+      else {
+        const written = store.findReader(source.reader);
+        if (!written) throw new Error(`There is no reader called "${source.reader}". Built in: ${Object.keys(BUILT_IN_READERS).join(", ")}.`);
+        if (written.status === "drafting") throw new Error(`${written.authorName ?? "The toolsmith"} is still writing the ${written.name} reader. Propose once it's handed in.`);
+        if (written.status === "failed") throw new Error(`The ${written.name} reader was never finished. Commission it again.`);
+        source = { ...source, reader: `${STAFF_READER_PREFIX}${written.id}`, pattern: source.pattern || written.pattern };
+      }
+    }
     if (source?.kind === "ics_file" && (source.reader || source.pattern)) throw new Error("A calendar export takes no reader or pattern.");
     proposeSupervisor(caller, { profile: input.profile, responsibility: { ...duty, expiresAt }, source, reason: input.reason });
     const where = source ? ` and picks the ${source.kind === "folder" ? "folder" : "file"} there` : "";
@@ -355,6 +374,90 @@ export const readSourceTool = defineTool({
   },
 });
 
+// Readers staff write (DESIGN.md › Connectors and capabilities). The Chief of Staff commissions one; a
+// toolsmith writes it from a description and samples and tests it in the sandbox; the operator
+// approves it on the card of the supervisor who will use it.
+const SampleFile = z
+  .object({
+    name: z.string().trim().min(1).max(100).describe('A file name, such as "export-2026-11.txt".'),
+    text: z.string().min(1).max(20_000).describe("The file's contents."),
+  })
+  .strict();
+
+export const commissionReader = defineTool({
+  name: "aihub_commission_reader",
+  description:
+    "Commission a reader for files no built-in reader fits, such as a bank export with its own layout. A toolsmith joins, writes and tests it from your description and samples, and hands it in; it comes back to you in a new turn, so end this turn after commissioning. The operator approves it later, on the card of the supervisor who will use it.",
+  input: z
+    .object({
+      name: z.string().trim().min(1).max(60).describe('A short name, such as "Bank export".'),
+      format: z
+        .string()
+        .trim()
+        .min(1)
+        .max(2_000)
+        .describe("What the files look like and what each record should be: the layout, the fields that matter, and anything odd, such as header lines or date formats."),
+      pattern: z.string().trim().min(1).max(100).describe('Which files in the folder to read, such as "*.txt".'),
+      samples: z
+        .array(SampleFile)
+        .min(1)
+        .max(3)
+        .describe("Sample files to write and test against: ones the operator pasted, or realistic ones you write from the description. Never ask for private data the operator hasn't offered."),
+      toolsmith: z.string().trim().min(1).max(30).describe("A first name for the toolsmith that nobody on staff has."),
+    })
+    .strict(),
+  roles: ["chief_of_staff"],
+  profiles: ["conversation"],
+  kinds: ["chat"],
+  run: (input, { caller, toolsmith }) => {
+    if (!toolsmith) throw new Error("Commissioning readers isn't available in this office");
+    const reader = toolsmith.commission(caller, input);
+    return `${reader.authorName} joined to write the ${reader.name} reader. It comes back to you in a new turn; end this turn now, telling the operator in a sentence what you've set in motion.`;
+  },
+});
+
+const hasReaderToWrite = (agent: { id: string }, store: { draftReaderOf(id: string): unknown }) => store.draftReaderOf(agent.id) !== null;
+
+export const testReader = defineTool({
+  name: "aihub_test_reader",
+  description:
+    "Run your reader's code on the sample files, and on one more sample if you pass it, in the sandbox. Returns how many records each file gave, the first few, and any errors.",
+  input: z
+    .object({
+      code: z.string().min(1).max(READER_CODE_LIMIT).describe("The reader: JavaScript that defines function read(file)."),
+      sample: SampleFile.optional().describe("An extra sample to test with, such as an edge case you wrote."),
+    })
+    .strict(),
+  roles: ["worker"],
+  profiles: ["data"],
+  kinds: ["assignment"],
+  available: hasReaderToWrite,
+  run: async (input, { caller, toolsmith }) => {
+    if (!toolsmith) throw new Error("Readers aren't available in this office");
+    return toolsmith.test(caller, input);
+  },
+});
+
+export const submitReader = defineTool({
+  name: "aihub_submit_reader",
+  description: "Hand in your reader once it reads every sample cleanly. It runs on the operator's files only after they approve it.",
+  input: z
+    .object({
+      code: z.string().min(1).max(READER_CODE_LIMIT),
+      notes: z.string().trim().min(1).max(600).describe("How it works and what it can't handle, in two or three sentences for the operator."),
+    })
+    .strict(),
+  roles: ["worker"],
+  profiles: ["data"],
+  kinds: ["assignment"],
+  available: hasReaderToWrite,
+  run: async (input, { caller, toolsmith }) => {
+    if (!toolsmith) throw new Error("Readers aren't available in this office");
+    const reader = await toolsmith.submit(caller, input);
+    return `Handed in the ${reader.name} reader. Now reply with your two or three sentences: what each record is, and what the reader can't handle.`;
+  },
+});
+
 export const OFFICE_TOOLS: GatewayTool[] = [
   getRoster,
   listActivity,
@@ -363,6 +466,9 @@ export const OFFICE_TOOLS: GatewayTool[] = [
   assignTask,
   recruitWorker,
   reviewWork,
+  commissionReader,
+  testReader,
+  submitReader,
   submitReport,
   readSourceTool,
   listNotes,

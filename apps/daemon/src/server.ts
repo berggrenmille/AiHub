@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import fastifyStatic from "@fastify/static";
-import type { Agent, ChatResponse, HealthResponse, Note, NoteSummary, OpenChatResponse, StateSnapshot } from "@aihub/shared";
+import type { Agent, ChatResponse, HealthResponse, Note, NoteSummary, OpenChatResponse, SourcePreview, StateSnapshot } from "@aihub/shared";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { z } from "zod";
 import type { SequencedEvent } from "./events.ts";
@@ -9,7 +9,7 @@ import { NoteRefusal } from "./notes/notebook.ts";
 import { checkNotePath } from "./notes/vault.ts";
 import { ConflictError, InvalidRequestError, NotFoundError } from "./errors.ts";
 import type { Office } from "./office.ts";
-import { approveProposal, declineProposal } from "./staff/proposals.ts";
+import { approveProposal, declineProposal, previewProposal } from "./staff/proposals.ts";
 import { registerLoopbackGuards } from "./security.ts";
 
 export interface ServerOptions {
@@ -45,6 +45,7 @@ const ProfileBody = z
 
 const NoteBody = z.object({ body: z.string().max(20_000) }).strict();
 const ApproveBody = z.object({ sourcePath: z.string().max(1_000).optional() }).strict();
+const PreviewBody = z.object({ sourcePath: z.string().max(1_000) }).strict();
 const ReasonBody = z.object({ reason: z.string().max(500).optional() }).strict();
 const ResolveBody = z.object({ note: z.string().max(500).optional() }).strict();
 
@@ -122,6 +123,17 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     if (!body.ok) return reply.code(400).send({ error: body.error });
     try {
       return await approveProposal(office, request.params.id, body.data);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/proposals/:id/preview", async (request, reply) => {
+    const body = bodyOf(PreviewBody, request.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
+    try {
+      const preview: SourcePreview = await previewProposal(office, request.params.id, body.data.sourcePath);
+      return preview;
     } catch (error) {
       return sendError(reply, error);
     }

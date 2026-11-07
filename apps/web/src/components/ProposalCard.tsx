@@ -1,5 +1,5 @@
 import { useId, useState, type FormEvent } from "react";
-import type { Proposal, ProposedSource } from "@aihub/shared";
+import type { BuiltInReader, Proposal, ProposedSource } from "@aihub/shared";
 import { errorText } from "../api.ts";
 import { lookFor } from "../lib/avatar.ts";
 import { formatDateTime } from "../format.ts";
@@ -17,7 +17,7 @@ interface ProposalCardProps {
   onDecline(): Promise<void>;
 }
 
-const READER_LABELS: Record<NonNullable<ProposedSource["reader"]>, string> = {
+const READER_LABELS: Record<BuiltInReader, string> = {
   markdown: "markdown notes",
   text: "text files",
   csv: "CSV files",
@@ -27,7 +27,7 @@ const READER_LABELS: Record<NonNullable<ProposedSource["reader"]>, string> = {
 /** What the card says about a source, and what it asks the operator to pick. */
 export function describeSource(source: ProposedSource): { kind: string; pick: string; placeholder: string } {
   if (source.kind === "folder") {
-    const files = source.reader ? READER_LABELS[source.reader] : "files";
+    const files = !source.reader ? "files" : source.reader in READER_LABELS ? READER_LABELS[source.reader as BuiltInReader] : "files, read by a reader staff wrote";
     return {
       kind: `folder of ${files}${source.pattern ? `, ${source.pattern}` : ""}`,
       pick: "path to the folder on this PC",

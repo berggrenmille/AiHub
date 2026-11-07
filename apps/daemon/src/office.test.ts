@@ -80,6 +80,7 @@ describe("Office", () => {
       "aihub_propose_supervisor",
       "aihub_ask_colleague",
       "aihub_assign_task",
+      "aihub_commission_reader",
       ...NOTE_TOOLS,
     ]);
   });

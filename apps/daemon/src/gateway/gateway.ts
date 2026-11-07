@@ -1,4 +1,5 @@
-import type { AgentRole, Assignment, Proposal, RecruitProposal, RunKind, RunProfile } from "@aihub/shared";
+import type { AgentRole, Assignment, Proposal, RecruitProposal, RunKind, RunProfile, StaffReader } from "@aihub/shared";
+import type { ReaderFile } from "../sources/reader.ts";
 import { z } from "zod";
 import type { Notebook } from "../notes/notebook.ts";
 import type { ToolCall, ToolOutcome, ToolSpec } from "../runtime/types.ts";
@@ -22,6 +23,13 @@ export interface DelegationService {
   review(caller: Caller, input: { worker: string; verdict: "accept" | "revise"; feedback?: string }): Assignment;
 }
 
+/** Readers staff write: the Chief of Staff commissions one, and a toolsmith writes, tests, and hands it in. */
+export interface ToolsmithService {
+  commission(caller: Caller, input: { name: string; format: string; pattern: string; samples: ReaderFile[]; toolsmith: string }): StaffReader;
+  test(caller: Caller, input: { code: string; sample?: ReaderFile }): Promise<string>;
+  submit(caller: Caller, input: { code: string; notes: string }): Promise<StaffReader>;
+}
+
 /** What tools may ask the office to do. The office checks its rules, records, and publishes each change. */
 export interface OfficeServices {
   /** The staff's notes, when the office keeps a vault. */
@@ -29,6 +37,7 @@ export interface OfficeServices {
   /** Records a recruitment proposal and shows it to the operator as an approval card. */
   proposeSupervisor: ((caller: Caller, proposal: RecruitProposal) => Proposal) | null;
   delegation: DelegationService | null;
+  toolsmith: ToolsmithService | null;
   /** What source adapters need from the office for a read. */
   sourceContext: (() => SourceContext) | null;
 }
@@ -49,6 +58,8 @@ export interface GatewayTool<Input extends z.ZodType = z.ZodType> {
   profiles: readonly RunProfile[];
   /** Run kinds the tool works in, such as no questions from a run that answers one. All when omitted. */
   kinds?: readonly RunKind[];
+  /** Whether this agent has a use for the tool right now, such as a toolsmith with a reader to write. */
+  available?: (agent: AgentRecord, store: Store) => boolean;
   run: (input: z.output<Input>, context: ToolContext) => string | Promise<string>;
 }
 
@@ -84,14 +95,14 @@ export class Gateway {
     if (!agent) return [];
     const kind = asKind ?? this.store.getRun(caller.runId)?.kind;
     return [...this.tools.values()]
-      .filter((tool) => permits(tool, agent, caller, kind))
+      .filter((tool) => permits(tool, agent, caller, kind, this.store))
       .map((tool) => ({ name: tool.name, description: tool.description, inputSchema: jsonSchemaOf(tool.input) }));
   }
 
   async call(caller: Caller, call: ToolCall): Promise<ToolOutcome> {
     const tool = this.tools.get(call.name);
     const agent = this.store.getAgentRecord(caller.agentId);
-    if (!tool || !agent || !permits(tool, agent, caller, this.store.getRun(caller.runId)?.kind)) {
+    if (!tool || !agent || !permits(tool, agent, caller, this.store.getRun(caller.runId)?.kind, this.store)) {
       return this.refuse(caller, call.name, `${call.name} is not available to this run.`);
     }
     // A run under an ended or expired responsibility, such as a mandate, can do nothing more.
@@ -108,6 +119,7 @@ export class Gateway {
         notebook: this.services.notebook ?? null,
         proposeSupervisor: this.services.proposeSupervisor ?? null,
         delegation: this.services.delegation ?? null,
+        toolsmith: this.services.toolsmith ?? null,
         sourceContext: this.services.sourceContext ?? null,
       };
       const text = await tool.run(input.data, { caller, agent, store: this.store, ...services });
@@ -128,12 +140,13 @@ export class Gateway {
   }
 }
 
-function permits(tool: GatewayTool, agent: AgentRecord, caller: Caller, kind: RunKind | undefined): boolean {
+function permits(tool: GatewayTool, agent: AgentRecord, caller: Caller, kind: RunKind | undefined, store: Store): boolean {
   return (
     agent.status === "active" &&
     tool.roles.includes(agent.role) &&
     tool.profiles.includes(caller.profile) &&
-    (!tool.kinds || (kind !== undefined && tool.kinds.includes(kind)))
+    (!tool.kinds || (kind !== undefined && tool.kinds.includes(kind))) &&
+    (!tool.available || tool.available(agent, store))
   );
 }
 
