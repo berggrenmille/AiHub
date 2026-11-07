@@ -122,7 +122,7 @@ export class Delegation implements DelegationService {
     for (const agent of [store.getAgent(workerId), store.getAgent(supervisor.id)]) if (agent) bus.publish({ type: "agent", agent });
     bus.publish({
       type: "activity",
-      entry: store.addActivity({ agentId: workerId, runId: caller.runId, kind: "worker", summary: `${supervisor.name} recruited ${input.name}, ${input.title}` }),
+      entry: store.addActivity({ agentId: workerId, runId: caller.runId, kind: "worker", summary: `${input.name} joined ${supervisor.name}'s team as ${input.title}` }),
     });
     notebook.journal(supervisor.id, `Recruited [[${input.name}]], ${input.title}, for "${input.taskTitle}".`, caller.runId);
     const worker = store.getAgent(workerId)!;
@@ -258,7 +258,8 @@ export class Delegation implements DelegationService {
     const failed = this.office.store.updateAssignment(assignment.id, { status: "failed", result: reason });
     this.publish(failed);
     this.releaseWorkers(assignment.id);
-    this.activity(assignment.ownerId, null, `"${assignment.title}" failed: ${reason}`);
+    const what = assignment.kind === "question" ? `answer ${assignment.requesterName}` : `finish "${assignment.title}"`;
+    this.activity(assignment.ownerId, null, `${assignment.ownerName} couldn't ${what}: ${reason}`);
     this.settle(failed);
   }
 

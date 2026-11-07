@@ -192,6 +192,7 @@ describe("Delegation", () => {
     assert.deepEqual([question?.status, question?.result], ["failed", "Codex timed out"]);
     const notice = store.recentMessages(1, CHAT)[0]!;
     assert.deepEqual([notice.kind, notice.body], ["notice", "Rut couldn't answer your question: Codex timed out"]);
+    assert.ok(store.recentActivity(20).some((entry) => entry.kind === "assignment" && entry.summary === "Rut couldn't answer Vera: Codex timed out"));
   });
 
   it("starts interrupted work again after a restart, without charging the run", async () => {
@@ -318,7 +319,7 @@ describe("Workers", () => {
     assert.deepEqual(left, ["ivy"]);
     assert.match(office.notebook.read("Staff/ivy/Ivy.md")?.body ?? "", /left the office/);
     const summaries = store.recentActivity(40).filter((entry) => entry.kind === "worker").map((entry) => entry.summary);
-    assert.deepEqual(summaries.sort(), ['Ivy finished "Count October" and left the office', "Rut recruited Ivy, Meeting Counter"]);
+    assert.deepEqual(summaries.sort(), ['Ivy finished "Count October" and left the office', "Ivy joined Rut's team as Meeting Counter"]);
   });
 
   it("revise once, and the supervisor follows up again with the revision", async () => {
