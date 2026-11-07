@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { ActivityEntry, Agent, Assignment, ChatMessage, DaemonEvent, Item, NoteSummary, Proposal, Responsibility, Run, StateSnapshot } from "@aihub/shared";
+import type { ActivityEntry, Agent, Assignment, ChatMessage, DaemonEvent, Item, NoteSummary, Proposal, Responsibility, Run, StaffReader, StateSnapshot } from "@aihub/shared";
 import { ACTIVITY_LIMIT, initialOfficeState, officeReducer, rosterOrder, SETTLED_ASSIGNMENT_LIMIT, type OfficeAction, type OfficeState } from "./state.ts";
 
 const CHAT = "chief-of-staff";
@@ -513,6 +513,83 @@ describe("staff leaving", () => {
     state = apply(state, { type: "snapshot", snapshot: snapshot({ agents: [agent(), worker] }) });
     assert.deepEqual(state.departed, []);
     assert.ok(state.agents.some((a) => a.id === "worker-1"));
+  });
+});
+
+function staffReader(overrides: Partial<StaffReader> = {}): StaffReader {
+  return {
+    id: "reader-1",
+    name: "Bank export",
+    format: "One transaction per line.",
+    pattern: "*.txt",
+    sampleNames: ["sample.txt"],
+    status: "drafting",
+    code: null,
+    notes: null,
+    authorId: "ada",
+    authorName: "Ada",
+    requesterId: "chief-of-staff",
+    assignmentId: "asg-1",
+    approvedAt: null,
+    createdAt: "2026-11-07T16:00:00.000Z",
+    updatedAt: "2026-11-07T16:00:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("readers", () => {
+  it("loads them from the snapshot, newest first", () => {
+    const state = apply(initialOfficeState, {
+      type: "snapshot",
+      snapshot: snapshot({ readers: [staffReader({ id: "old", createdAt: "2026-11-06T09:00:00.000Z" }), staffReader({ id: "new" })] }),
+    });
+    assert.deepEqual(state.readers.map((r) => r.id), ["new", "old"]);
+  });
+
+  it("upserts them by id as they move along, ignoring older copies", () => {
+    let state = events(loaded(), { type: "reader", reader: staffReader() });
+    const handedIn = staffReader({ status: "proposed", code: "function read(file) { return []; }", notes: "One per line.", updatedAt: "2026-11-07T16:06:00.000Z" });
+    state = events(state, { type: "reader", reader: handedIn });
+    assert.deepEqual(state.readers.map((r) => [r.id, r.status]), [["reader-1", "proposed"]]);
+    assert.equal(state.readers[0]?.code, handedIn.code);
+
+    assert.equal(events(state, { type: "reader", reader: staffReader() }), state, "the drafting copy is older");
+
+    state = events(state, { type: "reader", reader: staffReader({ id: "reader-2", name: "Payslips", createdAt: "2026-11-07T17:00:00.000Z" }) });
+    assert.deepEqual(state.readers.map((r) => r.id), ["reader-2", "reader-1"]);
+  });
+});
+
+describe("conversations", () => {
+  const nora = { id: "chat-work-schedule", agentId: "work-schedule", title: "Nora" };
+
+  it("adds a conversation once, whether the stream or the response to opening it comes first", () => {
+    const state = events(loaded(), { type: "conversation", conversation: nora });
+    assert.deepEqual(state.conversations.map((c) => c.id), [CHAT, nora.id]);
+    assert.equal(events(state, { type: "conversation", conversation: { ...nora } }), state);
+  });
+
+  it("takes a changed title", () => {
+    const state = events(loaded(), { type: "conversation", conversation: nora }, { type: "conversation", conversation: { ...nora, title: "Nora Lind" } });
+    assert.deepEqual(state.conversations.map((c) => [c.id, c.title]), [
+      [CHAT, "Chief of Staff"],
+      [nora.id, "Nora Lind"],
+    ]);
+  });
+
+  it("keeps a departed staff member's conversation and messages", () => {
+    const worker = agent({ id: "ada", name: "Ada", role: "worker", managerId: "chief-of-staff" });
+    const chat = { id: "chat-ada", agentId: "ada", title: "Ada" };
+    const state = events(
+      loaded(),
+      { type: "agent", agent: worker },
+      { type: "conversation", conversation: chat },
+      { type: "message", message: message({ id: 11, conversationId: chat.id }) },
+      { type: "agent_left", agentId: "ada" },
+    );
+    assert.ok(!state.agents.some((a) => a.id === "ada"));
+    assert.ok(state.conversations.some((c) => c.id === chat.id));
+    assert.deepEqual(state.messages[chat.id]?.map((m) => m.id), [11]);
   });
 });
 

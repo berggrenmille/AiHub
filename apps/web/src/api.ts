@@ -7,9 +7,11 @@ import type {
   Item,
   Note,
   NoteSummary,
+  OpenChatResponse,
   Proposal,
   ResolveItemRequest,
   RunRoutineResponse,
+  SourcePreview,
   StateSnapshot,
   UpdateAgentRequest,
   WriteNoteRequest,
@@ -107,6 +109,16 @@ export function getNote(path: string): Promise<Note> {
 /** Writes a note as the operator. Profile notes answer 409: they follow the staff card. */
 export function putNote(path: string, body: WriteNoteRequest): Promise<NoteSummary> {
   return request<NoteSummary>(noteUrl(path), json("PUT", body));
+}
+
+/** Opens the operator's chat with a staff member, or finds the one already open. */
+export function openChat(agentId: string): Promise<OpenChatResponse> {
+  return request<OpenChatResponse>(`/api/agents/${encodeURIComponent(agentId)}/chat`, json("POST", {}));
+}
+
+/** What a proposed source would read at a path. Nothing is created; a 400 says why it can't be read. */
+export function previewProposal(proposalId: string, body: { sourcePath: string }): Promise<SourcePreview> {
+  return request<SourcePreview>(`/api/proposals/${encodeURIComponent(proposalId)}/preview`, json("POST", body));
 }
 
 export function approveProposal(proposalId: string, body: ApproveProposalRequest): Promise<Proposal> {

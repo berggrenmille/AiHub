@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
-import type { DaemonEvent, UpdateAgentRequest } from "@aihub/shared";
+import type { Conversation, DaemonEvent, SourcePreview, UpdateAgentRequest } from "@aihub/shared";
 import {
   approveProposal,
   connectOffice,
   declineProposal,
   dismissItem,
+  openChat,
+  previewProposal,
   putNote,
   resolveItem,
   runRoutine,
@@ -16,7 +18,11 @@ import { initialOfficeState, officeReducer } from "./state.ts";
 /** Commands the operator gives. Each applies the daemon's answer at once; the stream confirms it. */
 export interface OfficeCommands {
   send(conversationId: string, text: string): Promise<void>;
+  /** Opens the operator's chat with a staff member and returns it. */
+  openChat(agentId: string): Promise<Conversation>;
   updateAgent(agentId: string, changes: UpdateAgentRequest): Promise<void>;
+  /** What a proposal's source would read at a path. Changes nothing. */
+  preview(proposalId: string, sourcePath: string): Promise<SourcePreview>;
   approve(proposalId: string, sourcePath?: string): Promise<void>;
   decline(proposalId: string): Promise<void>;
   dismiss(itemId: number): Promise<void>;
@@ -51,7 +57,13 @@ export function useOffice() {
     const apply = (event: DaemonEvent) => dispatch({ type: "event", event });
     return {
       send,
+      openChat: async (agentId) => {
+        const { conversation } = await openChat(agentId);
+        apply({ type: "conversation", conversation });
+        return conversation;
+      },
       updateAgent: async (agentId, changes) => apply({ type: "agent", agent: await updateAgent(agentId, changes) }),
+      preview: (proposalId, sourcePath) => previewProposal(proposalId, { sourcePath }),
       approve: async (proposalId, sourcePath) =>
         apply({ type: "proposal", proposal: await approveProposal(proposalId, sourcePath ? { sourcePath } : {}) }),
       decline: async (proposalId) => apply({ type: "proposal", proposal: await declineProposal(proposalId) }),

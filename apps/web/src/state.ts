@@ -19,6 +19,7 @@ import {
   type Run,
   type RuntimeStatus,
   type SourceConnection,
+  type StaffReader,
   type StateSnapshot,
 } from "@aihub/shared";
 import { compareAssignments, isOpenAssignment } from "./lib/assignments.ts";
@@ -56,6 +57,8 @@ export interface OfficeState {
   items: Item[];
   /** Open and waiting assignments first, newest first, then settled ones, most recently settled first. */
   assignments: Assignment[];
+  /** Readers staff wrote, newest first. */
+  readers: StaffReader[];
   /**
    * Staff who left since the last snapshot, such as workers whose results were accepted. A late
    * update for one of them doesn't bring them back.
@@ -96,6 +99,7 @@ export const initialOfficeState: OfficeState = {
   proposals: [],
   items: [],
   assignments: [],
+  readers: [],
   departed: [],
   notes: [],
   office: null,
@@ -155,6 +159,7 @@ function applySnapshot(state: OfficeState, snapshot: StateSnapshot): OfficeState
     proposals: [...(snapshot.proposals ?? [])].sort(newestFirst),
     items: snapshot.items ?? [],
     assignments: keepAssignments(snapshot.assignments ?? []),
+    readers: [...(snapshot.readers ?? [])].sort(newestFirst),
     departed: [],
     notes: snapshot.notes ?? [],
     office: snapshot.office ?? null,
@@ -214,6 +219,17 @@ function applyEvent(state: OfficeState, event: DaemonEvent): OfficeState {
       const existing = state.items.find((item) => item.id === event.item.id);
       if (existing && existing.updatedAt > event.item.updatedAt) return state;
       return { ...state, items: upsert(state.items, event.item, (item) => item.id) };
+    }
+    case "reader": {
+      const existing = state.readers.find((reader) => reader.id === event.reader.id);
+      if (existing && existing.updatedAt > event.reader.updatedAt) return state;
+      return { ...state, readers: upsert(state.readers, event.reader, (reader) => reader.id).sort(newestFirst) };
+    }
+    case "conversation": {
+      // Arrives on the stream and in the response to opening the chat; either can come first.
+      const existing = state.conversations.find((conversation) => conversation.id === event.conversation.id);
+      if (existing && existing.agentId === event.conversation.agentId && existing.title === event.conversation.title) return state;
+      return { ...state, conversations: upsert(state.conversations, event.conversation, (conversation) => conversation.id) };
     }
     case "note": {
       const notes = upsertNote(state.notes, event.note);
