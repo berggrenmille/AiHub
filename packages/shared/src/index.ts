@@ -116,18 +116,20 @@ export interface StateSnapshot {
   /** Recent activity, newest first. */
   activity: ActivityEntry[];
   runtime: RuntimeStatus | null;
-  /** The ID of the last event included in this snapshot. Events with a higher ID are new. */
-  lastEventId: number;
+  /** The last event this snapshot includes. Follow the stream with `/api/events?after=<lastEventId>`. */
+  lastEventId: string;
 }
 
-/** Messages on `/api/events`. Each SSE message's `id` is its sequence number. */
+/** Messages on `/api/events`. Each SSE message's `id` is the daemon's boot ID and a sequence number. */
 export type DaemonEvent =
   | { type: "agent"; agent: Agent }
   | { type: "run"; run: Run }
   | { type: "message"; message: ChatMessage }
   | { type: "delta"; runId: string; conversationId: string; text: string }
   | { type: "activity"; entry: ActivityEntry }
-  | { type: "runtime"; runtime: RuntimeStatus };
+  | { type: "runtime"; runtime: RuntimeStatus }
+  /** The stream can't catch up from the client's last event. Reload `/api/state`, then reconnect. */
+  | { type: "resync" };
 
 /** `POST /api/chat`. */
 export interface ChatRequest {

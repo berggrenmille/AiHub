@@ -1,27 +1,29 @@
-import Fastify from "fastify";
-import type { HealthResponse } from "@aihub/shared";
+import { join } from "node:path";
 import pkg from "../package.json" with { type: "json" };
+import { loadConfig } from "./config.ts";
+import { Office } from "./office.ts";
+import { CodexRuntime, pinnedCodexCommand } from "./runtime/codex-runtime.ts";
+import { buildServer } from "./server.ts";
+import { Store } from "./store/store.ts";
+
+const config = loadConfig();
+const store = new Store(join(config.dataDir, "aihub.db"));
+const runtime = new CodexRuntime({ command: pinnedCodexCommand(config.root), codexHome: config.codexHome });
+const office = new Office({ store, runtime });
+office.start();
 
 // The daemon only listens on loopback (DESIGN.md › Architecture).
-const HOST = "127.0.0.1";
-const PORT = Number(process.env.AIHUB_PORT ?? 7420);
-const startedAt = new Date().toISOString();
+const app = await buildServer({ office, version: pkg.version, port: config.port, webRoot: join(config.root, "apps", "web", "dist") });
+await app.listen({ host: config.host, port: config.port });
+void office.refreshRuntimeStatus();
 
-const app = Fastify({ logger: true });
-
-// Loopback hardening, first part: reject any Host header that is not this daemon,
-// which blocks DNS rebinding. Origin checks and the per-install token come with Milestone 1.
-const allowedHosts = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
-app.addHook("onRequest", async (request, reply) => {
-  if (!allowedHosts.has(request.headers.host ?? "")) {
-    return reply.code(421).send({ error: "Unexpected Host header" });
-  }
-});
-
-app.get("/api/health", async (): Promise<HealthResponse> => ({
-  status: "ok",
-  version: pkg.version,
-  startedAt,
-}));
-
-await app.listen({ host: HOST, port: PORT });
+let stopping = false;
+async function stop() {
+  if (stopping) return;
+  stopping = true;
+  await app.close();
+  await runtime.close();
+  store.close();
+}
+process.on("SIGINT", () => void stop());
+process.on("SIGTERM", () => void stop());
