@@ -92,7 +92,7 @@ describe("Recruitment", () => {
     // Rut's runs start from the profile and the operator's standing instructions.
     await office.runTask({ agentId: "rut", kind: "report", title: "Check", instructions: "Check.", input: "Nothing." });
     const context = [...runtime.contexts.values()].at(-1)!;
-    assert.match(context.options.instructions, /^You are Rut, Calendar Supervisor[\s\S]*Your responsibility: Family calendar\. School and activities\.\nStanding instructions from the operator: Always flag pickups after 17:00\./);
+    assert.match(context.options.instructions, /^You are Rut, Calendar Supervisor[\s\S]*Your responsibility: Family calendar\. School and activities\.\nStanding instructions from the operator: Always flag pickups after 17:00\.\nYour sources, by the names aihub_read_source takes: Family calendar\./);
 
     await assert.rejects(() => approveProposal(office, proposal!.id, { sourcePath: CALENDAR }), ConflictError);
   });

@@ -322,7 +322,7 @@ export class Office {
     const run = this.store.getRun(runId)!;
     // A data run's chat reads its sources, so everything it writes counts as source data.
     const caller = { agentId: agent.id, runId, profile: agent.profile, sourceData: prompt.sourceData || agent.profile === "data" };
-    const charter = instructionsFor(agent, this.store.activeResponsibilityOf(agent.id));
+    const charter = instructionsFor(agent, this.store.activeResponsibilityOf(agent.id), this.sourceNamesOf(agent.id));
     // Every turn of a thread is offered the same tools, so a follow-up doesn't restart the thread.
     const options: ContextOptions = {
       profile: agent.profile,
@@ -407,6 +407,10 @@ export class Office {
     return message;
   }
 
+  private sourceNamesOf(agentId: string): string[] {
+    return this.store.connectionsOf(agentId).map((connection) => connection.label);
+  }
+
   private async executeTask(runId: string, task: Task): Promise<TaskOutcome> {
     const agent = this.store.getAgentRecord(task.agentId)!;
     const caller = { agentId: agent.id, runId, profile: agent.profile, sourceData: task.sourceData ?? agent.profile === "data" };
@@ -419,7 +423,7 @@ export class Office {
         this.store.activeResponsibilityOf(agent.id) ?? (task.responsibilityId ? this.store.getResponsibility(task.responsibilityId) : null);
       const contextId = await this.runtime.startContext({
         profile: agent.profile,
-        instructions: `${instructionsFor(agent, responsibility)}
+        instructions: `${instructionsFor(agent, responsibility, this.sourceNamesOf(agent.id))}
 
 ${task.instructions}`,
         tools: this.gateway.specsFor(caller),

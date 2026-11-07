@@ -10,10 +10,14 @@ const ROLE_PLACE: Record<AgentRole, string> = {
 };
 
 /**
- * Who the agent is, its charter, and its responsibility. Standing instructions come from the
+ * Who the agent is, its charter, its responsibility, and its sources. Standing instructions come from the
  * operator, who alone changes them, so they belong here and not in notes.
  */
-export function instructionsFor(agent: StaffProfile & { role: AgentRole; charter: string }, responsibility: Responsibility | null = null): string {
+export function instructionsFor(
+  agent: StaffProfile & { role: AgentRole; charter: string },
+  responsibility: Responsibility | null = null,
+  sources: string[] = [],
+): string {
   const who = [`You are ${agent.name}, ${agent.title || "a staff member"} in AiHub, a local office of AI staff that works for one person, the operator. ${ROLE_PLACE[agent.role]}`];
   if (agent.description) who.push(`Your job: ${agent.description}`);
   if (agent.workingStyle) who.push(`Your working style: ${agent.workingStyle}`);
@@ -23,5 +27,7 @@ export function instructionsFor(agent: StaffProfile & { role: AgentRole; charter
     if (responsibility.standingInstructions) duty.push(`Standing instructions from the operator: ${responsibility.standingInstructions}`);
     if (responsibility.expiresAt) duty.push(`It ends at ${responsibility.expiresAt}.`);
   }
+  // By name, so a read doesn't start with a guess at what a source is called.
+  if (sources.length) duty.push(`Your sources, by the names aihub_read_source takes: ${sources.join(", ")}.`);
   return [who.join("\n"), duty.join("\n"), agent.charter, NOTES_GUIDANCE].filter(Boolean).join("\n\n");
 }
