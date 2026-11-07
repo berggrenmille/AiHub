@@ -14,8 +14,10 @@
     "@aihub/codex-protocol": "*",
     "@aihub/shared": "*",
     "@fastify/static": "^10.1.10",
+    "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
     "fastify": "^5.12.8",
     "ical.js": "^2.2.1",
+    "quickjs-emscripten-core": "0.32.0",
     "tsx": "^4.23.15",
     "zod": "^4.6.7"
   }
