@@ -9,7 +9,8 @@
     "typecheck": "tsc -p .",
     "test": "node --import tsx --disable-warning=ExperimentalWarning --test --test-reporter=spec \"src/**/*.test.ts\"",
     "measure:briefing": "tsx --disable-warning=ExperimentalWarning scripts/measure-briefing.ts",
-    "probe:failures": "tsx --disable-warning=ExperimentalWarning scripts/probe-failures.ts"
+    "probe:failures": "tsx --disable-warning=ExperimentalWarning scripts/probe-failures.ts",
+    "windows": "tsx --disable-warning=ExperimentalWarning src/windows/main.ts"
   },
   "dependencies": {
     "@aihub/codex-protocol": "*",

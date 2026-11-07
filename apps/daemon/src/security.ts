@@ -24,6 +24,11 @@ export interface LoopbackGuardOptions {
   token: string;
 }
 
+/** The token the daemon has, without making one: for tools that ask the running daemon. */
+export function existingInstallToken(store: Store): string | null {
+  return store.getSetting(TOKEN_SETTING);
+}
+
 /** The per-install token, generated on first start and kept in SQLite. */
 export function installToken(store: Store): string {
   let token = store.getSetting(TOKEN_SETTING);

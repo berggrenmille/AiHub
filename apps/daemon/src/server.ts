@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import fastifyStatic from "@fastify/static";
 import type { Agent, ChatResponse, HealthResponse, Note, NoteSummary, OpenChatResponse, SourcePreview, StateSnapshot } from "@aihub/shared";
-import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyServerOptions } from "fastify";
 import { z } from "zod";
 import type { SequencedEvent } from "./events.ts";
 import { NoteRefusal } from "./notes/notebook.ts";
@@ -23,7 +23,8 @@ export interface ServerOptions {
   port?: number;
   /** The built web UI, served at `/` when it exists. */
   webRoot?: string;
-  logger?: boolean;
+  /** Fastify's logger: on, off, or options such as a stream for the background daemon's log file. */
+  logger?: FastifyServerOptions["logger"];
   heartbeatMs?: number;
 }
 
