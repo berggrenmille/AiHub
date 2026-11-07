@@ -2,6 +2,7 @@ import { join } from "node:path";
 import pkg from "../package.json" with { type: "json" };
 import { loadConfig } from "./config.ts";
 import { Office } from "./office.ts";
+import { seedDemoOffice, startDemoActivity } from "./demo.ts";
 import { CodexRuntime, pinnedCodexCommand } from "./runtime/codex-runtime.ts";
 import { demo, FakeRuntime } from "./runtime/fake-runtime.ts";
 import { installToken } from "./security.ts";
@@ -16,6 +17,10 @@ const runtime =
     : new CodexRuntime({ command: pinnedCodexCommand(config.root), codexHome: config.codexHome });
 const office = new Office({ store, runtime, vaultDir: config.vaultDir });
 office.start();
+if (config.fakeRuntime) {
+  seedDemoOffice(office);
+  startDemoActivity(office);
+}
 office.notebook.watch();
 
 // The daemon only listens on loopback (DESIGN.md › Architecture).
