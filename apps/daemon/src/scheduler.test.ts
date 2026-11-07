@@ -319,7 +319,7 @@ describe("The scheduler when Codex can't run", () => {
 
     await at("2026-11-09T05:10:00.000Z");
     const [notice] = notices(store);
-    assert.match(notice!, /^Before 07:00, a few things need you:\n- Codex isn't signed in \(Not signed in\. Run `npm run codex -- login`\.\)\./);
+    assert.match(notice!, /^Before 07:00, a few things need you:\n- Codex isn't signed in\. Sign in with `npm run codex -- login`\.\n/);
     assert.match(notice!, /\n- Work calendar: The export is 10 days old, so changes made since then are missing\. Export it again\.$/);
     assert.deepEqual([store.getConnection(connection.id)?.status, store.getConnection(connection.id)?.detail?.endsWith("Export it again.")], ["connected", true]);
     const [alert] = platform.notifications;

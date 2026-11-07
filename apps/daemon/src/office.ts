@@ -221,12 +221,14 @@ export class Office {
   }
 
   /**
-   * Checks, without a model turn, whether Codex could run one now: someone is signed in and the
-   * plan has usage left. Being offline only shows once a turn tries.
+   * Checks, without a model turn, whether Codex could run one now: it answers, someone is signed
+   * in, and the plan has usage left. Codex can't even say who is signed in without reaching the
+   * service, so a check that fails counts as offline.
    */
   async readiness(): Promise<Blocked | null> {
-    const account = await this.refreshRuntimeStatus();
-    if (!account.signedIn) return { blocker: "signed_out", detail: `${BLOCKED_DETAIL.signed_out}. ${account.detail}`, resetsAt: null };
+    const { signedIn, unavailable } = await this.checkRuntime();
+    if (unavailable) return { blocker: "offline", detail: unavailable, resetsAt: null };
+    if (!signedIn) return { blocker: "signed_out", detail: BLOCKED_DETAIL.signed_out, resetsAt: null };
     const usage = await this.runtime.usageLimits().catch(() => null);
     if (usage?.exhausted) return { blocker: "usage", detail: BLOCKED_DETAIL.usage, resetsAt: usage.resetsAt };
     return null;
@@ -240,12 +242,24 @@ export class Office {
 
   /** Asks the runtime who is signed in and publishes the answer. */
   async refreshRuntimeStatus(): Promise<RuntimeStatus> {
+    return (await this.checkRuntime()).status;
+  }
+
+  /** Asks the runtime who is signed in, publishes the answer, and says why if Codex didn't answer. */
+  async checkRuntime(): Promise<{ status: RuntimeStatus; signedIn: boolean; unavailable: string | null }> {
     let status: RuntimeStatus;
+    let unavailable: string | null = null;
     try {
       status = await this.runtime.account();
     } catch (error) {
-      status = { signedIn: false, detail: `Codex is unavailable: ${errorText(error)}` };
+      unavailable = `Codex is unavailable: ${errorText(error)}`;
+      status = { signedIn: false, detail: unavailable };
     }
+    this.publishRuntimeStatus(status);
+    return { status, signedIn: status.signedIn, unavailable };
+  }
+
+  private publishRuntimeStatus(status: RuntimeStatus) {
     this.runtimeStatus = status;
     this.bus.publish({ type: "runtime", runtime: status });
     return status;

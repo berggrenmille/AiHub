@@ -234,6 +234,31 @@ describe("Morning briefing when something is wrong", () => {
     assert.equal(briefings(store).length, 1);
   });
 
+  it("holds the briefing back when the connection drops partway, though the turn's error doesn't say so", async () => {
+    const { office, store, runtime, responsibility } = await setUp();
+    // Offline, Codex fails a turn as "other" and can't even say who is signed in.
+    let online = true;
+    const account = runtime.account.bind(runtime);
+    runtime.account = async () => {
+      if (!online) throw new Error("workspace routing discovery failed");
+      return account();
+    };
+    runtime.respond = async () => {
+      online = false;
+      return { status: "failed", text: "", error: "workspace routing discovery failed", usage: null, blocker: null };
+    };
+    const dropped = await runMorningBriefing(office, { now: MONDAY });
+    assert.deepEqual([dropped.waiting?.blocker, dropped.waiting?.detail], ["offline", "Codex is unavailable: workspace routing discovery failed"]);
+    assert.equal(store.itemsOf(responsibility.id, ["new", "open"]).length, 0);
+
+    // Online again, a turn that fails for its own reasons is a gap in the briefing, not a wait.
+    online = true;
+    runtime.respond = async (input, options) =>
+      input.includes("BEGIN SOURCE DATA") ? { status: "failed", text: "", error: "The model refused", usage: null } : respond(input, options);
+    const gap = await runMorningBriefing(office, { now: MONDAY });
+    assert.deepEqual([gap.waiting, gap.run?.state, gap.sections[0]?.status], [null, "done", "missing"]);
+  });
+
   it("sends a quiet briefing while Codex is signed out, since it needs no turn", async () => {
     const { office, runtime } = await setUp();
     await runMorningBriefing(office, { now: MONDAY });

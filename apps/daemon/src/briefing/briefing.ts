@@ -105,9 +105,9 @@ export async function runBriefing(
   const outcomes = await Promise.all(sections.map((section) => reportSection(office, section, since, options.timeoutMs)));
 
   // A report that couldn't run for a reason waiting may fix holds the whole briefing back.
-  const blocked = outcomes.find((outcome) => outcome.status === "missing" && outcome.blocker);
-  if (blocked?.status === "missing" && blocked.blocker) {
-    const waiting = await office.blocked(blocked.blocker);
+  const missing = outcomes.flatMap((outcome) => (outcome.status === "missing" && outcome.run?.state === "failed" ? [outcome] : []));
+  const waiting = await waitingAfter(office, missing.find((outcome) => outcome.blocker)?.blocker ?? null, missing.length > 0);
+  if (waiting) {
     office.finishRun(briefing.id, "failed", `Waiting: ${waiting.detail}.`);
     return { run: store.getRun(briefing.id)!, sections: outcomes, text: "", waiting };
   }
@@ -128,7 +128,7 @@ export async function runBriefing(
         sourceData: true,
       });
   if (composed.run.state !== "done" || !composed.text) {
-    return { run: composed.run, sections: outcomes, text: "", waiting: composed.blocker ? await office.blocked(composed.blocker) : null };
+    return { run: composed.run, sections: outcomes, text: "", waiting: await waitingAfter(office, composed.blocker, composed.run.state === "failed") };
   }
 
   office.postMessage(CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID, composed.text, briefing.id, "briefing", null, true);
@@ -140,6 +140,17 @@ export async function runBriefing(
     if (status === "reported" || status === "nothing_new") section.onDelivered?.();
   });
   return { run: composed.run, sections: outcomes, text: composed.text, waiting: null };
+}
+
+/**
+ * Whether failed turns should hold the briefing back until Codex can run again. A turn's error says
+ * so for used-up usage or a lost sign-in; a lost connection often reads as some other error, so
+ * after any failure the check before turns runs again, and holds the briefing back if Codex can't
+ * answer it.
+ */
+async function waitingAfter(office: Office, blocker: TurnBlocker | null, failed: boolean): Promise<Blocked | null> {
+  if (blocker) return office.blocked(blocker);
+  return failed ? office.readiness() : null;
 }
 
 /**

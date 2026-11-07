@@ -279,8 +279,9 @@ export class Scheduler {
     const { store, bus } = this.office;
     if (!store.claimOccurrence(`${routine.id}:${today}:health`, routine.id, this.now().toISOString())) return;
     const problems: string[] = [];
-    const runtime = await this.office.refreshRuntimeStatus();
-    if (!runtime.signedIn) problems.push(`Codex isn't signed in (${runtime.detail}). Run \`npm run codex -- login\`.`);
+    const { signedIn, unavailable } = await this.office.checkRuntime();
+    if (unavailable) problems.push(sentence(unavailable));
+    else if (!signedIn) problems.push(`Codex isn't signed in.${SIGN_IN}`);
     for (const { id } of store.listConnections()) {
       const { connection, warning } = await checkConnection(store, id, this.office.sourceContext(this.now()));
       bus.publish({ type: "connection", connection });
