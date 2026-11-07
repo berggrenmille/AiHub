@@ -33,6 +33,7 @@ export function verifyConnection(store: Store, connectionId: string, now = new D
   const connection = store.getConnection(connectionId);
   if (!connection) throw new Error(`No connection ${connectionId}`);
   try {
+    if (!connection.path.trim()) throw new NoFileChosen();
     const records = readCalendarFile(connection.path, { from: now, to: new Date(now.getTime() + CALENDAR_DAYS * 86_400_000) });
     const upcoming = records.filter((record) => record.status !== "cancelled").length;
     return store.setConnectionStatus(connectionId, "connected", `${upcoming} event${upcoming === 1 ? "" : "s"} in the next ${CALENDAR_DAYS} days`);
@@ -49,6 +50,7 @@ export function collect(store: Store, responsibilityId: string, connection: Sour
   let firstCheck: boolean;
   let cursor: CalendarCursor;
   try {
+    if (!connection.path.trim()) throw new NoFileChosen();
     const previous = store.getCursor(responsibilityId, connection.id) as CalendarCursor | null;
     ({ changes, firstCheck, cursor } = diffCalendar(previous, readCalendarFile(connection.path, window), window));
   } catch (error) {
@@ -104,7 +106,11 @@ export function describeTime(start: string, end: string, allDay: boolean): strin
   return `${dayFormat.format(from)} ${timeFormat.format(from)}-${timeFormat.format(to)}`;
 }
 
+/** Raised for a connection whose file the operator hasn't picked yet. */
+class NoFileChosen extends Error {}
+
 function describeError(error: unknown): string {
+  if (error instanceof NoFileChosen) return "No calendar file has been chosen yet.";
   const code = (error as NodeJS.ErrnoException)?.code;
   if (code === "ENOENT") return "The calendar file isn't there any more. Export it again or pick its new location.";
   if (code === "EACCES" || code === "EPERM") return "AiHub can't read the calendar file. Check its permissions.";

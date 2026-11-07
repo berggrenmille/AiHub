@@ -264,7 +264,8 @@ a {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  min-width: 1000px;
+  /* The floor scales to fit and the HUD shrinks to icons, so narrow windows work too. */
+  min-width: 640px;
   overflow: hidden;
 }
 
@@ -882,6 +883,25 @@ summary.hud-chip::-webkit-details-marker {
   }
   .energy-bar {
     width: 56px;
+  }
+}
+
+@media (max-width: 980px) {
+  /* Narrow windows keep the numbers, the status dots and icons, and every action on screen.
+     The chips' words stay in the accessibility tree and in their tooltips. */
+  .energy-bar,
+  .hud-stat .muted,
+  .hud-clock {
+    display: none;
+  }
+  .hud-status .hud-chip {
+    font-size: 0;
+    gap: 0;
+    padding-inline: 8px;
+  }
+  .hud {
+    gap: 6px;
+    padding-inline: 10px;
   }
 }
 

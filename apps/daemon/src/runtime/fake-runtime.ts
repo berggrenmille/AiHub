@@ -22,6 +22,21 @@ export const echo: Responder = async (input, options) => {
  * and calls the first offered tool when the message asks for it, such as "who is on staff? use a tool".
  */
 export const demo: Responder = async (input, options) => {
+  // A briefing section: file a plain report from the collected records, so the office gets items.
+  const data = /BEGIN SOURCE DATA\n([\s\S]*?)\nEND SOURCE DATA/.exec(input)?.[1];
+  if (data) {
+    const records = JSON.parse(data) as Array<{ id: string; title: string; when?: string; overlapsWith?: string[] }>;
+    const items = records
+      .filter((record) => record.overlapsWith?.length)
+      .map((record) => ({
+        title: `${record.title} overlaps ${record.overlapsWith![0]!.split(",")[0]}`,
+        detail: `${record.when ?? ""}. The fake runtime flags every overlap.`,
+        urgency: "this_week",
+        sourceRef: record.id,
+      }));
+    const outcome = await options.onToolCall({ name: "aihub_submit_report", arguments: { summary: `${records.length} records, ${items.length} overlaps.`, items } });
+    return { status: "completed", text: outcome.text, error: null, usage: { inputTokens: 900, cachedInputTokens: 0, outputTokens: 30 } };
+  }
   let text = `This is the fake runtime, so nobody is thinking. You said: “${input}”`;
   if (/tool/i.test(input)) {
     const outcome = await options.onToolCall({ name: "aihub_get_roster", arguments: {} });

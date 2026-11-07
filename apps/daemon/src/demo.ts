@@ -1,9 +1,13 @@
+import { fileURLToPath } from "node:url";
 import { seedSampleStaff, SAMPLE_STAFF } from "./briefing/samples.ts";
+import { verifyConnection } from "./sources/collect.ts";
 import type { Office } from "./office.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "./staff/chief-of-staff.ts";
 
 // A furnished office for the fake runtime (`npm run dev:fake`), so the UI has staff, notes, items,
 // a proposal, and some motion to show without Codex. Never used with the real runtime.
+
+const DEMO_CALENDAR = fileURLToPath(new URL("../test/fixtures/work.ics", import.meta.url));
 
 const RESPONSIBILITIES: Record<string, { title: string; scope: string }> = {
   "work-schedule": { title: "Work schedule", scope: "Changes, conflicts, and preparation in the work calendar." },
@@ -32,9 +36,10 @@ export function seedDemoOffice(office: Office) {
     });
   }
 
-  const calendar = store.createConnection({ kind: "ics_file", label: "Work calendar", path: "C:/Users/demo/work.ics" });
-  store.setConnectionStatus(calendar.id, "connected", "42 events in the next week");
+  // The test fixture, so a briefing run from the office collects real records.
+  const calendar = store.createConnection({ kind: "ics_file", label: "Work calendar", path: DEMO_CALENDAR });
   store.grant("work-schedule", calendar.id, ["read"]);
+  verifyConnection(store, calendar.id);
   // Saga waits for her mailbox, so the office shows someone waiting for access.
   const mailbox = store.createConnection({ kind: "ics_file", label: "Personal mailbox", path: "" });
   store.grant("personal-inbox", mailbox.id, ["read"]);

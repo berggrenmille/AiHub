@@ -37,6 +37,9 @@ describe("Calendar collector", () => {
     const failed = verifyConnection(store, connection.id, MONDAY);
     assert.equal(failed.status, "failed");
     assert.match(failed.detail!, /isn't there any more/);
+
+    const unchosen = store.createConnection({ kind: "ics_file", label: "Mailbox", path: "" });
+    assert.equal(verifyConnection(store, unchosen.id, MONDAY).detail, "No calendar file has been chosen yet.");
   });
 
   it("hands over changes with stable ids, and sees them again until the cursor is saved", () => {
