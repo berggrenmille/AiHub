@@ -13,6 +13,7 @@
     "@aihub/codex-protocol": "*",
     "@aihub/shared": "*",
     "fastify": "^5.12.8",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "zod": "^4.6.7"
   }
 }

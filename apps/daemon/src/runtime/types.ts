@@ -1,8 +1,8 @@
 // The runtime interface (DESIGN.md › Architecture). The staff engine talks only to AgentRuntime,
 // so Codex can be replaced for some or all runs without changing anything above this layer.
+import type { RunProfile } from "@aihub/shared";
 
-/** Decides which tools and data a run can reach (DESIGN.md › Run profiles). */
-export type RunProfile = "data" | "conversation" | "workspace";
+export type { RunProfile };
 
 /** A gateway tool offered to the model. `inputSchema` is a JSON Schema object. */
 export interface ToolSpec {
