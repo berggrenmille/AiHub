@@ -20,6 +20,11 @@ export interface WindowsPlatformOptions {
   action: TaskAction;
   /** False when AIHUB_NOTIFICATIONS=off. Staying awake and waking still work. */
   notifications: boolean;
+  /**
+   * False keeps no wake task: only the daemon Windows starts from the installed task keeps one, so
+   * a daemon run in a terminal can't put one back after an uninstall. Defaults to true.
+   */
+  wake?: boolean;
   log?: (message: string) => void;
   /** The operator's SID, which the wake task runs as. Looked up when left out. */
   userId?: string;
@@ -132,7 +137,7 @@ class WindowsPlatform implements Platform {
   }
 
   wakeAt(at: Date | null): Promise<void> {
-    if (this.closed) return Promise.resolve();
+    if (this.closed || this.options.wake === false) return Promise.resolve();
     // A time that has passed would never fire, so it clears the task instead.
     this.wantedWake = at && at.getTime() > this.now().getTime() ? Math.floor(at.getTime() / 1000) * 1000 : null;
     // Calls queue up, and each applies the latest wish, so a burst of calls registers once.

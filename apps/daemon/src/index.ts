@@ -33,6 +33,8 @@ const platform = config.osIntegration
       port: config.port,
       action: daemonAction(config),
       notifications: config.notifications,
+      // Only the installed daemon, which Windows starts in the background, keeps the wake task.
+      wake: config.background,
     })
   : NO_PLATFORM;
 const office = new Office({ store, runtime, vaultDir: config.vaultDir, platform });

@@ -146,6 +146,14 @@ describe("the Windows platform", () => {
     assert.equal(calls.length, 2);
   });
 
+  it("keeps no wake task when it isn't the installed daemon", async () => {
+    const { calls, exec } = recorder();
+    const { platform: windows } = platform(exec, { wake: false });
+    await windows.wakeAt(new Date("2026-11-09T04:55:00Z"));
+    await windows.wakeAt(null);
+    assert.equal(calls.length, 0);
+  });
+
   it("clears the wake task for a time that has passed, and tries again after a failure", async () => {
     let fail = true;
     const { calls, exec } = recorder((call) => (call.args[0] === "/Create" && fail ? { code: 1, stdout: "", stderr: "ERROR: Access is denied." } : OK));
