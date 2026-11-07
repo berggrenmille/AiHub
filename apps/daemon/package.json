@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p .",
+    "test": "node --import tsx --test --test-reporter=spec \"src/**/*.test.ts\""
   },
   "dependencies": {
+    "@aihub/codex-protocol": "*",
     "@aihub/shared": "*",
     "fastify": "^5.12.8",
     "tsx": "^4.23.15"

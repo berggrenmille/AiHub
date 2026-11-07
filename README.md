@@ -33,6 +33,7 @@ npm run codex -- login
 | --- | --- |
 | `npm run dev` | Starts the daemon and the UI at http://127.0.0.1:5173. |
 | `npm run typecheck` | Typechecks every workspace and the spike. |
+| `npm test` | Runs the tests. They use a fake Codex App Server, so they need no sign-in. |
 | `npm run build` | Builds the UI. |
 | `npm run spike:codex` | Runs the Codex App Server spike. |
 | `npm run codex -- <args>` | Runs the pinned Codex CLI with AiHub's `CODEX_HOME`. |
