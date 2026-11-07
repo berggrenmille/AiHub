@@ -175,6 +175,22 @@ describe("HTTP server", () => {
     assert.equal(reply?.type === "message" && reply.message.body, "Echo: Hello there");
   });
 
+  it("opens the event stream before there is any event to send", async () => {
+    let office: Office;
+    ({ app, office } = await server(null));
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const base = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
+
+    const response = await fetch(`${base}/api/events?after=${office.snapshot().lastEventId}`, {
+      headers: { cookie: PAGE.cookie },
+      signal: AbortSignal.timeout(2000),
+    });
+
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type") ?? "", /^text\/event-stream/);
+    await response.body?.cancel();
+  });
+
   it("replays missed events after a reconnect and asks for a reload after a restart", async () => {
     let office: Office;
     ({ app, office } = await server(null));
