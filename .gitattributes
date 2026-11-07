@@ -1,4 +1,6 @@
 * text=auto eol=lf
+# iCalendar lines end in CRLF (RFC 5545), and the tests edit fixtures line by line.
+*.ics text eol=crlf
 
 # Generated from the pinned Codex version; collapse in diffs and code stats.
 packages/codex-protocol/src/** linguist-generated=true

@@ -9,6 +9,7 @@ import type {
   NoteSummary,
   Proposal,
   ResolveItemRequest,
+  RunRoutineResponse,
   StateSnapshot,
   UpdateAgentRequest,
   WriteNoteRequest,
@@ -125,8 +126,8 @@ export function resolveItem(itemId: number, body: ResolveItemRequest): Promise<I
 }
 
 /** Starts a routine now. Its run arrives on the event stream. */
-export function runRoutine(routineId: string): Promise<unknown> {
-  return request<unknown>(`/api/routines/${encodeURIComponent(routineId)}/run`, json("POST", {}));
+export function runRoutine(routineId: string): Promise<RunRoutineResponse> {
+  return request<RunRoutineResponse>(`/api/routines/${encodeURIComponent(routineId)}/run`, json("POST", {}));
 }
 
 export interface OfficeConnectionHandlers {

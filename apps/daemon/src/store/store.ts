@@ -181,6 +181,7 @@ export class Store {
            AND EXISTS (SELECT 1 FROM responsibilities r WHERE r.owner_id = a.id AND r.status = 'ended')
            AND NOT EXISTS (SELECT 1 FROM responsibilities r WHERE r.owner_id = a.id AND r.status = 'active')
          ) AS unassigned,
+         (SELECT group_concat(g.connection_id, ' ') FROM grants g WHERE g.agent_id = a.id AND g.revoked_at IS NULL) AS connection_ids,
          (SELECT COUNT(*) FROM results x WHERE x.agent_id = a.id)
            + (SELECT COUNT(*) FROM items i JOIN responsibilities r ON r.id = i.responsibility_id
               WHERE r.owner_id = a.id AND i.state = 'resolved') AS experience
@@ -193,7 +194,8 @@ export class Store {
       const { charter: _charter, status: _status, ...agent } = toAgentRecord(row);
       // A run in progress shows first; then missing access; then a supervisor whose responsibility ended.
       const state = (row.run_state as RunState | null) ?? (row.waiting ? "waiting_for_access" : row.unassigned ? "done" : "idle");
-      return { ...agent, experience: Number(row.experience), state };
+      const connectionIds = row.connection_ids ? String(row.connection_ids).split(" ") : [];
+      return { ...agent, experience: Number(row.experience), state, connectionIds };
     });
   }
 

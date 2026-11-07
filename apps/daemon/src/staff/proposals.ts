@@ -68,7 +68,8 @@ export function approveProposal(office: Office, id: string, options: { sourcePat
 
   const hired = store.transaction(() => {
     const agentId = store.freeAgentId(profile.name);
-    store.upsertAgent({ id: agentId, ...profile, role: "supervisor", managerId: CHIEF_OF_STAFF_ID, profile: "data", charter: SUPERVISOR_CHARTER });
+    // The card showed a look seeded from the proposed name, so the hire keeps that look.
+    store.upsertAgent({ id: agentId, ...profile, avatar: profile.name, role: "supervisor", managerId: CHIEF_OF_STAFF_ID, profile: "data", charter: SUPERVISOR_CHARTER });
     const responsibility = store.createResponsibility({ ownerId: agentId, ...duty });
     const routine = store.createRoutine({
       ownerId: agentId,

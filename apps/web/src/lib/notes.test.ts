@@ -18,6 +18,7 @@ function agent(id: string, name: string): Agent {
     avatar: id,
     hiredAt: "2026-11-07T16:00:00.000Z",
     experience: 0,
+    connectionIds: [],
     role: "supervisor",
     managerId: "chief-of-staff",
     profile: "conversation",

@@ -68,6 +68,7 @@ export function ProfileCard(props: ProfileCardProps) {
     props.responsibilities.find((candidate) => candidate.ownerId === agent.id) ??
     null;
   const routines = props.routines.filter((routine) => routine.ownerId === agent.id);
+  const connections = props.connections.filter((connection) => agent.connectionIds.includes(connection.id));
   const runs = runsOf(agent.id, props.runs).slice(0, 6);
   const activity = props.activity.filter((entry) => entry.agentId === agent.id).slice(0, 8);
   const notes = props.notes.filter((note) => note.ownerId === agent.id);
@@ -211,8 +212,8 @@ export function ProfileCard(props: ProfileCardProps) {
 
           <section className="profile-section" aria-label="Connections">
             <h3>Connections</h3>
-            {props.connections.length === 0 ? (
-              <p className="muted">No connections in the office yet.</p>
+            {connections.length === 0 ? (
+              <p className="muted">{agent.name} reads no sources.</p>
             ) : (
               <>
                 {agent.state === "waiting_for_access" && (
@@ -221,7 +222,7 @@ export function ProfileCard(props: ProfileCardProps) {
                   </p>
                 )}
                 <ul className="connection-list">
-                  {props.connections.map((connection) => (
+                  {connections.map((connection) => (
                     <li key={connection.id}>
                       <span className={`dot status-${connection.status}`} aria-hidden="true" />
                       <span>
@@ -232,7 +233,6 @@ export function ProfileCard(props: ProfileCardProps) {
                     </li>
                   ))}
                 </ul>
-                <p className="tiny muted">The office's connections. Which ones each staff member may use isn't shown yet.</p>
               </>
             )}
           </section>

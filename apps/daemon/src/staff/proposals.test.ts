@@ -81,6 +81,8 @@ describe("Recruitment", () => {
     assert.equal(store.listRoutines().find((routine) => routine.ownerId === "rut")?.trigger.type, "briefing");
     const [connection] = store.connectionsOf("rut");
     assert.deepEqual([connection?.status, connection?.path], ["connected", CALENDAR]);
+    assert.deepEqual(store.getAgent("rut")!.connectionIds, [connection!.id]);
+    assert.equal(rut.avatar, "Rut", "the look the card showed");
     assert.match(office.notebook.read("Staff/chief-of-staff/Vera.md")!.body, /Team: \[\[Rut\]\]/);
     const notice = store.recentMessages(1, CHIEF_OF_STAFF_CONVERSATION_ID)[0]!;
     assert.equal(notice.kind, "notice");

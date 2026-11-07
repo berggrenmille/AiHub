@@ -49,6 +49,8 @@ export interface Agent extends StaffProfile {
   experience: number;
   /** The state of the agent's current run, or idle when none is in progress. */
   state: RunState | "idle";
+  /** The connections it may read, through unrevoked grants. */
+  connectionIds: string[];
 }
 
 export interface Usage {
@@ -315,6 +317,11 @@ export interface ApproveProposalRequest {
 /** `POST /api/items/:id/resolve`. */
 export interface ResolveItemRequest {
   note?: string;
+}
+
+/** `POST /api/routines/:id/run` answers 202 with the occurrence it recorded. */
+export interface RunRoutineResponse {
+  occurrenceId: string;
 }
 
 /** `PATCH /api/agents/:id`: the operator edits a staff member's profile. */
