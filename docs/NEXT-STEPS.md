@@ -79,7 +79,7 @@ A first look at a source costs about twice a later check, since everything in th
 - The briefing in the Chief of Staff chat is written from source data, and a later chat turn can write notes from it as `conversation`. Mark chat turns that follow a briefing as source data before chat runs more often (Milestone 5).
 - The office has no note-removed event, so the UI drops a profile note's old path when a new one appears for the same owner. Unread chat counts live in the browser.
 
-## Milestone 3: teams and delegation
+## Milestone 3: teams and delegation (done 2026-11-07)
 
 Acceptance (DESIGN.md): a supervisor recruits a worker with narrowed access, reviews its result, and the worker leaves the office. A staff member asks a colleague a question without holding a turn open, and the answer arrives in a new turn.
 
@@ -89,14 +89,16 @@ Acceptance (DESIGN.md): a supervisor recruits a worker with narrowed access, rev
 4. **Workers.** `aihub_recruit_worker` (supervisors, in assignment runs) hires a worker with a profile, a task, and a subset of the supervisor's grants, within a cap per supervisor. The worker delivers. In its follow-up run the supervisor accepts each result or asks for one revision with `aihub_review_work`. On acceptance AiHub archives the worker and revokes its grants; its assignment, result, and notes stay.
 5. **The office.** Workers walk in and out, a staff member asking a question walks to the colleague's desk, and a profile shows open and recent assignments.
 
-### Progress (2026-11-07)
+### How it was shown
 
-Steps 1 to 4 are in the daemon and checked against real Codex. Step 5, the office, is being built.
+All five steps are built. Steps 1 to 4 were checked against real Codex, and the office in a browser against the daemon in fake mode, which now delegates too.
 
 | Acceptance | Where it is shown |
 | --- | --- |
 | A staff member asks a colleague without holding a turn open, and the answer arrives in a new turn. | `staff/delegation.ts`, tested in `delegation.test.ts`. Against real Codex, Vera asked Nora when the standup series started. Her chat turn ended at "I've asked Nora", Nora answered in a `question` run, and Vera passed the answer on in a follow-up turn of the same thread (15,478 tokens in, 14,976 cached). |
 | A supervisor recruits a worker with narrowed access, reviews its result, and the worker leaves the office. | Same files. Against real Codex, the operator asked for the recurring meetings that take the most time over two months. Vera assigned it to Nora, and Nora recruited Elias, Calendar Analyst, sharing only her Work calendar. Elias read both months and delivered. Nora re-read the calendar to check his tally and accepted it. Elias was archived with his grant revoked, and his profile note and his own note stayed in the vault. |
+| The assignment and result remain inspectable. | Assignments are records with their brief, result, review, and runs used. The Assignments drawer shows them nested by task, including workers who left, and each profile card lists its staff member's assignments. Checked in a browser. |
+| The office shows the team at work. | `apps/web`: a worker walks in to a spare desk in its supervisor's pod and walks out when it leaves; a staff member asking a question walks to the colleague's desk; a supervisor waiting on its team shows how many results are in. Checked in a browser against the fake office, where "give Elin a task with a helper" runs the whole chain. |
 | Nothing nests or loops. | Run kinds limit the tools (`gateway.test.ts`): a `question` or `follow_up` run can't ask, assign, or recruit, and a worker can't ask or recruit. Caps: 3 open questions per requester, 4 open tasks, 2 workers per supervisor, a run budget per assignment, and the daily turn limit. |
 
 ### Usage measured
@@ -123,3 +125,21 @@ A follow-up turn costs little because it continues the chat's own thread: the to
 | --- | --- |
 | Nora and Elias called their totals "provisional": the calendar reader returned bare occurrences, so a series that starts mid-window, or skips a day, looked like missing data. | `aihub_read_calendar` lists each series once, with its rule, its first occurrence, and the occurrences the file skips in the window. Asked again, Nora answered that the standup is "explicitly skipped" on the offsite day. |
 | Given a one-week task and permission to bring in a helper, Nora did it herself. | Kept: a worker is for bounded work that needs reading through a lot, and the instructions say so. |
+
+### Known gaps
+
+- Assignments don't carry their staff members' avatar seeds, so a worker who has left shows an initial in the drawer instead of its portrait.
+- An activity entry doesn't say which assignment it is about, so the office can't color a failed task's toast as a failure.
+- A refused tool call shows as a toast. With real models refusals are rare, but a confused run can produce several in a row.
+- Workers may reuse the name of a worker who has left, so a wikilink to that name can point at either.
+- The snapshot holds open assignments and the 30 most recently settled. Older ones stay in the database but not in the office.
+
+## Milestone 4: generality with sample sources
+
+Acceptance (DESIGN.md): configure a calendar, two isolated mailboxes, and a portfolio responsibility using the same staff engine. Add a fifth responsibility in chat and a small new adapter without changing the hierarchy or scheduler. The operator can open a chat with any staff member from the office.
+
+1. **An adapter contract.** Move what `sources/collect.ts` does for `.ics` behind one interface per source kind: verify, read a window, key and version records, diff against the cursor, and describe a record for the model. The calendar becomes the first adapter, and the briefing and `aihub_read_calendar` go through the contract.
+2. **Two mailboxes.** A local adapter for a folder of `.eml` files, connected twice, each granted to its own supervisor, with tests that one supervisor can't read the other's mail.
+3. **A portfolio.** A holdings CSV adapter, with the operator's review rules as standing instructions.
+4. **Chat with anyone.** A conversation per staff member, opened from the profile card. A supervisor's chat runs in its own profile, and its turns count as source data.
+5. **A fifth responsibility.** Ask the Chief of Staff for something new, such as a reading list kept in a folder of markdown files, and add its small adapter without touching the hierarchy, the scheduler, or delegation.
