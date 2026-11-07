@@ -1,0 +1,11 @@
+{
+  "name": "@aihub/codex-protocol",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Codex App Server protocol types, generated from the pinned Codex version with `npm run codex:protocol`.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./v2": "./src/v2/index.ts"
+  }
+}

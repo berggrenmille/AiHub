@@ -8,22 +8,20 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import type { ClientRequest } from "./protocol/ClientRequest";
-import type { InitializeResponse } from "./protocol/InitializeResponse";
-import type { RequestId } from "./protocol/RequestId";
-import type { ServerNotification } from "./protocol/ServerNotification";
-import type { ServerRequest } from "./protocol/ServerRequest";
-import type { AppsListResponse } from "./protocol/v2/AppsListResponse";
-import type { DynamicToolCallResponse } from "./protocol/v2/DynamicToolCallResponse";
-import type { GetAccountRateLimitsResponse } from "./protocol/v2/GetAccountRateLimitsResponse";
-import type { GetAccountResponse } from "./protocol/v2/GetAccountResponse";
-import type { ListMcpServerStatusResponse } from "./protocol/v2/ListMcpServerStatusResponse";
-import type { ThreadItem } from "./protocol/v2/ThreadItem";
-import type { ThreadStartResponse } from "./protocol/v2/ThreadStartResponse";
-import type { TokenUsageBreakdown } from "./protocol/v2/TokenUsageBreakdown";
-import type { Turn } from "./protocol/v2/Turn";
-import type { TurnStartResponse } from "./protocol/v2/TurnStartResponse";
-import type { WindowsSandboxReadinessResponse } from "./protocol/v2/WindowsSandboxReadinessResponse";
+import type { ClientRequest, InitializeResponse, RequestId, ServerNotification, ServerRequest } from "@aihub/codex-protocol";
+import type {
+  AppsListResponse,
+  DynamicToolCallResponse,
+  GetAccountRateLimitsResponse,
+  GetAccountResponse,
+  ListMcpServerStatusResponse,
+  ThreadItem,
+  ThreadStartResponse,
+  TokenUsageBreakdown,
+  Turn,
+  TurnStartResponse,
+  WindowsSandboxReadinessResponse,
+} from "@aihub/codex-protocol/v2";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const codexHome = join(root, ".codex-home");

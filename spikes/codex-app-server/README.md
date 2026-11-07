@@ -31,4 +31,4 @@ A pass on the probe is necessary but not sufficient: the model may simply declin
 
 ## Protocol types
 
-`protocol/` is generated from the pinned Codex version, including experimental fields, with `npm run codex:protocol`. It is committed on purpose: after a Codex upgrade, regenerate it and the git diff shows exactly what changed in the protocol.
+`packages/codex-protocol` is generated from the pinned Codex version, including experimental fields, with `npm run codex:protocol`. It is committed on purpose: after a Codex upgrade, regenerate it and the git diff shows exactly what changed in the protocol.

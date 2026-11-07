@@ -9,6 +9,7 @@ A local, game-like office for your personal staff of AI agents. The Chief of Sta
 | `apps/daemon` | Fastify daemon on `127.0.0.1:7420`. Owns state, scheduling, and the Codex runtime. |
 | `apps/web` | React and Vite UI. In development, Vite proxies `/api` to the daemon. |
 | `packages/shared` | Types shared by the daemon and the UI. |
+| `packages/codex-protocol` | Codex App Server protocol types, generated from the pinned Codex version. |
 | `spikes/codex-app-server` | Milestone 1 spike that drives Codex App Server and probes run isolation. |
 | `scripts/codex.mjs` | Runs the project's pinned Codex CLI with AiHub's own `CODEX_HOME`. |
 

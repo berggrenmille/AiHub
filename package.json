@@ -16,7 +16,7 @@
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present && tsc -p spikes/codex-app-server",
     "codex": "node scripts/codex.mjs",
-    "codex:protocol": "node scripts/codex.mjs app-server generate-ts --experimental --out spikes/codex-app-server/protocol",
+    "codex:protocol": "node scripts/codex.mjs app-server generate-ts --experimental --out packages/codex-protocol/src",
     "spike:codex": "tsx spikes/codex-app-server/spike.ts"
   },
   "devDependencies": {
