@@ -35,6 +35,7 @@ import { Toolsmith } from "./staff/toolsmith.ts";
 import { proposeSupervisor } from "./staff/proposals.ts";
 import type { SourceContext } from "./sources/source.ts";
 import type { Scheduler } from "./scheduler.ts";
+import { NO_PLATFORM, type Platform } from "./platform.ts";
 import type { ConversationRecord, Store } from "./store/store.ts";
 import { addDays, isWeekday, localDate, TIMEZONE, zonedInstant } from "./time.ts";
 
@@ -87,6 +88,8 @@ export interface OfficeOptions {
   turnTimeoutMs?: number;
   /** The notes vault. Without one, the office keeps notes in a temporary folder. */
   vaultDir?: string;
+  /** Notifications, staying awake, and waking the PC. Nothing, when left out. */
+  platform?: Platform;
 }
 
 /**
@@ -107,6 +110,7 @@ export class Office {
   private runtimeStatus: RuntimeStatus | null = null;
   /** Set by the daemon once it schedules routines. */
   scheduler: Scheduler | null = null;
+  readonly platform: Platform;
   readonly delegation: Delegation;
   readonly toolsmith: Toolsmith;
 
@@ -116,6 +120,7 @@ export class Office {
     this.queue = options.queue ?? new RunQueue();
     this.historyLimit = options.historyLimit ?? 20;
     this.turnTimeoutMs = options.turnTimeoutMs;
+    this.platform = options.platform ?? NO_PLATFORM;
     const vaultDir = options.vaultDir ?? mkdtempSync(join(tmpdir(), "aihub-vault-"));
     this.notebook = new Notebook(vaultDir, this.store, (note) => this.bus.publish({ type: "note", note }));
     this.delegation = new Delegation(this);
