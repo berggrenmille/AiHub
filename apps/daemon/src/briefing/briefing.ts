@@ -131,7 +131,7 @@ export async function runBriefing(
     return { run: composed.run, sections: outcomes, text: "", waiting: composed.blocker ? await office.blocked(composed.blocker) : null };
   }
 
-  office.postMessage(CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID, composed.text, briefing.id, "briefing");
+  office.postMessage(CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID, composed.text, briefing.id, "briefing", null, true);
   // Delivered: new items are now open, and collectors move their cursors past what was reported.
   const delivered = outcomes.flatMap((outcome) => ("newItems" in outcome ? outcome.newItems : []));
   for (const item of store.markReported(delivered.map((item) => item.id))) bus.publish({ type: "item", item });

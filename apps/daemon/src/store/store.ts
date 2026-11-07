@@ -61,6 +61,10 @@ export interface ConversationRecord extends Conversation {
   contextId: string | null;
   /** Fingerprint of the instructions and tools the context was started with. */
   contextFingerprint: string | null;
+  /** The thread has taken in source data, so every later turn in it counts as source data. */
+  sourceData: boolean;
+  /** The last message the thread has taken in. Briefings and notices after it are news to it. */
+  seenMessageId: number;
 }
 
 type Row = Record<string, SQLInputValue>;
@@ -229,7 +233,7 @@ export class Store {
   listConversations(): Conversation[] {
     const rows = this.db.prepare("SELECT * FROM conversations ORDER BY created_at, id").all() as Row[];
     return rows.map((row) => {
-      const { contextId: _id, contextFingerprint: _fingerprint, ...conversation } = toConversation(row);
+      const { contextId: _id, contextFingerprint: _fingerprint, sourceData: _data, seenMessageId: _seen, ...conversation } = toConversation(row);
       return conversation;
     });
   }
@@ -240,17 +244,51 @@ export class Store {
       .run(contextId, fingerprint, id);
   }
 
+  /** Records what a conversation's thread has taken in. */
+  setConversationThread(id: string, thread: { sourceData?: boolean; seenMessageId?: number }) {
+    this.db
+      .prepare(
+        "UPDATE conversations SET source_data = COALESCE(?, source_data), seen_message_id = MAX(seen_message_id, COALESCE(?, 0)) WHERE id = ?",
+      )
+      .run(thread.sourceData === undefined ? null : thread.sourceData ? 1 : 0, thread.seenMessageId ?? null, id);
+  }
+
   // Messages ----------------------------------------------------------------
 
-  addMessage(input: Omit<ChatMessage, "id" | "createdAt" | "kind" | "refId"> & { kind?: MessageKind; refId?: string | null }): ChatMessage {
-    const message = { ...input, kind: input.kind ?? "chat", refId: input.refId ?? null };
+  /** Records a message. `sourceData` marks one written from source data, such as a briefing. */
+  addMessage(
+    input: Omit<ChatMessage, "id" | "createdAt" | "kind" | "refId"> & { kind?: MessageKind; refId?: string | null; sourceData?: boolean },
+  ): ChatMessage {
+    const { sourceData, ...fields } = input;
+    const message = { ...fields, kind: input.kind ?? "chat", refId: input.refId ?? null };
     const createdAt = this.timestamp();
     const { lastInsertRowid } = this.db
       .prepare(
-        "INSERT INTO messages (conversation_id, author, agent_id, kind, body, run_id, ref_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO messages (conversation_id, author, agent_id, kind, body, run_id, ref_id, source_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
-      .run(message.conversationId, message.author, message.agentId, message.kind, message.body, message.runId, message.refId, createdAt);
+      .run(message.conversationId, message.author, message.agentId, message.kind, message.body, message.runId, message.refId, sourceData ? 1 : 0, createdAt);
     return { ...message, id: Number(lastInsertRowid), createdAt };
+  }
+
+  /** A conversation's messages after one, oldest first, each saying whether it was written from source data. */
+  messagesAfter(conversationId: string, afterId: number): Array<ChatMessage & { sourceData: boolean }> {
+    const rows = this.db.prepare("SELECT * FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id").all(conversationId, afterId) as Row[];
+    return rows.map((row) => ({ ...toMessage(row), sourceData: Number(row.source_data) === 1 }));
+  }
+
+  /** Which of these messages were written from source data. */
+  sourceDataAmong(ids: number[]): Set<number> {
+    if (!ids.length) return new Set();
+    const rows = this.db
+      .prepare(`SELECT id FROM messages WHERE source_data = 1 AND id IN (${ids.map(() => "?").join(", ")})`)
+      .all(...ids) as Row[];
+    return new Set(rows.map((row) => Number(row.id)));
+  }
+
+  /** The newest message id in a conversation, or 0. */
+  lastMessageId(conversationId: string): number {
+    const row = this.db.prepare("SELECT MAX(id) AS id FROM messages WHERE conversation_id = ?").get(conversationId) as Row;
+    return Number(row.id ?? 0);
   }
 
   /** The latest messages of one conversation, or of every conversation, oldest first. */
@@ -949,6 +987,8 @@ function toConversation(row: Row): ConversationRecord {
     title: String(row.title),
     contextId: row.context_id as string | null,
     contextFingerprint: row.context_fingerprint as string | null,
+    sourceData: Number(row.source_data) === 1,
+    seenMessageId: Number(row.seen_message_id ?? 0),
   };
 }
 

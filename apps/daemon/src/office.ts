@@ -72,6 +72,19 @@ interface ChatPrompt {
   sourceData: boolean;
 }
 
+/** What a chat turn sends into its thread. */
+interface ThreadInput {
+  contextId: string;
+  input: string;
+  /** The thread holds source data, so the turn counts as source data. */
+  sourceData: boolean;
+  /** The newest message the thread will have taken in once the turn runs. */
+  seenMessageId: number;
+}
+
+/** At most this many posted messages are brought into a turn at once. */
+const POSTED_LIMIT = 5;
+
 export interface TaskOutcome {
   run: Run;
   /** The agent's final message. */
@@ -386,8 +399,14 @@ export class Office {
 
     let text = "";
     let blocker: TurnBlocker | null = null;
+    // Once source data enters a thread, every later turn in it counts as source data.
+    const taken = (context: ThreadInput) => {
+      if (context.sourceData) caller.sourceData = true;
+      if (caller.sourceData) this.store.setConversationThread(conversationId, { sourceData: true });
+      return context;
+    };
     try {
-      let context = await this.openContext(conversation, options, prompt, runId);
+      let context = taken(await this.openContext(conversation, options, prompt, runId));
       let result: TurnResult;
       try {
         result = await turn(context.contextId, context.input);
@@ -395,13 +414,15 @@ export class Office {
         // The runtime lost the thread mid-session, for example after a crash it could not resume.
         if (!(error instanceof ContextUnavailableError)) throw error;
         this.liveContexts.delete(context.contextId);
-        context = await this.rebuildContext(conversation, options, prompt, runId);
+        context = taken(await this.rebuildContext(conversation, options, prompt, runId));
         result = await turn(context.contextId, context.input);
       }
       this.publishRun(this.store.addTurn(runId, result.usage));
       text = result.text;
       blocker = result.blocker ?? null;
-      if (result.text) this.postMessage(conversationId, agent.id, result.text, runId);
+      // The thread now holds what the turn took in, even if the turn failed partway.
+      if (result.status === "completed") this.store.setConversationThread(conversationId, { seenMessageId: context.seenMessageId });
+      if (result.text) this.postMessage(conversationId, agent.id, result.text, runId, "chat", null, caller.sourceData);
       if (result.status === "completed") this.finishRun(runId, "done", undefined, prompt.journal);
       else this.finishRun(runId, "failed", result.error ?? `The turn was ${result.status}`, prompt.journal);
     } catch (error) {
@@ -444,8 +465,9 @@ export class Office {
     runId: string | null,
     kind: MessageKind = "chat",
     refId: string | null = null,
+    sourceData = false,
   ): ChatMessage {
-    const message = this.store.addMessage({ conversationId, author: "agent", agentId, body, runId, kind, refId });
+    const message = this.store.addMessage({ conversationId, author: "agent", agentId, body, runId, kind, refId, sourceData });
     this.bus.publish({ type: "message", message });
     return message;
   }
@@ -497,25 +519,51 @@ ${task.instructions}`,
    * Model threads are a cache (DESIGN.md › Context assembly). Resume the saved thread if it was
    * started with the same charter and tools; otherwise start a new one from the saved messages.
    */
-  private async openContext(conversation: ConversationRecord, options: ContextOptions, prompt: ChatPrompt, runId: string) {
+  private async openContext(conversation: ConversationRecord, options: ContextOptions, prompt: ChatPrompt, runId: string): Promise<ThreadInput> {
     const saved = conversation.contextFingerprint === fingerprintOf(options) ? conversation.contextId : null;
-    if (saved && this.liveContexts.has(saved)) return { contextId: saved, input: prompt.text };
-    if (saved) {
+    if (saved && !this.liveContexts.has(saved)) {
       try {
         await this.runtime.resumeContext(saved, options);
         this.liveContexts.add(saved);
-        return { contextId: saved, input: prompt.text };
       } catch (error) {
         if (!(error instanceof ContextUnavailableError)) throw error;
+        return this.rebuildContext(conversation, options, prompt, runId);
       }
     }
-    return this.rebuildContext(conversation, options, prompt, runId);
+    if (!saved) return this.rebuildContext(conversation, options, prompt, runId);
+    return { contextId: saved, ...this.withPosted(conversation, prompt) };
   }
 
-  private async rebuildContext(conversation: ConversationRecord, options: ContextOptions, prompt: ChatPrompt, runId: string) {
+  /**
+   * A live thread hasn't seen what was posted to its chat since its last turn, such as the morning
+   * briefing or a notice. The turn brings that in first; a briefing comes inside data markers.
+   */
+  private withPosted(conversation: ConversationRecord, prompt: ChatPrompt): Omit<ThreadInput, "contextId"> {
+    const seenMessageId = this.store.lastMessageId(conversation.id);
+    const posted = this.store
+      .messagesAfter(conversation.id, conversation.seenMessageId)
+      .filter((message) => message.author === "agent" && (message.kind === "briefing" || message.kind === "notice"))
+      .slice(-POSTED_LIMIT);
+    const sourceData = conversation.sourceData || posted.some((message) => message.sourceData);
+    if (!posted.length) return { input: prompt.text, sourceData, seenMessageId };
+    const blocks = posted.map((message) => {
+      const what = message.kind === "briefing" ? "The briefing you posted" : "A notice AiHub posted";
+      const body = clip(message.body, 4000);
+      return message.sourceData ? `${what}, written from source data:\nBEGIN SOURCE DATA\n${body}\nEND SOURCE DATA` : `${what}:\n${body}`;
+    });
+    return {
+      input: ["Posted in this chat since your last reply, for context:", "", blocks.join("\n\n"), "", prompt.label, prompt.text].join("\n"),
+      sourceData,
+      seenMessageId,
+    };
+  }
+
+  /** Starts a new thread from the chat's saved messages. It holds source data only if they do. */
+  private async rebuildContext(conversation: ConversationRecord, options: ContextOptions, prompt: ChatPrompt, runId: string): Promise<ThreadInput> {
     const contextId = await this.runtime.startContext(options);
     this.store.setConversationContext(conversation.id, contextId, fingerprintOf(options));
     this.liveContexts.add(contextId);
+    const seenMessageId = this.store.lastMessageId(conversation.id);
 
     // A new context starts with the agent's memory: its notes index and key notes.
     const memory = this.notebook.memoryFor(conversation.agentId);
@@ -524,12 +572,18 @@ ${task.instructions}`,
       .recentMessages(this.historyLimit + 1, conversation.id)
       .filter((earlier) => earlier.id !== prompt.messageId)
       .slice(-this.historyLimit);
-    if (history.length === 0) return { contextId, input: withMemory(prompt.text) };
+    const fromSourceData = this.store.sourceDataAmong(history.map((earlier) => earlier.id));
+    this.store.setConversationThread(conversation.id, { sourceData: fromSourceData.size > 0 });
+    if (history.length === 0) return { contextId, input: withMemory(prompt.text), sourceData: false, seenMessageId };
 
     this.activity(conversation.agentId, runId, "context_rebuilt", `Restored the chat from ${history.length} saved messages`);
     const agentName = this.store.getAgentRecord(conversation.agentId)?.name ?? "Agent";
     const transcript = history
-      .map((earlier) => `${earlier.author === "operator" ? "Operator" : agentName}: ${clip(earlier.body, 2000)}`)
+      .map((earlier) => {
+        const who = earlier.author === "operator" ? "Operator" : agentName;
+        const body = clip(earlier.body, 2000);
+        return fromSourceData.has(earlier.id) ? `${who}, written from source data:\nBEGIN SOURCE DATA\n${body}\nEND SOURCE DATA` : `${who}: ${body}`;
+      })
       .join("\n\n");
     return {
       contextId,
@@ -543,6 +597,8 @@ ${task.instructions}`,
           prompt.text,
         ].join("\n"),
       ),
+      sourceData: fromSourceData.size > 0,
+      seenMessageId,
     };
   }
 

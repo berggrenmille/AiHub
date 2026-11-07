@@ -108,6 +108,8 @@ describe("Store", () => {
       title: "Chief of Staff",
       contextId: "thread-1",
       contextFingerprint: "abc",
+      sourceData: false,
+      seenMessageId: 0,
     });
     assert.deepEqual(store.listConversations(), [{ id: "chief-chat", agentId: "chief", title: "Chief of Staff" }]);
   });

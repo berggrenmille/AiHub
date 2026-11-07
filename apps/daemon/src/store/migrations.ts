@@ -256,4 +256,19 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE occurrences_v6 RENAME TO occurrences;
   CREATE INDEX occurrences_by_status ON occurrences (status);
   `,
+
+  // v7: which chat messages were written from source data, and whether a chat's thread has taken
+  // any in (Milestone 5). Threads in use that hold source data start out marked.
+  `
+  ALTER TABLE messages ADD COLUMN source_data INTEGER NOT NULL DEFAULT 0;
+  UPDATE messages SET source_data = 1
+    WHERE kind = 'briefing'
+       OR run_id IN (SELECT id FROM runs WHERE kind IN ('follow_up', 'report', 'briefing'))
+       OR agent_id IN (SELECT id FROM agents WHERE profile = 'data');
+  ALTER TABLE conversations ADD COLUMN seen_message_id INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE conversations ADD COLUMN source_data INTEGER NOT NULL DEFAULT 0;
+  UPDATE conversations SET seen_message_id = COALESCE((SELECT MAX(id) FROM messages WHERE messages.conversation_id = conversations.id), 0);
+  UPDATE conversations SET source_data = 1
+    WHERE context_id IS NOT NULL AND EXISTS (SELECT 1 FROM messages WHERE messages.conversation_id = conversations.id AND messages.source_data = 1);
+  `,
 ];

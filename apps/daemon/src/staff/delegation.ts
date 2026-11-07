@@ -350,7 +350,8 @@ export class Delegation implements DelegationService {
         assignment.status === "failed"
           ? `${assignment.ownerName} couldn't ${what}: ${assignment.result}`
           : `${assignment.ownerName} delivered "${assignment.title}", but today's turn budget is used up, so it waits on the assignment.`;
-      this.office.postMessage(conversationId, assignment.requesterId, body, null, "notice");
+      // A failure's reason can come from the owner's run, which read source data.
+      this.office.postMessage(conversationId, assignment.requesterId, body, null, "notice", null, assignment.status === "failed");
       return;
     }
     this.track(
