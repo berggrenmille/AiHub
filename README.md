@@ -40,6 +40,7 @@ npm run codex -- login
 | `npm run measure:briefing` | Runs a simulated four-section briefing against real Codex and reports its turns, tokens, and isolation checks. Uses about 100K input tokens. |
 | `npm run codex -- <args>` | Runs the pinned Codex CLI with AiHub's `CODEX_HOME`. |
 | `npm run codex:protocol` | Regenerates the App Server protocol types after a Codex upgrade. |
+| `npm run windows -- install` | Runs AiHub in the background on Windows: now and at every sign-in, with no window, a Start menu entry, and notifications (`AIHUB_NOTIFICATIONS=off` turns them off). Its log is `data/logs/daemon.log`. `uninstall` removes it all, and `status` says what's installed. |
 
 ## The morning briefing
 

@@ -115,6 +115,10 @@ async function install(context: Context): Promise<number> {
     return 1;
   }
   const answer = await waitForOffice(config, 60_000);
+  if (answer.kind === "other" || answer.kind === "other-aihub") {
+    say(`AiHub can't start: ${describeAnswer(answer, config, null)}. Give it another port with --port.`);
+    return 1;
+  }
   if (answer.kind !== "aihub") {
     say(`AiHub didn't answer within a minute. Its log may say why: ${config.logFile}`);
     return 1;
@@ -181,7 +185,10 @@ async function status(context: Context): Promise<number> {
   row("Next wake-up", describeWake(wake));
   row("Wake timers", describeTimers(timers));
   const off = signIn ? /--notifications=off/i.test(taskElement(signIn, "Arguments") ?? "") : !config.notifications;
-  row("Notifications", off ? "off" : appId ? `on, shown as ${names.displayName}` : "on, but not registered, so without AiHub's name and icon");
+  row(
+    "Notifications",
+    off ? "off" : appId ? `on, shown as ${names.displayName}` : signIn ? "on, but without AiHub's name and icon" : "not set up",
+  );
   row("Start menu", existsSync(shortcutPath(names.displayName)) ? names.displayName : "no entry");
   row("Log", config.logFile);
   return 0;
@@ -230,10 +237,11 @@ async function health(config: DaemonConfig): Promise<Answer> {
   return askHealth(config.port, token);
 }
 
+/** Waits until this office's daemon answers, or something else turns out to hold its port. */
 async function waitForOffice(config: DaemonConfig, timeoutMs: number): Promise<Answer> {
   const deadline = Date.now() + timeoutMs;
   let answer = await health(config);
-  while (answer.kind !== "aihub" && Date.now() < deadline) {
+  while (answer.kind === "none" && Date.now() < deadline) {
     await sleep(500);
     answer = await health(config);
   }

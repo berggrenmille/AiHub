@@ -98,7 +98,7 @@ class WindowsPlatform implements Platform {
     this.helper = helper;
     let said = "";
     helper.stdout?.setEncoding("utf8").on("data", (chunk: string) => {
-      if (!said && chunk.startsWith("awake")) this.log("Keeping the PC awake until the briefing is done");
+      if (!said && chunk.startsWith("awake") && this.helper === helper) this.log("Keeping the PC awake until the briefing is done");
       said += chunk;
     });
     helper.stderr?.setEncoding("utf8").on("data", (chunk: string) => (said += chunk));
@@ -110,7 +110,7 @@ class WindowsPlatform implements Platform {
     });
     helper.on("exit", (code) => {
       if (this.helper !== helper) return;
-        // Still wanted: the next stayAwake(true) starts a new one.
+      // Still wanted: the next stayAwake(true) starts a new one.
       this.helper = null;
       this.log(`The helper keeping the PC awake stopped (exit code ${code}): ${said.replace(/^awake\s*/, "").trim() || "no reason given"}`);
     });
