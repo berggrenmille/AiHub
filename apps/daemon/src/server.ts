@@ -73,6 +73,9 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       "cache-control": "no-store",
       connection: "keep-alive",
     });
+    // Start the body now, not with the first event, so the browser sees the stream open even
+    // through a proxy that holds the headers until data arrives. EventSource ignores comments.
+    response.write(": open\n\n");
 
     const backlog = office.bus.after(after);
     if (backlog === null) {
