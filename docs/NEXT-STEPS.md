@@ -36,14 +36,25 @@ The whole briefing took about a minute. The plan's primary usage limit read 50% 
 
 **Decision (2026-11-07):** Codex is the runtime for all runs, with the locked-down feature set. After every Codex upgrade, run `npm run spike:codex` and `npm run measure:briefing` again. If isolation ever fails, data runs move to the Claude API behind the same runtime interface; it needs an Anthropic API key and is billed per token.
 
-## Milestone 2: staff, approvals, and one real source
+## Milestone 2: staff, memory, and one real source
 
-Acceptance (DESIGN.md): a chat request produces a proposal, and approving it creates a supervisor, a responsibility, and a routine. One real local source feeds a briefing the operator reads daily. An unchanged item is not reported as new the next day, and a dismissed item stays out. Ending a mandate blocks further actions under it.
+Acceptance (DESIGN.md): a chat request produces a proposal, and approving it creates a supervisor with a name, title, and job description, plus its responsibility and routine. One real local source feeds a briefing the operator reads daily. An unchanged item is not reported as new the next day, and a dismissed item stays out. Ending a mandate blocks further actions under it. Staff write and read notes in the vault, and a note from a source-data run enters later contexts as data. The 2D office is the home screen.
 
-1. **Records.** Schema v3: responsibilities (with standing instructions, initiative policy, and an optional expiry, which makes a mandate), routines, proposals, connections, grants, cursors, and items.
-2. **Proposals and approval cards.** A Chief of Staff tool proposes a supervisor with its charter, responsibility, routine, and requested access. The proposal shows as a card in the chat; approving it creates the agent, responsibility, and routine in one transaction. The caps on active supervisors and daily turns are checked in code, and a proposal that would exceed one says so.
-3. **One real local source.** A local-file connection and a collector that reads it, normalizes records with stable IDs, and diffs against the cursor without a model turn. The first candidate is an `.ics` calendar export; a holdings CSV works the same way.
-4. **Items.** Report items get a stable identity from their source record. Items are new, open, resolved, or dismissed; the compose step separates new items from carried-over ones, and a dismissed item stays out unless its source changes.
-5. **Scheduler.** The weekday briefing routine in `Europe/Stockholm`, with occurrence IDs that deduplicate retries and restarts, and one catch-up after downtime.
-6. **Mandates.** The gateway checks a responsibility's expiry before every call, so ending a mandate blocks further actions under it.
-7. **UI.** Approval cards, the briefing with its items, and dismiss and resolve on each item.
+The first real source is an `.ics` calendar export (chosen 2026-11-07). The operator picks the file when approving the proposal.
+
+1. **Records.** Schema v3: agent profiles (title, job description, working style, appearance), responsibilities (with standing instructions and an optional expiry, which makes a mandate), routines, occurrences, proposals, connections, grants, cursors, and items.
+2. **Notes vault.** Markdown files with frontmatter and `[[wikilinks]]`, one folder per staff member plus `Office`. AiHub writes profile and journal notes; staff list, read, write, and append through gateway tools within the folder rules. Notes from source-data runs carry that provenance and enter later contexts inside data markers. The operator can point `AIHUB_VAULT_DIR` into an Obsidian vault.
+3. **The office.** The home screen becomes a top-down office with generated characters whose animations follow run state, profile cards, a notes view with backlinks and a graph, approval cards, and the briefing with its items. Built in `apps/web` against the API from steps 1, 2, and 4–6.
+4. **One real local source.** A local-file connection and a collector that reads the `.ics` export, expands recurring events, gives each occurrence a stable key and version, and diffs against the cursor without a model turn.
+5. **Items and the briefing.** Report items get a stable identity from their source record. Items are new, open, resolved, or dismissed; the compose step separates new items from carried-over ones, and a dismissed item stays out unless its source changes. A section with nothing new uses no turn.
+6. **Proposals and mandates.** A Chief of Staff tool proposes a supervisor with its profile, responsibility, routine, and requested access. The proposal shows as a card in the chat; approving it creates the agent, responsibility, routine, connection, and grant in one transaction. The caps on active supervisors and daily turns are checked in code. The gateway checks a responsibility's expiry before every call, so ending a mandate blocks further actions under it.
+7. **Scheduler.** The weekday briefing routine in `Europe/Stockholm`, with occurrence IDs that deduplicate retries and restarts, one catch-up after downtime, and a health check an hour before.
+
+## Milestone 3: teams and delegation
+
+Acceptance (DESIGN.md): a supervisor recruits a worker with narrowed access, reviews its result, and the worker leaves the office. A staff member asks a colleague a question without holding a turn open, and the answer arrives in a new turn.
+
+1. **Assignments.** The assignment record with a parent, an owner, a deliverable, a turn budget, and a status. When an assignment finishes, the daemon starts a new turn for the parent with the result.
+2. **Workers.** A supervisor tool recruits a worker with a profile and a subset of the supervisor's grants, within a cap per supervisor. The worker delivers, the supervisor reviews, and AiHub archives the worker.
+3. **Asking colleagues.** A gateway tool turns a question into an assignment for a colleague. The answering run has no question tool of its own.
+4. **The office.** Workers walk in and out, and a staff member asking a question walks to the colleague's desk.
