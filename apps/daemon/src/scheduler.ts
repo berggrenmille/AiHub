@@ -302,9 +302,10 @@ export class Scheduler {
     bus.publish({ type: "activity", entry: store.addActivity({ agentId: CHIEF_OF_STAFF_ID, runId: null, kind: "health", summary }) });
     if (!problems.length) return;
     const time = routine.trigger.type === "weekdays" ? routine.trigger.time : "the briefing";
-    this.notice(`Before ${time}, a few things need you:\n${problems.map((problem) => `- ${problem}`).join("\n")}`);
+    const heading = `Before ${time}, ${problems.length === 1 ? "one thing needs" : `${problems.length} things need`} you`;
+    this.notice(`${heading}:\n${problems.map((problem) => `- ${problem}`).join("\n")}`);
     await this.notify({
-      title: `Before ${time}, ${problems.length === 1 ? "one thing needs" : `${problems.length} things need`} you`,
+      title: heading,
       body: problems.slice(0, 3).join("\n"),
       tag: "health",
     });

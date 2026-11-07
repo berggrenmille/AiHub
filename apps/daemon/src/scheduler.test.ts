@@ -71,7 +71,7 @@ describe("The scheduler", () => {
     await at("2026-11-09T05:10:00.000Z");
     const notice = store.recentMessages(1, CHIEF_OF_STAFF_CONVERSATION_ID)[0]!;
     assert.equal(notice.kind, "notice");
-    assert.match(notice.body, /^Before 07:00, a few things need you:\n- Family calendar: /);
+    assert.match(notice.body, /^Before 07:00, one thing needs you:\n- Family calendar: /);
     assert.equal(store.getConnection(store.listConnections()[0]!.id)?.status, "failed");
     await at("2026-11-09T05:40:00.000Z");
     assert.equal(store.recentMessages(10, CHIEF_OF_STAFF_CONVERSATION_ID).filter((message) => message.kind === "notice").length, 1, "one check a day");
@@ -319,7 +319,7 @@ describe("The scheduler when Codex can't run", () => {
 
     await at("2026-11-09T05:10:00.000Z");
     const [notice] = notices(store);
-    assert.match(notice!, /^Before 07:00, a few things need you:\n- Codex isn't signed in\. Sign in with `npm run codex -- login`\.\n/);
+    assert.match(notice!, /^Before 07:00, 2 things need you:\n- Codex isn't signed in\. Sign in with `npm run codex -- login`\.\n/);
     assert.match(notice!, /\n- Work calendar: The export is 10 days old, so changes made since then are missing\. Export it again\.$/);
     assert.deepEqual([store.getConnection(connection.id)?.status, store.getConnection(connection.id)?.detail?.endsWith("Export it again.")], ["connected", true]);
     const [alert] = platform.notifications;
