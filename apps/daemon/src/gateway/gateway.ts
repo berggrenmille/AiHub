@@ -1,5 +1,6 @@
 import type { AgentRole, RunProfile } from "@aihub/shared";
 import { z } from "zod";
+import type { Notebook } from "../notes/notebook.ts";
 import type { ToolCall, ToolOutcome, ToolSpec } from "../runtime/types.ts";
 import type { AgentRecord, Store } from "../store/store.ts";
 
@@ -14,6 +15,8 @@ export interface ToolContext {
   caller: Caller;
   agent: AgentRecord;
   store: Store;
+  /** The staff's notes, when the office keeps a vault. */
+  notebook: Notebook | null;
 }
 
 export interface GatewayTool<Input extends z.ZodType = z.ZodType> {
@@ -42,6 +45,7 @@ export class Gateway {
     private readonly store: Store,
     tools: GatewayTool[],
     private readonly onActivity: (entry: ReturnType<Store["addActivity"]>) => void = () => {},
+    private readonly notebook: Notebook | null = null,
   ) {
     for (const tool of tools) {
       if (this.tools.has(tool.name)) throw new Error(`Duplicate gateway tool ${tool.name}`);
@@ -64,12 +68,17 @@ export class Gateway {
     if (!tool || !agent || !permits(tool, agent, caller)) {
       return this.refuse(caller, call.name, `${call.name} is not available to this run.`);
     }
+    // A run under an ended or expired responsibility, such as a mandate, can do nothing more.
+    const run = this.store.getRun(caller.runId);
+    if (run?.responsibilityId && !this.store.isResponsibilityActive(run.responsibilityId)) {
+      return this.refuse(caller, call.name, "The responsibility this run works under has ended, so no further actions are allowed under it.");
+    }
     const input = tool.input.safeParse(call.arguments ?? {});
     if (!input.success) {
       return this.refuse(caller, call.name, `Invalid arguments for ${call.name}: ${z.prettifyError(input.error)}`);
     }
     try {
-      const text = await tool.run(input.data, { caller, agent, store: this.store });
+      const text = await tool.run(input.data, { caller, agent, store: this.store, notebook: this.notebook });
       this.record(caller, "tool_call", `Used ${call.name}`, { tool: call.name, arguments: input.data });
       return { ok: true, text };
     } catch (error) {

@@ -14,8 +14,9 @@ const runtime =
   config.fakeRuntime
     ? Object.assign(new FakeRuntime(), { respond: demo })
     : new CodexRuntime({ command: pinnedCodexCommand(config.root), codexHome: config.codexHome });
-const office = new Office({ store, runtime });
+const office = new Office({ store, runtime, vaultDir: config.vaultDir });
 office.start();
+office.notebook.watch();
 
 // The daemon only listens on loopback (DESIGN.md › Architecture).
 const app = await buildServer({
@@ -34,6 +35,7 @@ async function stop() {
   if (stopping) return;
   stopping = true;
   await app.close();
+  office.notebook.close();
   await runtime.close();
   store.close();
 }

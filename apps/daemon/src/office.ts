@@ -1,17 +1,37 @@
 import { createHash } from "node:crypto";
-import type { ActivityKind, ChatMessage, ChatResponse, OfficeStats, Run, RunKind, RunState, RuntimeStatus, StateSnapshot } from "@aihub/shared";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type {
+  ActivityKind,
+  Agent,
+  ChatMessage,
+  ChatResponse,
+  MessageKind,
+  OfficeStats,
+  Run,
+  RunKind,
+  RunState,
+  RuntimeStatus,
+  StaffProfile,
+  StateSnapshot,
+} from "@aihub/shared";
 import { EventBus } from "./events.ts";
 import { Gateway, type GatewayTool } from "./gateway/gateway.ts";
 import { OFFICE_TOOLS } from "./gateway/tools.ts";
 import { RunQueue } from "./queue.ts";
 import { ContextUnavailableError, type AgentRuntime, type ContextOptions, type TurnResult } from "./runtime/types.ts";
 import { DAILY_TURN_LIMIT, SUPERVISOR_LIMIT } from "./limits.ts";
+import { Notebook } from "./notes/notebook.ts";
 import { CHIEF_OF_STAFF, CHIEF_OF_STAFF_CONVERSATION_ID } from "./staff/chief-of-staff.ts";
 import { instructionsFor } from "./staff/identity.ts";
 import type { ConversationRecord, Store } from "./store/store.ts";
 import { addDays, isWeekday, localDate, TIMEZONE, zonedInstant } from "./time.ts";
 
 export class NotFoundError extends Error {}
+
+/** The request conflicts with the office's records, such as a name already in use. */
+export class ConflictError extends Error {}
 
 /** One background turn for an agent. */
 export interface Task {
@@ -41,6 +61,8 @@ export interface OfficeOptions {
   /** How many earlier messages to replay when a chat's context has to be rebuilt. */
   historyLimit?: number;
   turnTimeoutMs?: number;
+  /** The notes vault. Without one, the office keeps notes in a temporary folder. */
+  vaultDir?: string;
 }
 
 /**
@@ -52,6 +74,7 @@ export class Office {
   readonly store: Store;
   readonly gateway: Gateway;
   readonly queue: RunQueue;
+  readonly notebook: Notebook;
   private readonly runtime: AgentRuntime;
   private readonly historyLimit: number;
   private readonly turnTimeoutMs: number | undefined;
@@ -65,7 +88,14 @@ export class Office {
     this.queue = options.queue ?? new RunQueue();
     this.historyLimit = options.historyLimit ?? 20;
     this.turnTimeoutMs = options.turnTimeoutMs;
-    this.gateway = new Gateway(this.store, options.tools ?? OFFICE_TOOLS, (entry) => this.bus.publish({ type: "activity", entry }));
+    const vaultDir = options.vaultDir ?? mkdtempSync(join(tmpdir(), "aihub-vault-"));
+    this.notebook = new Notebook(vaultDir, this.store, (note) => this.bus.publish({ type: "note", note }));
+    this.gateway = new Gateway(
+      this.store,
+      options.tools ?? OFFICE_TOOLS,
+      (entry) => this.bus.publish({ type: "activity", entry }),
+      this.notebook,
+    );
   }
 
   /** Seeds the Chief of Staff and closes out runs that a restart interrupted. */
@@ -75,6 +105,24 @@ export class Office {
     for (const run of this.store.failUnfinishedRuns("The daemon stopped before this run finished.")) {
       this.activity(run.agentId, run.id, "run_failed", `${run.title}: stopped by a daemon restart`);
     }
+    this.syncProfiles();
+  }
+
+  /** Writes every staff member's profile note from its record. */
+  syncProfiles() {
+    for (const agent of this.store.listAgents()) this.notebook.syncProfile(agent.id);
+  }
+
+  /** The operator edits a staff member's name, title, job description, or working style. */
+  updateProfile(agentId: string, profile: Partial<StaffProfile>): Agent {
+    if (!this.store.getAgentRecord(agentId)) throw new NotFoundError(`No agent ${agentId}`);
+    if (profile.name !== undefined && this.store.isNameTaken(profile.name, agentId)) {
+      throw new ConflictError(`Someone on staff is already called ${profile.name}.`);
+    }
+    const agent = this.store.updateProfile(agentId, profile)!;
+    this.notebook.syncProfile(agentId);
+    this.bus.publish({ type: "agent", agent });
+    return agent;
   }
 
   /** Asks the runtime who is signed in and publishes the answer. */
@@ -102,7 +150,7 @@ export class Office {
       routines: this.store.listRoutines(),
       proposals: this.store.listProposals(),
       items: this.store.listItems(),
-      notes: [],
+      notes: this.notebook.list(),
       office: this.officeStats(),
       runtime: this.runtimeStatus,
       lastEventId: this.bus.lastEventId,
@@ -175,8 +223,9 @@ export class Office {
       }
       this.publishRun(this.store.addTurn(runId, result.usage));
       if (result.text) this.postMessage(conversationId, agent.id, result.text, runId);
-      if (result.status === "completed") this.finish(runId, "done");
-      else this.finish(runId, "failed", result.error ?? `The turn was ${result.status}`);
+      const journal = `Talked with the operator about "${clip(message.body.replace(/\s+/g, " "), 80)}".`;
+      if (result.status === "completed") this.finish(runId, "done", undefined, journal);
+      else this.finish(runId, "failed", result.error ?? `The turn was ${result.status}`, journal);
     } catch (error) {
       this.finish(runId, "failed", errorText(error));
     }
@@ -207,8 +256,15 @@ export class Office {
   }
 
   /** Posts an agent's message, such as a briefing, to a conversation. */
-  postMessage(conversationId: string, agentId: string, body: string, runId: string | null): ChatMessage {
-    const message = this.store.addMessage({ conversationId, author: "agent", agentId, body, runId });
+  postMessage(
+    conversationId: string,
+    agentId: string,
+    body: string,
+    runId: string | null,
+    kind: MessageKind = "chat",
+    refId: string | null = null,
+  ): ChatMessage {
+    const message = this.store.addMessage({ conversationId, author: "agent", agentId, body, runId, kind, refId });
     this.bus.publish({ type: "message", message });
     return message;
   }
@@ -228,8 +284,9 @@ ${task.instructions}`,
         tools: this.gateway.specsFor(caller),
         ephemeral: true,
       });
+      const memory = this.notebook.memoryFor(agent.id);
       const result = await this.runtime.runTurn(contextId, {
-        input: task.input,
+        input: memory ? `${memory}\n\n${task.input}` : task.input,
         timeoutMs: task.timeoutMs ?? this.turnTimeoutMs,
         onToolCall: (call) => this.gateway.call(caller, call),
         onEvent: (event) => {
@@ -270,11 +327,14 @@ ${task.instructions}`,
     this.store.setConversationContext(conversation.id, contextId, fingerprintOf(options));
     this.liveContexts.add(contextId);
 
+    // A new context starts with the agent's memory: its notes index and key notes.
+    const memory = this.notebook.memoryFor(conversation.agentId);
+    const withMemory = (input: string) => (memory ? `${memory}\n\n${input}` : input);
     const history = this.store
       .recentMessages(this.historyLimit + 1, conversation.id)
       .filter((earlier) => earlier.id !== message.id)
       .slice(-this.historyLimit);
-    if (history.length === 0) return { contextId, input: message.body };
+    if (history.length === 0) return { contextId, input: withMemory(message.body) };
 
     this.activity(conversation.agentId, message.runId, "context_rebuilt", `Restored the chat from ${history.length} saved messages`);
     const agentName = this.store.getAgentRecord(conversation.agentId)?.name ?? "Agent";
@@ -283,20 +343,23 @@ ${task.instructions}`,
       .join("\n\n");
     return {
       contextId,
-      input: [
-        "AiHub restored this conversation from its records. The earlier messages, oldest first:",
-        "",
-        transcript,
-        "",
-        "The operator's new message:",
-        message.body,
-      ].join("\n"),
+      input: withMemory(
+        [
+          "AiHub restored this conversation from its records. The earlier messages, oldest first:",
+          "",
+          transcript,
+          "",
+          "The operator's new message:",
+          message.body,
+        ].join("\n"),
+      ),
     };
   }
 
-  private finish(runId: string, state: "done" | "failed", error?: string) {
+  private finish(runId: string, state: "done" | "failed", error?: string, journal?: string) {
     this.setRunState(runId, state, error);
     const run = this.store.getRun(runId)!;
+    this.notebook.journal(run.agentId, `${journal ?? `${run.title}.`}${state === "failed" ? " It failed." : ""}`, runId);
     const tokens = run.usage.inputTokens + run.usage.outputTokens;
     const summary =
       state === "done" ? `${run.title}: done, ${run.turns} turn${run.turns === 1 ? "" : "s"}, ${tokens} tokens` : `${run.title}: failed. ${error}`;

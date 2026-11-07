@@ -40,3 +40,7 @@ npm run codex -- login
 | `npm run measure:briefing` | Runs a simulated four-section briefing against real Codex and reports its turns, tokens, and isolation checks. Uses about 100K input tokens. |
 | `npm run codex -- <args>` | Runs the pinned Codex CLI with AiHub's `CODEX_HOME`. |
 | `npm run codex:protocol` | Regenerates the App Server protocol types after a Codex upgrade. |
+
+## Staff notes
+
+Staff keep their notes in a vault of markdown files at `data/vault/`, one folder per staff member under `Staff/` plus a shared `Office/` folder. Open the folder in Obsidian to browse the notes and their graph, or point `AIHUB_VAULT_DIR` at a folder inside an existing vault. AiHub picks up notes you edit there. Profile notes follow each staff card, so edit profiles in AiHub instead.

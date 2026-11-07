@@ -5,6 +5,7 @@ import { FakeRuntime } from "./runtime/fake-runtime.ts";
 import { Office } from "./office.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID as CHAT, CHIEF_OF_STAFF_ID } from "./staff/chief-of-staff.ts";
 import { Store } from "./store/store.ts";
+const NOTE_TOOLS = ["aihub_list_notes", "aihub_read_note", "aihub_write_note"];
 
 function startOffice(store = new Store(":memory:"), runtime = new FakeRuntime()) {
   const office = new Office({ store, runtime });
@@ -73,7 +74,7 @@ describe("Office", () => {
 
     const [context] = runtime.contexts.values();
     assert.match(context!.options.instructions, /Chief of Staff in AiHub/);
-    assert.deepEqual(context!.options.tools.map((tool) => tool.name), ["aihub_get_roster", "aihub_list_activity"]);
+    assert.deepEqual(context!.options.tools.map((tool) => tool.name), ["aihub_get_roster", "aihub_list_activity", ...NOTE_TOOLS]);
   });
 
   it("resumes the saved context after a restart", async () => {

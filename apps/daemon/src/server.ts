@@ -1,11 +1,13 @@
 import { existsSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import fastifyStatic from "@fastify/static";
-import type { ChatResponse, HealthResponse, StateSnapshot } from "@aihub/shared";
-import Fastify, { type FastifyInstance } from "fastify";
+import type { Agent, ChatResponse, HealthResponse, Note, NoteSummary, StateSnapshot } from "@aihub/shared";
+import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { z } from "zod";
 import type { SequencedEvent } from "./events.ts";
-import { NotFoundError, type Office } from "./office.ts";
+import { NoteRefusal } from "./notes/notebook.ts";
+import { checkNotePath } from "./notes/vault.ts";
+import { ConflictError, NotFoundError, type Office } from "./office.ts";
 import { registerLoopbackGuards } from "./security.ts";
 
 export interface ServerOptions {
@@ -27,6 +29,34 @@ const ChatBody = z.object({
   conversationId: z.string().min(1),
   text: z.string().trim().min(1).max(20_000),
 });
+
+const ProfileBody = z
+  .object({
+    name: z.string().trim().min(1).max(40),
+    title: z.string().trim().max(60),
+    description: z.string().trim().max(400),
+    workingStyle: z.string().trim().max(200),
+  })
+  .partial()
+  .strict()
+  .refine((profile) => Object.keys(profile).length > 0, "Change at least one field");
+
+const NoteBody = z.object({ body: z.string().max(20_000) }).strict();
+
+/** Answers with the status a domain error means, or rethrows anything else. */
+function sendError(reply: FastifyReply, error: unknown) {
+  if (error instanceof NotFoundError) return reply.code(404).send({ error: error.message });
+  if (error instanceof ConflictError || error instanceof NoteRefusal) return reply.code(409).send({ error: error.message });
+  throw error;
+}
+
+function notePath(raw: string): string | null {
+  try {
+    return checkNotePath(decodeURIComponent(raw));
+  } catch {
+    return null;
+  }
+}
 
 export async function buildServer(options: ServerOptions): Promise<FastifyInstance> {
   const { office } = options;
@@ -51,8 +81,39 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       const response: ChatResponse = office.chat(body.data.conversationId, body.data.text);
       return reply.code(202).send(response);
     } catch (error) {
-      if (error instanceof NotFoundError) return reply.code(404).send({ error: error.message });
-      throw error;
+      return sendError(reply, error);
+    }
+  });
+
+  app.patch<{ Params: { id: string } }>("/api/agents/:id", async (request, reply) => {
+    const body = ProfileBody.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: z.prettifyError(body.error) });
+    try {
+      const agent: Agent = office.updateProfile(request.params.id, body.data);
+      return agent;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  // Notes live at their vault path, such as /api/notes/Staff/chief-of-staff/Vera.md.
+  app.get<{ Params: { "*": string } }>("/api/notes/*", async (request, reply) => {
+    const path = notePath(request.params["*"]);
+    if (!path) return reply.code(400).send({ error: "Not a note path" });
+    const note: Note | null = office.notebook.read(path);
+    return note ?? reply.code(404).send({ error: `No note at ${path}` });
+  });
+
+  app.put<{ Params: { "*": string } }>("/api/notes/*", async (request, reply) => {
+    const path = notePath(request.params["*"]);
+    if (!path) return reply.code(400).send({ error: "Not a note path" });
+    const body = NoteBody.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: z.prettifyError(body.error) });
+    try {
+      const note: NoteSummary = office.notebook.writeByOperator(path, body.data.body);
+      return note;
+    } catch (error) {
+      return sendError(reply, error);
     }
   });
 

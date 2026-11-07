@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { Store } from "../store/store.ts";
 import { Gateway, type Caller } from "./gateway.ts";
 import { OFFICE_TOOLS } from "./tools.ts";
+const NOTE_TOOLS = ["aihub_list_notes", "aihub_read_note", "aihub_write_note"];
 
 function office() {
   const store = new Store(":memory:");
@@ -22,10 +23,10 @@ describe("Gateway", () => {
   it("offers each run only the tools its role and profile allow", () => {
     const { gateway, chief, supervisor } = office();
 
-    assert.deepEqual(gateway.specsFor(chief).map((tool) => tool.name), ["aihub_get_roster", "aihub_list_activity"]);
-    assert.deepEqual(gateway.specsFor({ ...chief, profile: "data" }), []);
-    assert.deepEqual(gateway.specsFor(supervisor).map((tool) => tool.name), ["aihub_submit_report"]);
-    assert.deepEqual(gateway.specsFor({ ...supervisor, profile: "conversation" }), []);
+    assert.deepEqual(gateway.specsFor(chief).map((tool) => tool.name), ["aihub_get_roster", "aihub_list_activity", ...NOTE_TOOLS]);
+    assert.deepEqual(gateway.specsFor({ ...chief, profile: "data" }).map((tool) => tool.name), NOTE_TOOLS);
+    assert.deepEqual(gateway.specsFor(supervisor).map((tool) => tool.name), ["aihub_submit_report", ...NOTE_TOOLS]);
+    assert.deepEqual(gateway.specsFor({ ...supervisor, profile: "conversation" }).map((tool) => tool.name), NOTE_TOOLS);
   });
 
   it("describes tool input as JSON Schema", () => {

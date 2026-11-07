@@ -7,6 +7,8 @@ export interface DaemonConfig {
   root: string;
   /** Local state: the SQLite database and per-run working directories. Ignored by git. */
   dataDir: string;
+  /** The staff's notes: a folder of markdown that opens as an Obsidian vault. */
+  vaultDir: string;
   /** AiHub's own CODEX_HOME, separate from the operator's personal ~/.codex. */
   codexHome: string;
   host: string;
@@ -31,5 +33,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
   const devOrigins =
     env.NODE_ENV === "production" ? [] : [`http://127.0.0.1:${webPort}`, `http://localhost:${webPort}`];
 
-  return { root, dataDir, codexHome, host: "127.0.0.1", port, devOrigins, fakeRuntime };
+  const vaultDir = env.AIHUB_VAULT_DIR ? resolve(env.AIHUB_VAULT_DIR) : join(dataDir, "vault");
+
+  return { root, dataDir, vaultDir, codexHome, host: "127.0.0.1", port, devOrigins, fakeRuntime };
 }

@@ -1,4 +1,5 @@
 import type { AgentRole, StaffProfile } from "@aihub/shared";
+import { NOTES_GUIDANCE } from "../notes/notebook.ts";
 
 // Every run's instructions start with who the agent is, from its editable profile, then its charter.
 
@@ -12,5 +13,5 @@ export function instructionsFor(agent: StaffProfile & { role: AgentRole; charter
   const who = [`You are ${agent.name}, ${agent.title || "a staff member"} in AiHub, a local office of AI staff that works for one person, the operator. ${ROLE_PLACE[agent.role]}`];
   if (agent.description) who.push(`Your job: ${agent.description}`);
   if (agent.workingStyle) who.push(`Your working style: ${agent.workingStyle}`);
-  return `${who.join("\n")}\n\n${agent.charter}`;
+  return `${who.join("\n")}\n\n${agent.charter}\n\n${NOTES_GUIDANCE}`;
 }

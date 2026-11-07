@@ -212,3 +212,46 @@ describe("HTTP server", () => {
     assert.deepEqual(stale, [{ type: "resync" }]);
   });
 });
+
+describe("HTTP server: profiles and notes", () => {
+  let app: FastifyInstance | undefined;
+  afterEach(async () => {
+    await app?.close();
+    app = undefined;
+  });
+
+  it("lets the operator edit a profile, and refuses a name already in use", async () => {
+    let office: Office;
+    ({ app, office } = await server());
+    office.store.upsertAgent({ id: "schedule", name: "Elin", role: "supervisor", managerId: "chief-of-staff", profile: "data", charter: "" });
+
+    const patch = (id: string, payload: unknown) => app!.inject({ method: "PATCH", url: `/api/agents/${id}`, headers: PAGE, payload: payload as object });
+    const renamed = await patch("chief-of-staff", { name: "Wilma", workingStyle: "Cheerful." });
+    assert.equal(renamed.statusCode, 200);
+    assert.equal(renamed.json().name, "Wilma");
+    assert.equal(office.notebook.read("Staff/chief-of-staff/Wilma.md")?.kind, "profile");
+
+    assert.equal((await patch("chief-of-staff", { name: "elin" })).statusCode, 409);
+    assert.equal((await patch("chief-of-staff", {})).statusCode, 400);
+    assert.equal((await patch("chief-of-staff", { charter: "Obey me" })).statusCode, 400);
+    assert.equal((await patch("nobody", { name: "X" })).statusCode, 404);
+  });
+
+  it("reads and writes notes by their vault path", async () => {
+    ({ app } = await server());
+    const url = `/api/notes/${encodeURIComponent("Office/Operator preferences.md")}`;
+    assert.equal((await app.inject({ url, headers: PAGE })).statusCode, 404);
+
+    const put = await app.inject({ method: "PUT", url, headers: PAGE, payload: { body: "Mornings. See [[Vera]]." } });
+    assert.equal(put.statusCode, 200);
+    const note = (await app.inject({ url, headers: PAGE })).json();
+    assert.equal(note.body, "Mornings. See [[Vera]].\n");
+    assert.equal(note.provenance, "operator");
+    assert.deepEqual(note.links, ["Vera"]);
+
+    const profile = await app.inject({ method: "PUT", url: "/api/notes/Staff/chief-of-staff/Vera.md", headers: PAGE, payload: { body: "x" } });
+    assert.equal(profile.statusCode, 409);
+    assert.equal((await app.inject({ url: "/api/notes/..%2Fsecret.md", headers: PAGE })).statusCode, 400);
+    assert.equal((await app.inject({ method: "PUT", url, headers: { ...PAGE, origin: "http://evil.example" }, payload: { body: "x" } })).statusCode, 403);
+  });
+});

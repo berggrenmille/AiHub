@@ -21,9 +21,10 @@ mkdirSync(dataDir, { recursive: true });
 
 const store = new Store(join(dataDir, "aihub.db"));
 const runtime = new CodexRuntime({ command: pinnedCodexCommand(config.root), codexHome: config.codexHome });
-const office = new Office({ store, runtime, turnTimeoutMs: 5 * 60_000 });
+const office = new Office({ store, runtime, turnTimeoutMs: 5 * 60_000, vaultDir: join(dataDir, "vault") });
 office.start();
 seedSampleStaff(store);
+office.syncProfiles();
 
 const names = new Map(store.listAgents().map((agent) => [agent.id, agent.name]));
 office.bus.subscribe(({ event }) => {

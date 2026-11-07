@@ -7,6 +7,7 @@ import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "../staff/chie
 import { Store } from "../store/store.ts";
 import { runBriefing } from "./briefing.ts";
 import { sampleSections, seedSampleStaff } from "./samples.ts";
+const NOTE_TOOLS = ["aihub_list_notes", "aihub_read_note", "aihub_write_note"];
 
 const usage = { inputTokens: 100, cachedInputTokens: 0, outputTokens: 10 };
 
@@ -61,7 +62,7 @@ describe("runBriefing", () => {
 
     for (const context of runtime.contexts.values()) {
       if (context.options.profile !== "data") continue;
-      assert.deepEqual(context.options.tools.map((tool) => tool.name), ["aihub_submit_report"]);
+      assert.deepEqual(context.options.tools.map((tool) => tool.name), ["aihub_submit_report", ...NOTE_TOOLS]);
       assert.match(context.options.instructions, /You are \w+, .* Supervisor[\s\S]*Call aihub_submit_report exactly once/);
     }
   });
