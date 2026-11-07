@@ -24,6 +24,8 @@ function seatsLeft(office: Office): number {
 export function proposeSupervisor(office: Office, caller: Caller, payload: RecruitProposal): Proposal {
   const { store, bus } = office;
   if (store.isNameTaken(payload.profile.name)) throw new Error(`Someone on staff is already called ${payload.profile.name}. Pick another name.`);
+  const named = (proposal: Proposal) => proposal.status === "pending" && proposal.payload.profile.name.toLowerCase() === payload.profile.name.trim().toLowerCase();
+  if (store.listProposals(200).some(named)) throw new Error(`A proposal waiting for the operator is already called ${payload.profile.name}. Pick another name.`);
   if (seatsLeft(office) <= 0) {
     throw new Error(`The office is at its cap of ${SUPERVISOR_LIMIT} supervisors, counting pending proposals. Suggest extending an existing responsibility instead.`);
   }

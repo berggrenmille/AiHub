@@ -58,6 +58,7 @@ describe("Recruitment", () => {
       store.upsertAgent({ id: `s${n}`, name: `S${n}`, role: "supervisor", managerId: CHIEF_OF_STAFF_ID, profile: "data", charter: "" });
     }
     assert.equal((await propose()).ok, true, "the last seat");
+    assert.match((await propose({ ...RUT, profile: { ...RUT.profile, name: "rut" } })).text, /A proposal waiting for the operator is already called rut/);
     const over = await propose({ ...RUT, profile: { ...RUT.profile, name: "Sixten" } });
     assert.equal(over.ok, false);
     assert.match(over.text, /cap of 8 supervisors, counting pending proposals/);

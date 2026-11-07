@@ -25,8 +25,9 @@ export const demo: Responder = async (input, options) => {
   // A briefing section: file a plain report from the collected records, so the office gets items.
   const data = /BEGIN SOURCE DATA\n([\s\S]*?)\nEND SOURCE DATA/.exec(input)?.[1];
   if (data) {
-    const records = JSON.parse(data) as Array<{ id: string; title: string; when?: string; overlapsWith?: string[] }>;
-    const items = records
+    const records = JSON.parse(data) as Array<{ id: string; title: string; change?: string; when?: string; overlapsWith?: string[] }>;
+    // A calendar's overlaps, or for a folder the first few records that are new or changed.
+    const overlaps = records
       .filter((record) => record.overlapsWith?.length)
       .map((record) => ({
         title: `${record.title} overlaps ${record.overlapsWith![0]!.split(",")[0]}`,
@@ -34,7 +35,12 @@ export const demo: Responder = async (input, options) => {
         urgency: "this_week",
         sourceRef: record.id,
       }));
-    const outcome = await options.onToolCall({ name: "aihub_submit_report", arguments: { summary: `${records.length} records, ${items.length} overlaps.`, items } });
+    const changed = records
+      .filter((record) => record.change === "added" || record.change === "changed")
+      .slice(0, 3)
+      .map((record) => ({ title: `${record.change === "added" ? "New" : "Changed"}: ${record.title}`, detail: "The fake runtime flags the first few new or changed records.", urgency: "fyi", sourceRef: record.id }));
+    const items = [...overlaps, ...changed];
+    const outcome = await options.onToolCall({ name: "aihub_submit_report", arguments: { summary: `${records.length} records, ${items.length} worth a look.`, items } });
     return { status: "completed", text: outcome.text, error: null, usage: { inputTokens: 900, cachedInputTokens: 0, outputTokens: 30 } };
   }
   const delegated = await delegate(input, options);
@@ -140,7 +146,7 @@ async function delegate(input: string, options: RunTurnOptions): Promise<string 
     const outcome = await call("aihub_ask_colleague", { colleague: ask[1], question: message });
     return outcome.ok ? `I've asked ${ask[1]}.` : outcome.text;
   }
-  const commission = /\b(?:write|commission) a reader for (?:my |the )?([\w ]+?)(?:[.:,]|$)/i.exec(message);
+  const commission = /\b(?:write|commission) a reader for (?:my |the )?([\w ]+?)(?:[.:,?!]|$)/i.exec(message);
   if (commission) {
     const name = commission[1]!.trim().replace(/^\w/, (first) => first.toUpperCase());
     for (const toolsmith of TOOLSMITH_NAMES) {
@@ -153,6 +159,22 @@ async function delegate(input: string, options: RunTurnOptions): Promise<string 
       });
       if (outcome.ok) return `${toolsmith} is writing a reader for ${name}.`;
       if (!/already called/.test(outcome.text)) return outcome.text;
+    }
+  }
+  // "Watch my reading list": a supervisor for a folder, on the built-in reader its words suggest.
+  const watch = /\bwatch (?:my |the )?([\w ]+?)(?: folder)?(?:[.:,?!]|$)/i.exec(message);
+  if (watch) {
+    const label = watch[1]!.trim().replace(/^\w/, (first) => first.toUpperCase());
+    const reader = /\bcsv\b/i.test(message) ? "csv" : /\bjson\b/i.test(message) ? "json" : /\btext\b/i.test(message) ? "text" : "markdown";
+    for (const name of SUPERVISOR_NAMES) {
+      const proposed = await call("aihub_propose_supervisor", {
+        profile: { name, title: `${label} Supervisor`, description: `Watches the ${label} folder and reports what's new.`, workingStyle: "Brief." },
+        responsibility: { title: label, scope: `Files in the ${label} folder.` },
+        source: { kind: "folder", label, reader },
+        reason: `You asked for someone to watch ${label}.`,
+      });
+      if (proposed.ok) return `I've proposed ${name} to watch ${label}, reading the files as ${reader}. Pick the folder on the card and approve.`;
+      if (!/already/i.test(proposed.text)) return proposed.text;
     }
   }
   const assign = /\b(?:give|assign) (\w+) a task\b/i.exec(message);
