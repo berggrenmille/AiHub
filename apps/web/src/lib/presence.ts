@@ -26,11 +26,13 @@ export function currentRun(agentId: string, runs: Record<string, Run>): Run | nu
 }
 
 /**
- * What the character acts out. The agent's own state wins while something is in progress. Once
- * idle, a run that just finished shows a check for a moment, and a failed one keeps a red marker
- * for a while, so the operator notices it.
+ * What the character acts out. The agent's own state wins while something is in progress, except
+ * that working on a follow-up, with results that came back from colleagues, looks like reviewing.
+ * Once idle, a run that just finished shows a check for a moment, and a failed one keeps a red
+ * marker for a while, so the operator notices it.
  */
 export function presenceOf(agent: Agent, runs: Record<string, Run>, now: number): Presence {
+  if (agent.state === "working" && currentRun(agent.id, runs)?.kind === "follow_up") return "reviewing";
   if (agent.state !== "idle") return agent.state;
   const latest = runsOf(agent.id, runs)[0];
   if (!latest?.finishedAt) return "idle";

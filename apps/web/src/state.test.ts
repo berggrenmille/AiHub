@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { ActivityEntry, Agent, ChatMessage, DaemonEvent, Item, NoteSummary, Proposal, Responsibility, Run, StateSnapshot } from "@aihub/shared";
-import { ACTIVITY_LIMIT, initialOfficeState, officeReducer, rosterOrder, type OfficeAction, type OfficeState } from "./state.ts";
+import type { ActivityEntry, Agent, Assignment, ChatMessage, DaemonEvent, Item, NoteSummary, Proposal, Responsibility, Run, StateSnapshot } from "@aihub/shared";
+import { ACTIVITY_LIMIT, initialOfficeState, officeReducer, rosterOrder, SETTLED_ASSIGNMENT_LIMIT, type OfficeAction, type OfficeState } from "./state.ts";
 
 const CHAT = "chief-of-staff";
 
@@ -413,6 +413,105 @@ describe("office records", () => {
   it("ignores event types from a newer daemon", () => {
     const state = loaded();
     assert.equal(events(state, { type: "surprise" } as unknown as DaemonEvent), state);
+  });
+});
+
+function assignment(overrides: Partial<Assignment> = {}): Assignment {
+  return {
+    id: "asg-1",
+    kind: "question",
+    requesterId: "chief-of-staff",
+    requesterName: "Vera",
+    ownerId: "work-schedule",
+    ownerName: "Nora",
+    parentId: null,
+    conversationId: CHAT,
+    title: "Room next week?",
+    brief: "Is there room for a two-hour workshop next week?",
+    status: "open",
+    runBudget: 3,
+    runsUsed: 0,
+    result: null,
+    review: null,
+    createdAt: "2026-11-07T16:00:00.000Z",
+    updatedAt: "2026-11-07T16:00:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("assignments", () => {
+  it("loads them from the snapshot, open ones first, then the most recently settled", () => {
+    const state = apply(initialOfficeState, {
+      type: "snapshot",
+      snapshot: snapshot({
+        assignments: [
+          assignment({ id: "settled-old", status: "delivered", updatedAt: "2026-11-07T16:10:00.000Z" }),
+          assignment({ id: "open-old", createdAt: "2026-11-07T15:00:00.000Z" }),
+          assignment({ id: "settled-new", status: "accepted", updatedAt: "2026-11-07T16:20:00.000Z" }),
+          assignment({ id: "waiting-new", kind: "task", status: "waiting", createdAt: "2026-11-07T15:30:00.000Z" }),
+        ],
+      }),
+    });
+    assert.deepEqual(state.assignments.map((a) => a.id), ["waiting-new", "open-old", "settled-new", "settled-old"]);
+  });
+
+  it("upserts them from events in the same order, ignoring older copies", () => {
+    let state = events(
+      loaded(),
+      { type: "assignment", assignment: assignment({ id: "a", createdAt: "2026-11-07T16:00:00.000Z" }) },
+      { type: "assignment", assignment: assignment({ id: "b", createdAt: "2026-11-07T16:05:00.000Z", updatedAt: "2026-11-07T16:05:00.000Z" }) },
+    );
+    assert.deepEqual(state.assignments.map((a) => a.id), ["b", "a"]);
+
+    // Delivered, "b" moves below the open "a" and above older settled work.
+    const delivered = assignment({ id: "b", status: "delivered", result: "Thursday is free.", runsUsed: 1, updatedAt: "2026-11-07T16:09:00.000Z" });
+    state = events(state, { type: "assignment", assignment: delivered });
+    assert.deepEqual(state.assignments.map((a) => [a.id, a.status]), [
+      ["a", "open"],
+      ["b", "delivered"],
+    ]);
+    state = events(state, { type: "assignment", assignment: assignment({ id: "c", status: "failed", updatedAt: "2026-11-07T16:01:00.000Z" }) });
+    assert.deepEqual(state.assignments.map((a) => a.id), ["a", "b", "c"]);
+
+    // A copy from before delivery changes nothing.
+    assert.equal(events(state, { type: "assignment", assignment: assignment({ id: "b", createdAt: "2026-11-07T16:05:00.000Z", updatedAt: "2026-11-07T16:05:00.000Z" }) }), state);
+    assert.equal(state.assignments.find((a) => a.id === "b")?.result, "Thursday is free.");
+  });
+
+  it("keeps every open assignment and the most recent settled ones", () => {
+    let state = events(loaded(), { type: "assignment", assignment: assignment({ id: "open" }) });
+    for (let index = 0; index < SETTLED_ASSIGNMENT_LIMIT + 3; index++) {
+      const at = new Date(Date.parse("2026-11-07T17:00:00.000Z") + index * 1000).toISOString();
+      state = events(state, { type: "assignment", assignment: assignment({ id: `done-${index}`, status: "accepted", updatedAt: at }) });
+    }
+    assert.equal(state.assignments.length, SETTLED_ASSIGNMENT_LIMIT + 1);
+    assert.equal(state.assignments[0]?.id, "open");
+    assert.equal(state.assignments[1]?.id, `done-${SETTLED_ASSIGNMENT_LIMIT + 2}`);
+    assert.ok(!state.assignments.some((a) => a.id === "done-0"));
+  });
+});
+
+describe("staff leaving", () => {
+  const worker = agent({ id: "worker-1", name: "Ture", title: "Meeting Counter", role: "worker", managerId: "work-schedule", avatar: "ture" });
+
+  it("removes an agent that leaves and keeps the rest in order", () => {
+    const supervisor = agent({ id: "work-schedule", name: "Nora", role: "supervisor", managerId: "chief-of-staff" });
+    let state = events(loaded(), { type: "agent", agent: supervisor }, { type: "agent", agent: worker });
+    assert.deepEqual(state.agents.map((a) => a.id), ["chief-of-staff", "work-schedule", "worker-1"]);
+    state = events(state, { type: "agent_left", agentId: "worker-1" });
+    assert.deepEqual(state.agents.map((a) => a.id), ["chief-of-staff", "work-schedule"]);
+    assert.equal(events(state, { type: "agent_left", agentId: "worker-1" }), state, "leaving twice changes nothing");
+  });
+
+  it("doesn't bring back a departed agent on a late update, until a snapshot says so", () => {
+    let state = events(loaded(), { type: "agent", agent: worker }, { type: "agent_left", agentId: "worker-1" });
+    const left = state;
+    state = events(state, { type: "agent", agent: { ...worker, state: "idle", experience: 1 } });
+    assert.equal(state, left);
+
+    state = apply(state, { type: "snapshot", snapshot: snapshot({ agents: [agent(), worker] }) });
+    assert.deepEqual(state.departed, []);
+    assert.ok(state.agents.some((a) => a.id === "worker-1"));
   });
 });
 

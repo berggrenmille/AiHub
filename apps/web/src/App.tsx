@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityLog, ActivityTicker, Toasts } from "./components/Activity.tsx";
+import { AssignmentsDrawer } from "./components/Assignments.tsx";
 import { ChatDrawer } from "./components/ChatDrawer.tsx";
 import { Hud, type View } from "./components/Hud.tsx";
 import { Inbox } from "./components/Inbox.tsx";
@@ -7,13 +8,14 @@ import { NotesView } from "./components/NotesView.tsx";
 import { OfficeFloor } from "./components/office/OfficeFloor.tsx";
 import { ProfileCard } from "./components/ProfileCard.tsx";
 import { Roster } from "./components/Roster.tsx";
+import { nameOf, openAssignmentCount } from "./lib/assignments.ts";
 import { openCount } from "./lib/inbox.ts";
 import { resolveWikilink } from "./lib/notes.ts";
 import { rosterOrder } from "./state.ts";
 import { useOffice } from "./useOffice.ts";
 
 type Theme = "dark" | "light";
-type Drawer = "chat" | "activity" | null;
+type Drawer = "chat" | "activity" | "assignments" | null;
 
 export function App() {
   const { state, commands } = useOffice();
@@ -37,11 +39,13 @@ export function App() {
   );
   const unread = useUnread(chiefChat?.id ?? null, chatMessages, drawer === "chat");
   const inbox = useMemo(() => openCount(state.items), [state.items]);
+  const openAssignments = useMemo(() => openAssignmentCount(state.assignments), [state.assignments]);
   const profile = state.agents.find((agent) => agent.id === profileId) ?? null;
 
+  // Workers who have left still have names: their assignments keep them.
   const agentName = useCallback(
-    (agentId: string | null) => (agentId ? (state.agents.find((agent) => agent.id === agentId)?.name ?? agentId) : "AiHub"),
-    [state.agents],
+    (agentId: string | null) => (agentId ? (nameOf(agentId, state.agents, state.assignments) ?? agentId) : "AiHub"),
+    [state.agents, state.assignments],
   );
 
   const openNote = useCallback((path: string) => {
@@ -115,10 +119,13 @@ export function App() {
         sources={state.connections}
         inbox={inbox}
         unread={unread}
+        assignments={openAssignments}
+        assignmentsOpen={drawer === "assignments"}
         chatOpen={drawer === "chat"}
         rosterOpen={rosterOpen}
         theme={theme}
         now={now}
+        onToggleAssignments={() => setDrawer((current) => (current === "assignments" ? null : "assignments"))}
         onToggleChat={() => setDrawer((current) => (current === "chat" ? null : "chat"))}
         onToggleRoster={() => setRosterOpen((open) => !open)}
         onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -197,6 +204,9 @@ export function App() {
             </aside>
           ))}
         {drawer === "activity" && <ActivityLog entries={state.activity} agentName={agentName} onClose={() => setDrawer(null)} />}
+        {drawer === "assignments" && (
+          <AssignmentsDrawer assignments={state.assignments} agents={state.agents} now={now} onSelectAgent={setProfileId} onClose={() => setDrawer(null)} />
+        )}
       </div>
 
       <ActivityTicker entries={state.activity} agentName={agentName} onOpenLog={() => setDrawer("activity")} />
@@ -211,6 +221,7 @@ export function App() {
           connections={state.connections}
           runs={state.runs}
           activity={state.activity}
+          assignments={state.assignments}
           notes={state.notes}
           hasChat={state.conversations.some((conversation) => conversation.agentId === profile.id)}
           now={now}

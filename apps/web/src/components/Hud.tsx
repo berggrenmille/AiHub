@@ -16,10 +16,14 @@ interface HudProps {
   sources: SourceConnection[];
   inbox: { open: number; urgent: number };
   unread: number;
+  /** Open and waiting assignments. */
+  assignments: number;
+  assignmentsOpen: boolean;
   chatOpen: boolean;
   rosterOpen: boolean;
   theme: "dark" | "light";
   now: number;
+  onToggleAssignments(): void;
   onToggleChat(): void;
   onToggleRoster(): void;
   onToggleTheme(): void;
@@ -96,6 +100,22 @@ export function Hud(props: HudProps) {
         >
           <Icon name={props.theme === "dark" ? "sun" : "moon"} />
           <span className="visually-hidden">{props.theme === "dark" ? "Light theme" : "Dark theme"}</span>
+        </button>
+        <button
+          type="button"
+          className="hud-button"
+          aria-pressed={props.assignmentsOpen}
+          onClick={props.onToggleAssignments}
+          title="Assignments: questions and tasks between staff"
+        >
+          <Icon name="task" />
+          <span>Assignments</span>
+          {props.assignments > 0 && (
+            <span className="count-badge tone-open">
+              <span aria-hidden="true">{props.assignments}</span>
+              <span className="visually-hidden">, {props.assignments} open</span>
+            </span>
+          )}
         </button>
         <button type="button" className="chat-button" aria-pressed={props.chatOpen} onClick={props.onToggleChat}>
           <Icon name="chat" />

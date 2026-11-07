@@ -30,6 +30,9 @@ const SCREENS: Record<Presence, string> = {
   failed: "#ff7b7b",
 };
 
+/** A cue beside the run-state badge for what an assignment has someone doing. */
+export type Cue = "answering" | "waiting_on_team" | null;
+
 interface WorkstationProps {
   look: Look;
   presence: Presence;
@@ -38,9 +41,14 @@ interface WorkstationProps {
   dark: boolean;
   /** The Chief of Staff's desk gets a plant and a second screen. */
   grand?: boolean;
+  /** Up and over at a colleague's desk: the chair stays empty. */
+  away?: boolean;
+  /** A temporary worker's lanyard, in its supervisor's color. */
+  lanyard?: string;
+  cue?: Cue;
 }
 
-export function Workstation({ look, presence, talking, dark, grand = false }: WorkstationProps) {
+export function Workstation({ look, presence, talking, dark, grand = false, away = false, lanyard, cue = null }: WorkstationProps) {
   const id = useId().replace(/:/g, "");
   const screen = SCREENS[presence];
   const lit = presence !== "idle" && presence !== "waiting_for_access";
@@ -69,10 +77,12 @@ export function Workstation({ look, presence, talking, dark, grand = false }: Wo
       <rect x={49} y={50} width={42} height={48} rx={10} fill="var(--chair-hi)" opacity={0.5} />
 
       {/* A little larger than the frame's grid, pivoting at the desk edge, so faces read at a glance. */}
-      <g transform="translate(70 92) scale(1.14) translate(-70 -92)">
-        <Figure look={look} pose={POSES[presence]} talking={talking} frown={presence === "failed"} />
-        {lit && <circle cx={70} cy={44} r={16} fill={screen} opacity={0.1} className="face-glow" />}
-      </g>
+      {!away && (
+        <g transform="translate(70 92) scale(1.14) translate(-70 -92)">
+          <Figure look={look} pose={POSES[presence]} talking={talking} frown={presence === "failed"} lanyard={lanyard} />
+          {lit && <circle cx={70} cy={44} r={16} fill={screen} opacity={0.1} className="face-glow" />}
+        </g>
+      )}
 
       {/* Desk */}
       <rect x={6} y={90} width={148} height={15} rx={3} fill="var(--desk-top)" />
@@ -82,7 +92,7 @@ export function Workstation({ look, presence, talking, dark, grand = false }: Wo
       <rect x={124} y={121} width={8} height={2} rx={1} fill="#000" opacity={0.25} />
 
       {/* Hands go back on top of the desk edge while typing */}
-      {POSES[presence] === "typing" && <TypingHands look={look} />}
+      {POSES[presence] === "typing" && !away && <TypingHands look={look} />}
 
       {/* Keyboard */}
       <rect x={55} y={93} width={30} height={5.5} rx={1.3} fill="#e7ebf1" stroke="#aeb6c3" strokeWidth={0.5} />
@@ -133,8 +143,37 @@ export function Workstation({ look, presence, talking, dark, grand = false }: Wo
       </g>
 
       <Badge presence={presence} />
+      <CueBadge cue={cue} />
     </svg>
   );
+}
+
+/** Top left, clear of the run-state badges on the right. */
+function CueBadge({ cue }: { cue: Cue }) {
+  switch (cue) {
+    case "answering":
+      // A speech bubble with a question mark: a colleague's question is being answered.
+      return (
+        <g className="art-badge art-badge-bob cue-answering">
+          <path d="M24 8 h24 a6 6 0 0 1 6 6 v10 a6 6 0 0 1 -6 6 h-13 l-6 6 v-6 h-5 a6 6 0 0 1 -6 -6 v-10 a6 6 0 0 1 6 -6 z" fill="#0ea5e9" stroke="#fff" strokeWidth={1.5} strokeLinejoin="round" />
+          <path d="M32.4 15.6 a3.6 3.6 0 1 1 5 3.3 c-1 .4 -1.4 1.2 -1.4 2.2 v.8" stroke="#fff" strokeWidth={2.2} fill="none" strokeLinecap="round" />
+          <circle cx={36} cy={25.6} r={1.4} fill="#fff" />
+        </g>
+      );
+    case "waiting_on_team":
+      // An hourglass: the team has the work, and the supervisor waits for it.
+      return (
+        <g className="art-badge cue-waiting">
+          <circle cx={36} cy={20} r={11} fill="#8b5cf6" stroke="#fff" strokeWidth={1.5} />
+          <g className="hourglass">
+            <path d="M31 13.5 h10 M31 26.5 h10 M32.5 13.5 c0 3.5 3 4.5 3 6.5 s-3 3 -3 6.5 M39.5 13.5 c0 3.5 -3 4.5 -3 6.5 s3 3 3 6.5" stroke="#fff" strokeWidth={1.6} fill="none" strokeLinecap="round" />
+            <path d="M33.8 25.4 q2.2 -2.6 4.4 0 z" fill="#fff" />
+          </g>
+        </g>
+      );
+    default:
+      return null;
+  }
 }
 
 function TypingHands({ look }: { look: Look }) {
