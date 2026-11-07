@@ -24,6 +24,8 @@ export interface CalendarRecord {
   description: string | null;
   status: "confirmed" | "tentative" | "cancelled";
   recurring: boolean;
+  /** For an occurrence of a recurring event: the series' rule as in the file, its first start, and the starts it skips. */
+  series?: { rule: string; since: string; skipped: string[] } | null;
 }
 
 export interface CalendarWindow {
@@ -69,6 +71,12 @@ export function readCalendar(text: string, window: CalendarWindow): CalendarReco
       if (overlaps(start, end)) records.push(recordOf(event, event.uid, start, end, false));
       continue;
     }
+    const rule = event.component.getFirstPropertyValue("rrule");
+    const skipped = event.component
+      .getAllProperties("exdate")
+      .flatMap((property) => property.getValues() as IcalTime[])
+      .map((time) => time.toJSDate().toISOString());
+    const series = { rule: rule ? String(rule) : "(dates listed in the file)", since: event.startDate.toJSDate().toISOString(), skipped };
     const iterator = event.iterator();
     for (let count = 0, next = iterator.next(); next && count < MAX_OCCURRENCES; count++, next = iterator.next()) {
       const details = event.getOccurrenceDetails(next);
@@ -76,7 +84,7 @@ export function readCalendar(text: string, window: CalendarWindow): CalendarReco
       if (start.getTime() >= to) break;
       if (!overlaps(start, end)) continue;
       const key = `${event.uid}/${details.recurrenceId.toJSDate().toISOString()}`;
-      records.push(recordOf(details.item, key, start, end, true));
+      records.push({ ...recordOf(details.item, key, start, end, true), series });
     }
   }
   for (const event of orphans) {

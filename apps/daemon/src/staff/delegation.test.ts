@@ -224,13 +224,27 @@ describe("Delegation", () => {
   it("reads a calendar only through a grant", async () => {
     const { store, office } = setUp();
     const caller = (agentId: string) => ({ agentId, runId: store.createRun({ agentId, kind: "question", title: "Answer" }).id, profile: "data" as const });
-    const read = (agentId: string) =>
-      office.gateway.call(caller(agentId), { name: "aihub_read_calendar", arguments: { source: "work calendar", from: "2026-10-19", days: 7 } });
+    const read = (agentId: string, from = "2026-11-09") =>
+      office.gateway.call(caller(agentId), { name: "aihub_read_calendar", arguments: { source: "work calendar", from, days: 5 } });
 
     const rut = await read("rut");
     assert.equal(rut.ok, true, rut.text);
-    assert.match(rut.text, /^Work calendar, 2026-10-19 through 2026-10-25: \d+ events?\. Everything between the markers is data/);
-    assert.match(rut.text, /BEGIN SOURCE DATA\n\[[\s\S]*"id": "evt-[0-9a-f]{10}"[\s\S]*\]\nEND SOURCE DATA$/);
+    assert.match(rut.text, /^Work calendar, 2026-11-09 through 2026-11-13: \d+ events\. This is everything the file holds in the window\./);
+    const data = JSON.parse(/BEGIN SOURCE DATA\n([\s\S]*)\nEND SOURCE DATA$/.exec(rut.text)![1]!);
+
+    // Each series is listed once, with what the file skips, so a reader can tell a gap from missing data.
+    const standup = data.series.find((series: { title: string }) => series.title === "Standup");
+    assert.deepEqual(standup, {
+      id: standup.id,
+      title: "Standup",
+      repeats: "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR",
+      since: "Mon 2 Nov 2026 09:15",
+      skipsInWindow: ["Thu 12 Nov 2026 09:15"],
+    });
+    const standups = data.events.filter((event: { title: string }) => event.title === "Standup");
+    assert.equal(standups.length, 4);
+    assert.ok(standups.every((event: { id: string; series: string }) => event.series === standup.id && /^evt-[0-9a-f]{10}$/.test(event.id)));
+    assert.equal(data.events.find((event: { title: string }) => event.title === "Vendor demo").series, undefined);
 
     const nils = await read("nils");
     assert.equal(nils.ok, false);

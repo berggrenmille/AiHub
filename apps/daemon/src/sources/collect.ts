@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { SourceConnection } from "@aihub/shared";
 import type { Store } from "../store/store.ts";
-import { TIMEZONE } from "../time.ts";
+import { localDate, TIMEZONE } from "../time.ts";
 import { diffCalendar, readCalendarFile, type CalendarChange, type CalendarCursor } from "./ics.ts";
 
 // Collectors (DESIGN.md › Architecture): code that reads a connection, compares it with the cursor,
@@ -104,6 +104,13 @@ export function describeTime(start: string, end: string, allDay: boolean): strin
   const to = new Date(end);
   if (allDay) return `${dayFormat.format(from)}, all day`;
   return `${dayFormat.format(from)} ${timeFormat.format(from)}-${timeFormat.format(to)}`;
+}
+
+/** One moment, with the year, such as "Mon 2 Nov 2026 09:15", or the day alone when all-day. */
+export function describeStart(at: string, allDay: boolean): string {
+  const moment = new Date(at);
+  const year = localDate(moment, TIMEZONE).slice(0, 4);
+  return `${dayFormat.format(moment)} ${year}${allDay ? "" : ` ${timeFormat.format(moment)}`}`;
 }
 
 /** Raised for a connection whose file the operator hasn't picked yet. */
