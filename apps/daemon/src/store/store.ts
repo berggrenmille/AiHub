@@ -257,6 +257,21 @@ export class Store {
     }));
   }
 
+  // Results -----------------------------------------------------------------
+
+  /** Records a run's result. A run has at most one; returns false if it already has one. */
+  addResult(result: { runId: string; agentId: string; summary: string; body: unknown }): boolean {
+    const { changes } = this.db
+      .prepare("INSERT INTO results (run_id, agent_id, summary, body, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (run_id) DO NOTHING")
+      .run(result.runId, result.agentId, result.summary, JSON.stringify(result.body), this.timestamp());
+    return changes > 0;
+  }
+
+  resultForRun(runId: string): { summary: string; body: unknown; createdAt: string } | null {
+    const row = this.db.prepare("SELECT summary, body, created_at FROM results WHERE run_id = ?").get(runId) as Row | undefined;
+    return row ? { summary: String(row.summary), body: JSON.parse(String(row.body)), createdAt: String(row.created_at) } : null;
+  }
+
   // Settings ----------------------------------------------------------------
 
   getSetting(key: string): string | null {

@@ -68,4 +68,16 @@ export const MIGRATIONS: string[] = [
     value TEXT NOT NULL
   );
   `,
+
+  // v2: results, the reports runs submit through the gateway (DESIGN.md › Staff and work model).
+  `
+  CREATE TABLE results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL UNIQUE REFERENCES runs (id),
+    agent_id TEXT NOT NULL REFERENCES agents (id),
+    summary TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  `,
 ];

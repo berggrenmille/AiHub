@@ -19,7 +19,8 @@
     "test": "npm run test --workspaces --if-present",
     "codex": "node scripts/codex.mjs",
     "codex:protocol": "node scripts/codex.mjs app-server generate-ts --experimental --out packages/codex-protocol/src",
-    "spike:codex": "tsx spikes/codex-app-server/spike.ts"
+    "spike:codex": "tsx spikes/codex-app-server/spike.ts",
+    "measure:briefing": "npm run measure:briefing -w @aihub/daemon"
   },
   "devDependencies": {
     "@openai/codex": "0.167.0",

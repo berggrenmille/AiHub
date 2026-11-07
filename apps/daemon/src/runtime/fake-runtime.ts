@@ -38,14 +38,14 @@ The roster tool returned: ${outcome.text}`;
 
 /** An in-process AgentRuntime for tests and UI work. Records every call it receives. */
 export class FakeRuntime implements AgentRuntime {
-  readonly contexts = new Map<string, { options: ContextOptions; inputs: string[] }>();
+  readonly contexts = new Map<string, { options: ContextOptions & { ephemeral?: boolean }; inputs: string[] }>();
   readonly calls: string[] = [];
   respond: Responder = echo;
   private nextContext = 1;
 
   constructor(private readonly prefix = "ctx") {}
 
-  async startContext(options: ContextOptions): Promise<string> {
+  async startContext(options: ContextOptions & { ephemeral?: boolean }): Promise<string> {
     const id = `${this.prefix}-${this.nextContext++}`;
     this.contexts.set(id, { options, inputs: [] });
     this.calls.push(`start ${id}`);

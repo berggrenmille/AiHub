@@ -24,7 +24,8 @@ describe("Gateway", () => {
 
     assert.deepEqual(gateway.specsFor(chief).map((tool) => tool.name), ["aihub_get_roster", "aihub_list_activity"]);
     assert.deepEqual(gateway.specsFor({ ...chief, profile: "data" }), []);
-    assert.deepEqual(gateway.specsFor(supervisor), []);
+    assert.deepEqual(gateway.specsFor(supervisor).map((tool) => tool.name), ["aihub_submit_report"]);
+    assert.deepEqual(gateway.specsFor({ ...supervisor, profile: "conversation" }), []);
   });
 
   it("describes tool input as JSON Schema", () => {
@@ -68,6 +69,18 @@ describe("Gateway", () => {
     assert.match(invalid.text, /Invalid arguments for aihub_list_activity/);
     const extra = await gateway.call(chief, { name: "aihub_get_roster", arguments: { all: true } });
     assert.equal(extra.ok, false);
+  });
+
+  it("stores one report per run", async () => {
+    const { gateway, supervisor, store } = office();
+    const report = { summary: "Planning moved to 10:00.", items: [{ title: "Clash", detail: "Overlaps the review.", urgency: "today", sourceRef: "evt-1" }] };
+
+    assert.deepEqual(await gateway.call(supervisor, { name: "aihub_submit_report", arguments: report }), { ok: true, text: "Report filed." });
+    const again = await gateway.call(supervisor, { name: "aihub_submit_report", arguments: report });
+
+    assert.equal(again.ok, false);
+    assert.match(again.text, /already filed/);
+    assert.deepEqual(store.resultForRun(supervisor.runId)?.body, { ...report, decisionsNeeded: [] });
   });
 
   it("applies argument defaults", async () => {

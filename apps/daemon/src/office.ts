@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { ActivityKind, ChatMessage, ChatResponse, Run, RunState, RuntimeStatus, StateSnapshot } from "@aihub/shared";
+import type { ActivityKind, ChatMessage, ChatResponse, Run, RunKind, RunState, RuntimeStatus, StateSnapshot } from "@aihub/shared";
 import { EventBus } from "./events.ts";
 import { Gateway, type GatewayTool } from "./gateway/gateway.ts";
 import { OFFICE_TOOLS } from "./gateway/tools.ts";
@@ -9,6 +9,26 @@ import { CHIEF_OF_STAFF, CHIEF_OF_STAFF_CONVERSATION_ID } from "./staff/chief-of
 import type { ConversationRecord, Store } from "./store/store.ts";
 
 export class NotFoundError extends Error {}
+
+/** One background turn for an agent. */
+export interface Task {
+  agentId: string;
+  kind: RunKind;
+  title: string;
+  /** Instructions for this kind of run, added to the agent's charter. */
+  instructions: string;
+  /** The assembled context: what the agent needs to know, built from records by code. */
+  input: string;
+  /** Use a run the caller already opened, such as a briefing that was collecting first. */
+  runId?: string;
+  timeoutMs?: number;
+}
+
+export interface TaskOutcome {
+  run: Run;
+  /** The agent's final message. */
+  text: string;
+}
 
 export interface OfficeOptions {
   store: Store;
@@ -123,15 +143,76 @@ export class Office {
         result = await turn(context.contextId, context.input);
       }
       this.publishRun(this.store.addTurn(runId, result.usage));
-      if (result.text) {
-        const reply = this.store.addMessage({ conversationId, author: "agent", agentId: agent.id, body: result.text, runId });
-        this.bus.publish({ type: "message", message: reply });
-      }
+      if (result.text) this.postMessage(conversationId, agent.id, result.text, runId);
       if (result.status === "completed") this.finish(runId, "done");
       else this.finish(runId, "failed", result.error ?? `The turn was ${result.status}`);
     } catch (error) {
       this.finish(runId, "failed", errorText(error));
     }
+  }
+
+  /**
+   * Queues one background turn in a fresh, ephemeral context: background runs start from records
+   * every time (DESIGN.md › Context assembly). Resolves when the run has ended, done or failed.
+   */
+  runTask(task: Task): Promise<TaskOutcome> {
+    const agent = this.store.getAgentRecord(task.agentId);
+    if (!agent) throw new NotFoundError(`No agent ${task.agentId}`);
+    const run = task.runId ? this.store.getRun(task.runId)! : this.openRun(agent.id, task.kind, task.title);
+    return new Promise((resolve, reject) =>
+      this.queue.enqueue("background", () => this.executeTask(run.id, task).then(resolve, reject)),
+    );
+  }
+
+  /** Records a new queued run. */
+  openRun(agentId: string, kind: RunKind, title: string): Run {
+    const run = this.store.createRun({ agentId, kind, title });
+    this.publishRun(run);
+    return run;
+  }
+
+  setRunState(runId: string, state: RunState, error?: string) {
+    this.publishRun(this.store.setRunState(runId, state, error));
+  }
+
+  /** Posts an agent's message, such as a briefing, to a conversation. */
+  postMessage(conversationId: string, agentId: string, body: string, runId: string | null): ChatMessage {
+    const message = this.store.addMessage({ conversationId, author: "agent", agentId, body, runId });
+    this.bus.publish({ type: "message", message });
+    return message;
+  }
+
+  private async executeTask(runId: string, task: Task): Promise<TaskOutcome> {
+    const agent = this.store.getAgentRecord(task.agentId)!;
+    const caller = { agentId: agent.id, runId, profile: agent.profile };
+    this.setRunState(runId, "working");
+    this.activity(agent.id, runId, "run_started", `${agent.name}: ${task.title}`);
+    let text = "";
+    try {
+      const contextId = await this.runtime.startContext({
+        profile: agent.profile,
+        instructions: `${agent.charter}
+
+${task.instructions}`,
+        tools: this.gateway.specsFor(caller),
+        ephemeral: true,
+      });
+      const result = await this.runtime.runTurn(contextId, {
+        input: task.input,
+        timeoutMs: task.timeoutMs ?? this.turnTimeoutMs,
+        onToolCall: (call) => this.gateway.call(caller, call),
+        onEvent: (event) => {
+          if (event.type === "blocked") this.activity(agent.id, runId, "blocked", `Blocked an attempt to ${event.what}`);
+        },
+      });
+      this.publishRun(this.store.addTurn(runId, result.usage));
+      text = result.text;
+      if (result.status === "completed") this.finish(runId, "done");
+      else this.finish(runId, "failed", result.error ?? `The turn was ${result.status}`);
+    } catch (error) {
+      this.finish(runId, "failed", errorText(error));
+    }
+    return { run: this.store.getRun(runId)!, text };
   }
 
   /**
@@ -180,10 +261,6 @@ export class Office {
         message.body,
       ].join("\n"),
     };
-  }
-
-  private setRunState(runId: string, state: RunState, error?: string) {
-    this.publishRun(this.store.setRunState(runId, state, error));
   }
 
   private finish(runId: string, state: "done" | "failed", error?: string) {
