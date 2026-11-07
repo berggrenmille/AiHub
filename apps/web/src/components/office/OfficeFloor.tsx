@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { Agent, Responsibility } from "@aihub/shared";
+import type { Agent, Responsibility, StaffReader } from "@aihub/shared";
 import { clip, errandOf, type Errand } from "../../lib/assignments.ts";
 import { hashSeed, lookFor, type Look } from "../../lib/avatar.ts";
 import { daylightAt, stockholmTime } from "../../lib/daylight.ts";
 import { layoutOffice, STATION, type Seat } from "../../lib/layout.ts";
 import { bubbleText, currentRun, openItemCounts, presenceOf, speechOf, type Presence } from "../../lib/presence.ts";
 import { plainText } from "../../lib/markdown.ts";
+import { readersInHand } from "../../lib/sources.ts";
 import { doorOffset, walkerAt } from "../../lib/walk.ts";
 import { ROLE_LABELS, STATE_LABELS, URGENCY_LABELS } from "../../format.ts";
 import type { OfficeState } from "../../state.ts";
@@ -51,6 +52,9 @@ export function OfficeFloor({ state, now, onSelectAgent, onOpenChat, onOpenInbox
     return colors;
   }, [layout.pods, looks]);
   const chief = state.agents.find((agent) => agent.role === "chief_of_staff");
+
+  // A toolsmith at work: whoever is writing a reader or has just handed one in, and which one.
+  const authoring = useMemo(() => readersInHand(state.readers), [state.readers]);
 
   // Temporary workers wear a lanyard in their supervisor's color.
   const lanyards = useMemo(() => {
@@ -127,6 +131,7 @@ export function OfficeFloor({ state, now, onSelectAgent, onOpenChat, onOpenInbox
                 presence={presence}
                 task={run?.title ?? null}
                 errand={errandOf(agent.id, state.runs, state.assignments)}
+                reader={authoring.get(agent.id) ?? null}
                 visit={visit}
                 speech={speech && !visit ? bubbleText(speech.text, seat.size === "small" ? 90 : 150) : null}
                 answer={answer}
@@ -190,6 +195,8 @@ interface StationButtonProps {
   task: string | null;
   /** What an assignment has them doing, if anything. */
   errand: Errand | null;
+  /** The reader they are writing or just handed in, for a toolsmith at work. */
+  reader: StaffReader | null;
   /** Over at a colleague's desk with a question. */
   visit: Visit | null;
   speech: string | null;
@@ -212,9 +219,10 @@ const CUES: Record<Errand["kind"], Cue> = {
  * What the station says the person is doing: the run, or what an assignment has them doing. The
  * nameplate gets the short form; the label and tooltip get the whole line.
  */
-function statusLine(presence: Presence, task: string | null, errand: Errand | null, visit: Visit | null): { plate: string; full: string } | null {
+function statusLine(presence: Presence, task: string | null, errand: Errand | null, visit: Visit | null, reader: StaffReader | null): { plate: string; full: string } | null {
   const line = (plate: string, detail?: string | null) => ({ plate, full: detail ? `${plate}: ${detail}` : plate });
   if (visit) return line(`Asking ${visit.ownerName}`, visit.title);
+  if (!errand && reader) return line(reader.status === "drafting" ? `Writing the ${reader.name} reader` : `Handed in the ${reader.name} reader`);
   switch (errand?.kind) {
     case "answering":
       return line(`Answering ${errand.assignment.requesterName}`, errand.assignment.title);
@@ -237,9 +245,9 @@ function sentence(text: string): string {
   return /[.!?…]$/.test(text) ? text : `${text}.`;
 }
 
-function StationButton({ agent, look, seat, presence, task, errand, visit, speech, answer, lanyard, dark, arriving, onSelect }: StationButtonProps) {
+function StationButton({ agent, look, seat, presence, task, errand, reader, visit, speech, answer, lanyard, dark, arriving, onSelect }: StationButtonProps) {
   const size = STATION[seat.size];
-  const line = statusLine(presence, task, errand, visit);
+  const line = statusLine(presence, task, errand, visit, reader);
   const status = line?.full ?? null;
   const answered = answer ? `Just answered ${answer.requesterName}. ` : "";
   const label = `${agent.name}, ${agent.title || ROLE_LABELS[agent.role]}${agent.role === "worker" ? ", temporary worker" : ""}. ${sentence(status ?? "Idle")} ${answered}Open profile.`;
@@ -273,7 +281,7 @@ function StationButton({ agent, look, seat, presence, task, errand, visit, speec
         grand={seat.size === "large"}
         away={visit !== null}
         lanyard={lanyard}
-        cue={errand ? CUES[errand.kind] : null}
+        cue={(errand ? CUES[errand.kind] : null) ?? (reader ? "toolsmith" : null)}
       />
       <span className="nameplate" aria-hidden="true">
         <span className="nameplate-name">{agent.name}</span>

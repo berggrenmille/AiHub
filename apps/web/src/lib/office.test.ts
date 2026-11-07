@@ -112,6 +112,32 @@ describe("office layout", () => {
     assert.equal(after.pods.find((p) => p.supervisorId === "schedule")!.spareDesks.length, 1);
   });
 
+  it("gives a worker who reports to the Chief of Staff, such as a toolsmith, a hot desk in the lounge", () => {
+    const staff = [chief, agent("schedule"), agent("reading", { hiredAt: "2026-11-07T16:01:00.000Z" })];
+    const ada = agent("ada", { role: "worker", managerId: "chief", hiredAt: "2026-11-07T17:00:00.000Z" });
+    const layout = layoutOffice([...staff, ada], 8);
+    const seat = layout.seats.find((s) => s.agentId === "ada")!;
+    assert.deepEqual([seat.size, seat.podId], ["small", null]);
+
+    const desk = { x: seat.x, y: seat.y, ...STATION.small };
+    const { lounge } = layout;
+    assert.ok(desk.x >= lounge.x && desk.x + desk.w <= lounge.x + lounge.w, "inside the lounge, left to right");
+    assert.ok(desk.y >= lounge.y && desk.y + desk.h <= lounge.y + lounge.h, "inside the lounge, top to bottom");
+    assert.ok(!overlaps(desk, layout.chiefRoom));
+    for (const pod of layout.pods) assert.ok(!overlaps(desk, pod), pod.id);
+
+    // Nobody else moves as the toolsmith comes and goes, so the walk in and out lines up.
+    const before = layoutOffice(staff, 8);
+    for (const other of before.seats) assert.deepEqual(layout.seats.find((s) => s.agentId === other.agentId), other);
+    assert.deepEqual(layout.lounge.y, before.lounge.y);
+
+    // And the way out leads through the door.
+    const box = walkerAt(seat);
+    const { dx, dy } = doorOffset(seat, layout.door);
+    assert.ok(Math.abs(box.left + dx + box.width / 2 - (layout.door.x + 40)) < 0.01);
+    assert.ok(box.top + dy + box.height <= layout.door.y);
+  });
+
   it("makes room for more supervisors than the limit", () => {
     const supervisors = Array.from({ length: 14 }, (_, index) => agent(`s${index}`));
     const layout = layoutOffice([chief, ...supervisors], 8);

@@ -1,10 +1,11 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import type { ActivityEntry, Agent, Assignment, NoteSummary, Responsibility, Routine, Run, SourceConnection, UpdateAgentRequest } from "@aihub/shared";
+import type { ActivityEntry, Agent, Assignment, NoteSummary, Responsibility, Routine, Run, SourceConnection, StaffReader, UpdateAgentRequest } from "@aihub/shared";
 import { errorText } from "../api.ts";
 import { assignmentsOf, teamWaitOf } from "../lib/assignments.ts";
 import { lookFor } from "../lib/avatar.ts";
 import { levelOf, XP_STEP } from "../lib/level.ts";
 import { presenceOf, runsOf } from "../lib/presence.ts";
+import { READER_STATUS_LABELS, readerName, readerOf } from "../lib/sources.ts";
 import {
   activityTone,
   CONNECTION_STATUS_LABELS,
@@ -33,11 +34,12 @@ interface ProfileCardProps {
   activity: ActivityEntry[];
   assignments: Assignment[];
   notes: NoteSummary[];
-  hasChat: boolean;
+  readers: StaffReader[];
   now: number;
   onClose(): void;
   onSelectAgent(agentId: string): void;
-  onOpenChat(): void;
+  /** Opens the chat with this staff member, starting one if needed. */
+  onOpenChat(): Promise<void>;
   onOpenNote(path: string): void;
   onUpdate(changes: UpdateAgentRequest): Promise<void>;
   onRunRoutine(routineId: string): Promise<void>;
@@ -78,6 +80,8 @@ export function ProfileCard(props: ProfileCardProps) {
   const presence = presenceOf(agent, props.runs, now);
   const assignments = assignmentsOf(agent.id, props.assignments);
   const teamWait = teamWaitOf(agent.id, props.assignments);
+  // A toolsmith is whoever wrote a reader.
+  const authored = props.readers.filter((reader) => reader.authorId === agent.id);
 
   return (
     <dialog
@@ -121,15 +125,7 @@ export function ProfileCard(props: ProfileCardProps) {
               Experience counts delivered results and resolved items. Level L to L+1 takes {XP_STEP}×L.
             </p>
           </div>
-          {props.hasChat ? (
-            <button type="button" className="button primary wide" onClick={props.onOpenChat}>
-              <Icon name="chat" /> Chat with {agent.name}
-            </button>
-          ) : (
-            <p className="chat-later">
-              <Icon name="chat" size={16} /> Chats with {agent.name} arrive in a later update. For now, ask the Chief of Staff.
-            </p>
-          )}
+          <ChatButton key={agent.id} name={agent.name} onOpen={props.onOpenChat} />
         </aside>
 
         <div className="profile-scroll">
@@ -249,7 +245,8 @@ export function ProfileCard(props: ProfileCardProps) {
                       <span className={`dot status-${connection.status}`} aria-hidden="true" />
                       <span>
                         <strong>{connection.label}</strong>
-                        <span className="muted small block">{connection.detail ?? (connection.path || "No file chosen yet")}</span>
+                        {connection.detail && <span className="muted small block">{connection.detail}</span>}
+                        <ConnectionFacts connection={connection} readers={props.readers} />
                       </span>
                       <span className={`pill status-${connection.status}`}>{CONNECTION_STATUS_LABELS[connection.status]}</span>
                     </li>
@@ -258,6 +255,19 @@ export function ProfileCard(props: ProfileCardProps) {
               </>
             )}
           </section>
+
+          {authored.length > 0 && (
+            <section className="profile-section" aria-label={authored.length === 1 ? "Reader" : "Readers"}>
+              <h3>{authored.length === 1 ? "Reader" : "Readers"}</h3>
+              <ul className="reader-list">
+                {authored.map((reader) => (
+                  <li key={reader.id}>
+                    <ReaderSummary reader={reader} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           <section className="profile-section" aria-label="Recent runs">
             <h3>Recent runs</h3>
@@ -323,6 +333,101 @@ export function ProfileCard(props: ProfileCardProps) {
         </div>
       </div>
     </dialog>
+  );
+}
+
+/** Opens the chat with this staff member. The first time, the daemon starts it. */
+function ChatButton({ name, onOpen }: { name: string; onOpen(): Promise<void> }) {
+  const [opening, setOpening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const open = async () => {
+    setOpening(true);
+    setError(null);
+    try {
+      await onOpen();
+    } catch (failure) {
+      setError(`Couldn't open the chat: ${errorText(failure)}`);
+    } finally {
+      setOpening(false);
+    }
+  };
+  return (
+    <div className="chat-open">
+      <button type="button" className="button primary wide" disabled={opening} onClick={() => void open()}>
+        <Icon name="chat" /> {opening ? "Opening the chat…" : `Chat with ${name}`}
+      </button>
+      {error && (
+        <p className="form-error small" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Where a source is: a calendar's file, or a folder with the files it reads and the reader for them. */
+function ConnectionFacts({ connection, readers }: { connection: SourceConnection; readers: StaffReader[] }) {
+  if (connection.kind !== "folder") {
+    return (
+      <dl className="connection-facts">
+        <div>
+          <dt>File</dt>
+          <dd className="connection-path">{connection.path || "Not chosen yet"}</dd>
+        </div>
+      </dl>
+    );
+  }
+  const info = readerOf(connection.reader, readers);
+  const staff = info?.kind === "staff" ? info.reader : null;
+  return (
+    <dl className="connection-facts">
+      <div>
+        <dt>Folder</dt>
+        <dd className="connection-path">{connection.path || "Not chosen yet"}</dd>
+      </div>
+      <div>
+        <dt>Files</dt>
+        <dd>{connection.pattern || "*"}</dd>
+      </div>
+      <div>
+        <dt>Reader</dt>
+        <dd>
+          {readerName(info)}
+          {staff?.authorName && <span className="muted">, by {staff.authorName}</span>}{" "}
+          {staff && <span className={`pill reader-status status-${staff.status}`}>{READER_STATUS_LABELS[staff.status]}</span>}
+        </dd>
+      </div>
+    </dl>
+  );
+}
+
+/** A reader this staff member wrote: how far along it is, their notes, and the code. */
+function ReaderSummary({ reader }: { reader: StaffReader }) {
+  return (
+    <div className="reader-box">
+      <p className="reader-head">
+        <strong>{reader.name}</strong>
+        <span className={`pill reader-status status-${reader.status}`}>{READER_STATUS_LABELS[reader.status]}</span>
+      </p>
+      <p className="small muted">
+        For {reader.pattern} files{reader.sampleNames.length > 0 ? `, written from ${reader.sampleNames.join(", ")}` : ""}.
+      </p>
+      {reader.notes && (
+        <p className="reader-notes small">
+          <span className="eyebrow">Notes</span> {reader.notes}
+        </p>
+      )}
+      {reader.code ? (
+        <details className="reader-code">
+          <summary>The reader's code</summary>
+          <pre>
+            <code>{reader.code}</code>
+          </pre>
+        </details>
+      ) : (
+        <p className="muted small">{reader.status === "failed" ? "No code was handed in." : "No code handed in yet."}</p>
+      )}
+    </div>
   );
 }
 

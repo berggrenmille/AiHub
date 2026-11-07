@@ -1,40 +1,25 @@
-import { useId, useState, type FormEvent } from "react";
-import type { BuiltInReader, Proposal, ProposedSource } from "@aihub/shared";
+import { useId, useRef, useState, type FormEvent } from "react";
+import type { Proposal, ProposedSource, SourcePreview, StaffReader } from "@aihub/shared";
 import { errorText } from "../api.ts";
 import { lookFor } from "../lib/avatar.ts";
+import { approvalGate, describeSource, patternOf, previewRows, READER_STATUS_LABELS, readerOf, type PreviewState } from "../lib/sources.ts";
 import { formatDateTime } from "../format.ts";
 import { Portrait } from "./office/Figure.tsx";
 import { Icon } from "./Icon.tsx";
 
 // An approval card for a proposal in the Chief of Staff's chat (DESIGN.md › Recruitment and
-// delegation): who would join, what they'd own, what they'd watch, and why.
+// delegation): who would join, what they'd own, what they'd watch, and why. A source can be
+// previewed at the path the operator picks; one on a reader staff wrote must be (DESIGN.md ›
+// Connectors and capabilities), since approving the supervisor approves the reader too.
 
 interface ProposalCardProps {
   proposal: Proposal | undefined;
   /** The chat message that carried the card. */
   intro: string;
+  readers: StaffReader[];
+  onPreview(sourcePath: string): Promise<SourcePreview>;
   onApprove(sourcePath?: string): Promise<void>;
   onDecline(): Promise<void>;
-}
-
-const READER_LABELS: Record<BuiltInReader, string> = {
-  markdown: "markdown notes",
-  text: "text files",
-  csv: "CSV files",
-  json: "JSON files",
-};
-
-/** What the card says about a source, and what it asks the operator to pick. */
-export function describeSource(source: ProposedSource): { kind: string; pick: string; placeholder: string } {
-  if (source.kind === "folder") {
-    const files = !source.reader ? "files" : source.reader in READER_LABELS ? READER_LABELS[source.reader as BuiltInReader] : "files, read by a reader staff wrote";
-    return {
-      kind: `folder of ${files}${source.pattern ? `, ${source.pattern}` : ""}`,
-      pick: "path to the folder on this PC",
-      placeholder: "C:\\Users\\you\\Documents\\Reading list",
-    };
-  }
-  return { kind: "calendar file", pick: "path to the .ics file on this PC", placeholder: "C:\\Users\\you\\Documents\\calendar.ics" };
 }
 
 const STATUS_LABELS: Record<Proposal["status"], string> = {
@@ -43,10 +28,13 @@ const STATUS_LABELS: Record<Proposal["status"], string> = {
   declined: "Declined",
 };
 
-export function ProposalCard({ proposal, intro, onApprove, onDecline }: ProposalCardProps) {
+export function ProposalCard({ proposal, intro, readers, onPreview, onApprove, onDecline }: ProposalCardProps) {
   const [path, setPath] = useState("");
   const [busy, setBusy] = useState<"approve" | "decline" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<PreviewState>({ status: "idle" });
+  // Only the latest preview counts: an answer for a path since changed is dropped.
+  const previewTicket = useRef(0);
   const pathId = useId();
 
   if (!proposal) {
@@ -63,7 +51,9 @@ export function ProposalCard({ proposal, intro, onApprove, onDecline }: Proposal
   const pathNeeded = pending && source !== null;
   const trimmed = path.trim();
   const looksLikeIcs = /\.ics$/i.test(trimmed);
-  const described = source ? describeSource(source) : null;
+  const described = source ? describeSource(source, readers) : null;
+  const gate = approvalGate(source, readers, trimmed, preview);
+  const previewedCode = preview.status === "done" ? preview.preview.code : null;
 
   const run = async (kind: "approve" | "decline") => {
     setBusy(kind);
@@ -78,10 +68,41 @@ export function ProposalCard({ proposal, intro, onApprove, onDecline }: Proposal
     }
   };
 
+  const whatToPick = source ? `the ${source.label.toLowerCase()} ${source.kind === "folder" ? "folder" : "file"}` : "";
+
+  const changePath = (value: string) => {
+    setPath(value);
+    // A preview stands for the path it read; another path needs its own.
+    if (preview.status !== "idle" && value.trim() !== preview.path) {
+      previewTicket.current++;
+      setPreview({ status: "idle" });
+    }
+  };
+
+  const runPreview = async () => {
+    if (!trimmed) {
+      setError(`Enter the path of ${whatToPick} first.`);
+      return;
+    }
+    const ticket = ++previewTicket.current;
+    setError(null);
+    setPreview({ status: "loading", path: trimmed });
+    try {
+      const result = await onPreview(trimmed);
+      if (ticket === previewTicket.current) setPreview({ status: "done", path: trimmed, preview: result });
+    } catch (failure) {
+      if (ticket === previewTicket.current) setPreview({ status: "failed", path: trimmed, error: errorText(failure) });
+    }
+  };
+
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     if (pathNeeded && !trimmed) {
-      setError(`Enter the path of the ${source.label.toLowerCase()} ${source.kind === "folder" ? "folder" : "file"} first.`);
+      setError(`Enter the path of ${whatToPick} first.`);
+      return;
+    }
+    if (!gate.ready) {
+      setError(gate.reason);
       return;
     }
     void run("approve");
@@ -129,11 +150,14 @@ export function ProposalCard({ proposal, intro, onApprove, onDecline }: Proposal
           <dt>Source</dt>
           <dd>{source && described ? `${source.label} (${described.kind})` : "None needed"}</dd>
         </div>
+        {source?.kind === "folder" && <BuiltInReaderFact source={source} readers={readers} />}
         <div>
           <dt>Why</dt>
           <dd>{reason}</dd>
         </div>
       </dl>
+
+      {source?.kind === "folder" && <StaffReaderBox source={source} readers={readers} code={previewedCode} />}
 
       {pending ? (
         <form className="proposal-actions" onSubmit={onSubmit}>
@@ -142,20 +166,32 @@ export function ProposalCard({ proposal, intro, onApprove, onDecline }: Proposal
               <label htmlFor={pathId}>
                 {source.label}: {described.pick}
               </label>
-              <input
-                id={pathId}
-                type="text"
-                value={path}
-                spellCheck={false}
-                autoComplete="off"
-                placeholder={described.placeholder}
-                onChange={(event) => setPath(event.target.value)}
-              />
+              <div className="path-row">
+                <input
+                  id={pathId}
+                  type="text"
+                  value={path}
+                  spellCheck={false}
+                  autoComplete="off"
+                  placeholder={described.placeholder}
+                  onChange={(event) => changePath(event.target.value)}
+                />
+                <button type="button" className="button" disabled={busy !== null || preview.status === "loading"} onClick={() => void runPreview()}>
+                  {preview.status === "loading" ? "Reading…" : "Preview"}
+                </button>
+              </div>
               {source.kind === "ics_file" && trimmed && !looksLikeIcs && <p className="hint warn">That doesn't end in .ics. AiHub reads calendar files.</p>}
             </div>
           )}
+          {source && <PreviewPanel state={preview} />}
+          {gate.reason && (
+            <p className={`callout gate gate-${gate.tone}`}>
+              <Icon name={gate.tone === "done" ? "check" : gate.tone === "blocked" ? "warning" : "lock"} size={16} />
+              <span>{gate.reason}</span>
+            </p>
+          )}
           <div className="button-row">
-            <button type="submit" className="button primary" disabled={busy !== null}>
+            <button type="submit" className="button primary" disabled={busy !== null || !gate.ready} title={gate.ready ? undefined : (gate.reason ?? undefined)}>
               <Icon name="check" />
               {busy === "approve" ? "Approving…" : `Approve ${profile.name}`}
             </button>
@@ -177,5 +213,129 @@ export function ProposalCard({ proposal, intro, onApprove, onDecline }: Proposal
         </p>
       )}
     </article>
+  );
+}
+
+/** A built-in reader in a line: which files it reads and what it makes of each. */
+function BuiltInReaderFact({ source, readers }: { source: ProposedSource; readers: StaffReader[] }) {
+  const info = readerOf(source.reader, readers);
+  if (info?.kind === "staff") return null;
+  return (
+    <div>
+      <dt>Reader</dt>
+      <dd>
+        {info?.kind === "built_in" ? (
+          <>
+            The built-in {info.label.toLowerCase()} reader, for the {patternOf(source, readers)} files in the folder.{" "}
+            <span className="muted">{info.records}</span>
+          </>
+        ) : info ? (
+          <>AiHub has no reader called “{info.name}”.</>
+        ) : (
+          <>None named.</>
+        )}
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * A reader a toolsmith wrote: its name, who wrote it, how far along it is, the toolsmith's notes,
+ * and its code. The code a preview ran comes first, since that is what the operator approves.
+ */
+function StaffReaderBox({ source, readers, code }: { source: ProposedSource; readers: StaffReader[]; code: string | null }) {
+  const info = readerOf(source.reader, readers);
+  if (info?.kind !== "staff") return null;
+  const reader = info.reader;
+  if (!reader) {
+    return (
+      <section className="reader-box" aria-label="Reader">
+        <p className="eyebrow">Reader</p>
+        <p className="muted small">The reader this folder needs, written by staff, is no longer on file.</p>
+      </section>
+    );
+  }
+  const shown = code ?? reader.code;
+  return (
+    <section className="reader-box" aria-label={`The ${reader.name} reader`}>
+      <p className="reader-head">
+        <span>
+          <span className="eyebrow">Reader written by staff</span>
+          <strong className="block">{reader.name}</strong>
+        </span>
+        <span className={`pill reader-status status-${reader.status}`}>{READER_STATUS_LABELS[reader.status]}</span>
+      </p>
+      <p className="small">
+        {reader.authorName ? `${reader.authorName} wrote it` : "A toolsmith wrote it"} for the {patternOf(source, readers)} files in the folder
+        {reader.sampleNames.length > 0 ? `, and tested it on ${reader.sampleNames.join(", ")}` : ""}. It never saw your files.
+      </p>
+      {reader.notes && (
+        <p className="reader-notes small">
+          <span className="eyebrow">{reader.authorName ? `${reader.authorName}'s notes` : "Notes"}</span> {reader.notes}
+        </p>
+      )}
+      {shown ? (
+        <details className="reader-code">
+          <summary>The reader's code</summary>
+          <pre>
+            <code>{shown}</code>
+          </pre>
+        </details>
+      ) : (
+        <p className="muted small">No code handed in yet.</p>
+      )}
+    </section>
+  );
+}
+
+/** What a preview read at the path: the summary and the first records, or why it couldn't. */
+function PreviewPanel({ state }: { state: PreviewState }) {
+  if (state.status === "idle") return null;
+  if (state.status === "loading") {
+    return (
+      <p className="preview-panel muted small" role="status">
+        Reading {state.path}…
+      </p>
+    );
+  }
+  if (state.status === "failed") {
+    return (
+      <p className="preview-panel preview-failed form-error" role="alert">
+        {state.error}
+      </p>
+    );
+  }
+  const rows = previewRows(state.preview.data);
+  return (
+    <section className="preview-panel" aria-label="Preview">
+      <p className="eyebrow">Preview</p>
+      <p className="small" role="status">
+        {state.preview.summary}
+      </p>
+      {rows.length === 0 ? (
+        <p className="muted small">Nothing to show from this path.</p>
+      ) : (
+        <ol className="preview-rows">
+          {rows.map((row) => (
+            <li key={row.key}>
+              <p className="preview-title">
+                <strong>{row.title}</strong>
+                {row.detail && <span className="muted small"> {row.detail}</span>}
+              </p>
+              {row.fields.length > 0 && (
+                <dl className="preview-fields">
+                  {row.fields.map(([name, value]) => (
+                    <div key={name}>
+                      <dt>{name}</dt>
+                      <dd>{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   );
 }

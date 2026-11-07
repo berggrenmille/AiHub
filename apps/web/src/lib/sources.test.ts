@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ProposedSource, SourcePreview, StaffReader } from "@aihub/shared";
-import { approvalGate, describeSource, patternOf, previewRows, readerName, readerOf, showValue, staffReaderId, type PreviewState } from "./sources.ts";
+import { approvalGate, describeSource, patternOf, previewRows, readerName, readerOf, readersInHand, showValue, staffReaderId, type PreviewState } from "./sources.ts";
 
 function staffReader(overrides: Partial<StaffReader> = {}): StaffReader {
   return {
@@ -39,7 +39,7 @@ describe("readers", () => {
 
   it("looks up the reader a source names", () => {
     const readers = [staffReader()];
-    assert.deepEqual(readerOf("csv", readers), { kind: "built_in", name: "csv", label: "CSV", files: "CSV files", pattern: "*.csv" });
+    assert.deepEqual(readerOf("csv", readers), { kind: "built_in", name: "csv", label: "CSV", files: "CSV files", pattern: "*.csv", records: "One record per row." });
     assert.equal(readerOf("staff:r1", readers)?.kind, "staff");
     assert.equal(readerName(readerOf("staff:r1", readers)), "Bank export");
     assert.deepEqual(readerOf("staff:gone", readers), { kind: "staff", id: "gone", reader: null });
@@ -63,6 +63,21 @@ describe("readers", () => {
     assert.equal(describeSource({ ...bank, reader: "staff:gone" }, readers).kind, "folder of *.txt files, read by a reader staff wrote");
     assert.equal(describeSource(calendar, readers).kind, "calendar file");
     assert.match(describeSource(calendar, readers).pick, /\.ics/);
+  });
+
+  it("finds the reader each toolsmith has in hand", () => {
+    const inHand = readersInHand([
+      staffReader({ id: "r3", authorId: "ada", status: "drafting" }),
+      staffReader({ id: "r2", authorId: "ada", status: "proposed" }),
+      staffReader({ id: "r4", authorId: "linus", status: "approved" }),
+      staffReader({ id: "r5", authorId: "grace", status: "failed" }),
+      staffReader({ id: "r6", authorId: null, status: "drafting" }),
+      staffReader({ id: "r7", authorId: "alan", status: "proposed" }),
+    ]);
+    assert.deepEqual([...inHand].map(([author, reader]) => [author, reader.id]), [
+      ["ada", "r3"],
+      ["alan", "r7"],
+    ]);
   });
 });
 

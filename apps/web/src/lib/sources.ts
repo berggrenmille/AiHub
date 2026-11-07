@@ -8,12 +8,15 @@ import type { BuiltInReader, ProposedSource, SourcePreview, StaffReader, StaffRe
 /** How a source names a reader a toolsmith wrote: "staff:<id>". */
 export const STAFF_READER_PREFIX = "staff:";
 
-/** The built-in readers, with the files each reads when the source names no pattern. */
-export const BUILT_IN_READERS: Record<BuiltInReader, { label: string; files: string; pattern: string }> = {
-  markdown: { label: "Markdown", files: "markdown notes", pattern: "*.md" },
-  text: { label: "Plain text", files: "text files", pattern: "*.txt" },
-  csv: { label: "CSV", files: "CSV files", pattern: "*.csv" },
-  json: { label: "JSON", files: "JSON files", pattern: "*.json" },
+/**
+ * The built-in readers: the files each reads when the source names no pattern, as the daemon
+ * defaults them, and what each makes of a file.
+ */
+export const BUILT_IN_READERS: Record<BuiltInReader, { label: string; files: string; pattern: string; records: string }> = {
+  markdown: { label: "Markdown", files: "markdown notes", pattern: "*.md", records: "One record per note, with its frontmatter as fields." },
+  text: { label: "Plain text", files: "text files", pattern: "*.txt", records: "One record per file, titled by its first line." },
+  csv: { label: "CSV", files: "CSV files", pattern: "*.csv", records: "One record per row." },
+  json: { label: "JSON", files: "JSON files", pattern: "*.json", records: "One record per object." },
 };
 
 /** A staff reader's status, in the operator's words. */
@@ -34,7 +37,7 @@ export function staffReaderId(reader: string | null | undefined): string | null 
 }
 
 export type ReaderInfo =
-  | { kind: "built_in"; name: BuiltInReader; label: string; files: string; pattern: string }
+  | { kind: "built_in"; name: BuiltInReader; label: string; files: string; pattern: string; records: string }
   /** A reader a toolsmith wrote. Null when it isn't on file, such as one aged out of the snapshot. */
   | { kind: "staff"; id: string; reader: StaffReader | null }
   /** A name AiHub has no reader for. */
@@ -67,6 +70,20 @@ export function patternOf(source: { pattern?: string | null; reader?: string | n
   return "*";
 }
 
+/**
+ * The reader each toolsmith has in hand, by author: the newest one still being written or handed
+ * in and waiting for the operator. The office shows them at work on it until the operator decides.
+ * Expects readers newest first, as the state keeps them.
+ */
+export function readersInHand(readers: StaffReader[]): Map<string, StaffReader> {
+  const inHand = new Map<string, StaffReader>();
+  for (const reader of readers) {
+    if (!reader.authorId || inHand.has(reader.authorId)) continue;
+    if (reader.status === "drafting" || reader.status === "proposed") inHand.set(reader.authorId, reader);
+  }
+  return inHand;
+}
+
 /** What a proposal card says about a source, and what it asks the operator to pick. */
 export function describeSource(source: ProposedSource, readers: StaffReader[]): { kind: string; pick: string; placeholder: string } {
   if (source.kind === "folder") {
@@ -78,7 +95,7 @@ export function describeSource(source: ProposedSource, readers: StaffReader[]): 
         : info?.kind === "staff"
           ? `folder of ${pattern} files, read by ${info.reader ? `the ${info.reader.name} reader` : "a reader staff wrote"}`
           : `folder of ${pattern} files`;
-    return { kind, pick: "path to the folder on this PC", placeholder: "C:\\Users\\you\\Documents\\Reading list" };
+    return { kind, pick: "path to the folder on this PC", placeholder: `C:\\Users\\you\\Documents\\${source.label}` };
   }
   return { kind: "calendar file", pick: "path to the .ics file on this PC", placeholder: "C:\\Users\\you\\Documents\\calendar.ics" };
 }

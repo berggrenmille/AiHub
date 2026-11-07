@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import type { Agent, ChatMessage, Conversation, Proposal, Run } from "@aihub/shared";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from "react";
+import type { Agent, ChatMessage, Conversation, Proposal, Run, SourcePreview, StaffReader } from "@aihub/shared";
 import { errorText } from "../api.ts";
 import { lookFor } from "../lib/avatar.ts";
 import { formatClock, formatDateTime, formatLongDate, STATE_LABELS, toneOf } from "../format.ts";
@@ -17,12 +17,21 @@ const FOLLOW_SLACK = 48;
 
 interface ChatDrawerProps {
   agent: Agent;
+  /** False once the staff member has left the office: the history stays, and the chat is closed. */
+  present: boolean;
   conversation: Conversation;
   messages: ChatMessage[];
   runs: Record<string, Run>;
   streaming: StreamingReply[];
   proposals: Proposal[];
+  readers: StaffReader[];
+  /** What the staff member answers from, for anyone but the Chief of Staff. */
+  scope: string | null;
+  /** The way back to the Chief of Staff's chat, while someone else's is open. */
+  back: { name: string; unread: number } | null;
+  onBack(): void;
   onSend(text: string): Promise<void>;
+  onPreview(proposalId: string, sourcePath: string): Promise<SourcePreview>;
   onApprove(proposalId: string, sourcePath?: string): Promise<void>;
   onDecline(proposalId: string): Promise<void>;
   onClose(): void;
@@ -32,13 +41,14 @@ interface ChatDrawerProps {
 }
 
 export function ChatDrawer(props: ChatDrawerProps) {
-  const { agent, conversation, messages, runs, streaming, onSend } = props;
+  const { agent, present, conversation, messages, runs, streaming, onSend, back } = props;
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   // Follow new messages unless the operator has scrolled up to read earlier ones.
   const following = useRef(true);
+  const look = lookFor(agent.avatar);
 
   useEffect(() => inputRef.current?.focus(), []);
 
@@ -90,30 +100,50 @@ export function ChatDrawer(props: ChatDrawerProps) {
 
   const inputId = `chat-input-${conversation.id}`;
   const hintId = `chat-hint-${conversation.id}`;
-  const titleId = `chat-title-${conversation.id}`;
+  // The chief's chat is titled after the role, which the subtitle already says.
+  const subtitle = [agent.title, conversation.title].filter((part, index, parts) => part && part !== agent.name && parts.indexOf(part) === index).join(" · ");
 
   return (
-    <aside className="drawer chat-drawer" aria-labelledby={titleId}>
-      <header className="drawer-head">
-        <button type="button" className="drawer-avatar" onClick={props.onOpenProfile} title={`Open ${agent.name}'s profile`}>
-          <Portrait look={lookFor(agent.avatar)} size={40} />
-          <span className="visually-hidden">Open {agent.name}'s profile</span>
+    <aside className={`drawer chat-drawer${back ? " chat-elsewhere" : ""}`} aria-label={`Chat with ${agent.name}`} style={{ "--chat-accent": look.accent } as CSSProperties}>
+      {back && (
+        <button type="button" className="chat-back" onClick={props.onBack}>
+          <Icon name="back" size={16} />
+          <span>Back to {back.name}'s chat</span>
+          {back.unread > 0 && (
+            <span className="count-badge" aria-label={`${back.unread} unread`}>
+              {back.unread}
+            </span>
+          )}
         </button>
+      )}
+      <header className="drawer-head chat-head">
+        {present ? (
+          <button type="button" className="drawer-avatar" onClick={props.onOpenProfile} title={`Open ${agent.name}'s profile`}>
+            <Portrait look={look} size={40} />
+            <span className="visually-hidden">Open {agent.name}'s profile</span>
+          </button>
+        ) : (
+          <span className="drawer-avatar">
+            <Portrait look={look} size={40} animated={false} label={agent.name} />
+          </span>
+        )}
         <div className="drawer-title">
-          <h2 id={titleId}>{agent.name}</h2>
-          <p className="muted small">
-            {conversation.title && conversation.title !== agent.name ? `${agent.title} · ${conversation.title}` : agent.title}
-          </p>
+          <p className="eyebrow">Your chat with</p>
+          <h2>{agent.name}</h2>
+          {subtitle && <p className="muted small">{subtitle}</p>}
         </div>
-        <StateBadge state={agent.state} />
+        {present ? <StateBadge state={agent.state} /> : <span className="pill">Left the office</span>}
         <button type="button" className="icon-button" onClick={props.onClose} title="Close the chat">
           <Icon name="close" />
           <span className="visually-hidden">Close the chat</span>
         </button>
       </header>
+      {props.scope && present && <p className="chat-scope">{props.scope}</p>}
 
       <div className="drawer-body chat-scroll" ref={scrollRef} onScroll={onScroll}>
-        {messages.length === 0 && streaming.length === 0 && <p className="empty">No messages yet. Ask {agent.name} anything.</p>}
+        {messages.length === 0 && streaming.length === 0 && (
+          <p className="empty">{present ? `No messages yet. Ask ${agent.name} anything.` : `You and ${agent.name} never talked.`}</p>
+        )}
         <ol className="messages" aria-label={`Messages with ${agent.name}`}>
           {messages.map((message) => (
             <MessageView
@@ -122,6 +152,8 @@ export function ChatDrawer(props: ChatDrawerProps) {
               agentName={agent.name}
               run={message.runId ? runs[message.runId] : undefined}
               proposal={message.kind === "proposal" ? props.proposals.find((proposal) => proposal.id === message.refId) : undefined}
+              readers={props.readers}
+              onPreview={props.onPreview}
               onApprove={props.onApprove}
               onDecline={props.onDecline}
               resolveLink={props.resolveLink}
@@ -142,34 +174,43 @@ export function ChatDrawer(props: ChatDrawerProps) {
         </div>
       </div>
 
-      <form className="composer" onSubmit={onSubmit}>
-        <label className="visually-hidden" htmlFor={inputId}>
-          Message {agent.name}
-        </label>
-        <textarea
-          id={inputId}
-          ref={inputRef}
-          rows={2}
-          value={draft}
-          maxLength={MAX_LENGTH}
-          placeholder={`Message ${agent.name}`}
-          aria-describedby={hintId}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={onKeyDown}
-        />
-        <button type="submit" className="send" disabled={draft.trim() === ""} title="Send">
-          <Icon name="send" />
-          <span className="visually-hidden">Send</span>
-        </button>
-        <p className="hint" id={hintId}>
-          Enter sends. Shift+Enter adds a line.
-        </p>
-        {error && (
-          <p className="form-error" role="alert">
-            {error}
+      {present ? (
+        <form className="composer" onSubmit={onSubmit}>
+          <label className="visually-hidden" htmlFor={inputId}>
+            Message {agent.name}
+          </label>
+          <textarea
+            id={inputId}
+            ref={inputRef}
+            rows={2}
+            value={draft}
+            maxLength={MAX_LENGTH}
+            placeholder={`Message ${agent.name}`}
+            aria-describedby={hintId}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={onKeyDown}
+          />
+          <button type="submit" className="send" disabled={draft.trim() === ""} title="Send">
+            <Icon name="send" />
+            <span className="visually-hidden">Send</span>
+          </button>
+          <p className="hint" id={hintId}>
+            Enter sends. Shift+Enter adds a line.
           </p>
-        )}
-      </form>
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+        </form>
+      ) : (
+        <p className="chat-closed" role="status">
+          <Icon name="lock" size={16} />
+          <span>
+            {agent.name} has left the office, so the chat is closed. You can still read it.
+          </span>
+        </p>
+      )}
     </aside>
   );
 }
@@ -179,13 +220,15 @@ interface MessageViewProps {
   agentName: string;
   run: Run | undefined;
   proposal: Proposal | undefined;
+  readers: StaffReader[];
+  onPreview(proposalId: string, sourcePath: string): Promise<SourcePreview>;
   onApprove(proposalId: string, sourcePath?: string): Promise<void>;
   onDecline(proposalId: string): Promise<void>;
   resolveLink(target: string): WikilinkTarget;
   onOpenLink(target: string): void;
 }
 
-function MessageView({ message, agentName, run, proposal, onApprove, onDecline, resolveLink, onOpenLink }: MessageViewProps) {
+function MessageView({ message, agentName, run, proposal, readers, onPreview, onApprove, onDecline, resolveLink, onOpenLink }: MessageViewProps) {
   const time = (
     <time dateTime={message.createdAt} title={formatDateTime(message.createdAt)}>
       {formatClock(message.createdAt)}
@@ -209,6 +252,8 @@ function MessageView({ message, agentName, run, proposal, onApprove, onDecline, 
         <ProposalCard
           proposal={proposal}
           intro={message.body}
+          readers={readers}
+          onPreview={(sourcePath) => onPreview(message.refId ?? "", sourcePath)}
           onApprove={(sourcePath) => onApprove(message.refId ?? "", sourcePath)}
           onDecline={() => onDecline(message.refId ?? "")}
         />

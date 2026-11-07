@@ -31,7 +31,7 @@ const SCREENS: Record<Presence, string> = {
 };
 
 /** A cue beside the run-state badge for what an assignment has someone doing. */
-export type Cue = "answering" | "waiting_on_team" | null;
+export type Cue = "answering" | "waiting_on_team" | "toolsmith" | null;
 
 interface WorkstationProps {
   look: Look;
@@ -169,6 +169,16 @@ function CueBadge({ cue }: { cue: Cue }) {
             <path d="M31 13.5 h10 M31 26.5 h10 M32.5 13.5 c0 3.5 3 4.5 3 6.5 s-3 3 -3 6.5 M39.5 13.5 c0 3.5 -3 4.5 -3 6.5 s3 3 3 6.5" stroke="#fff" strokeWidth={1.6} fill="none" strokeLinecap="round" />
             <path d="M33.8 25.4 q2.2 -2.6 4.4 0 z" fill="#fff" />
           </g>
+        </g>
+      );
+    case "toolsmith":
+      // A wrench: a toolsmith writing a reader.
+      return (
+        <g className="art-badge art-badge-bob cue-toolsmith">
+          <circle cx={36} cy={20} r={11} fill="#0d9488" stroke="#fff" strokeWidth={1.5} />
+          <path d="M30.6 25.4 L37.2 18.8" stroke="#fff" strokeWidth={3} strokeLinecap="round" />
+          <circle cx={39.4} cy={16.6} r={4.2} fill="#fff" />
+          <path d="M40.4 15.6 L43.4 12.6" stroke="#0d9488" strokeWidth={2.4} strokeLinecap="round" />
         </g>
       );
     default:

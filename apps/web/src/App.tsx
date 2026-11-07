@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Agent } from "@aihub/shared";
 import { ActivityLog, ActivityTicker, Toasts } from "./components/Activity.tsx";
 import { AssignmentsDrawer } from "./components/Assignments.tsx";
 import { ChatDrawer } from "./components/ChatDrawer.tsx";
@@ -9,6 +10,7 @@ import { OfficeFloor } from "./components/office/OfficeFloor.tsx";
 import { ProfileCard } from "./components/ProfileCard.tsx";
 import { Roster } from "./components/Roster.tsx";
 import { nameOf, openAssignmentCount } from "./lib/assignments.ts";
+import { chatPartner, chatScope, shownConversation } from "./lib/chat.ts";
 import { openCount } from "./lib/inbox.ts";
 import { resolveWikilink } from "./lib/notes.ts";
 import { rosterOrder } from "./state.ts";
@@ -22,6 +24,8 @@ export function App() {
   const now = useNow(1000);
   const [view, setView] = useState<View>("office");
   const [drawer, setDrawer] = useState<Drawer>(null);
+  // The chat the drawer shows. Null shows the Chief of Staff's.
+  const [chatId, setChatId] = useState<string | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
   const [rosterOpen, setRosterOpen] = useState(() => window.innerWidth >= 1400);
   const [notePath, setNotePath] = useState<string | null>(null);
@@ -32,12 +36,15 @@ export function App() {
   const roster = useMemo(() => rosterOrder(state.agents), [state.agents]);
   const chief = state.agents.find((agent) => agent.role === "chief_of_staff") ?? null;
   const chiefChat = chief ? (state.conversations.find((conversation) => conversation.agentId === chief.id) ?? null) : null;
-  const chatMessages = chiefChat ? (state.messages[chiefChat.id] ?? []) : [];
-  const streaming = useMemo(
-    () => Object.values(state.streaming).filter((reply) => reply.conversationId === chiefChat?.id),
-    [state.streaming, chiefChat?.id],
-  );
-  const unread = useUnread(chiefChat?.id ?? null, chatMessages, drawer === "chat");
+  const chat = shownConversation(state.conversations, chief?.id ?? null, chatId);
+  const lastSeen = useLastSeen(state.agents);
+  const partner = chat ? chatPartner(chat, state.agents, lastSeen) : null;
+  const chatMessages = chat ? (state.messages[chat.id] ?? []) : [];
+  // Replies stream into whichever chat is open.
+  const streaming = useMemo(() => Object.values(state.streaming).filter((reply) => reply.conversationId === chat?.id), [state.streaming, chat?.id]);
+  const chiefOpen = drawer === "chat" && chat !== null && chat.id === chiefChat?.id;
+  // The unread badge counts the Chief of Staff's chat, where briefings and proposals arrive.
+  const unread = useUnread(chiefChat?.id ?? null, chiefChat ? (state.messages[chiefChat.id] ?? []) : [], chiefOpen);
   const inbox = useMemo(() => openCount(state.items), [state.items]);
   const openAssignments = useMemo(() => openAssignmentCount(state.assignments), [state.assignments]);
   const profile = state.agents.find((agent) => agent.id === profileId) ?? null;
@@ -55,8 +62,24 @@ export function App() {
     setView("notes");
   }, []);
 
-  // Wikilinks in chat resolve as the Chief of Staff would: its folder, then Office, then anyone's.
-  const chatLinkFrom = useMemo(() => ({ ownerId: chief?.id ?? null }), [chief?.id]);
+  const openChiefChat = useCallback(() => {
+    setChatId(null);
+    setDrawer("chat");
+  }, []);
+
+  /** Opens the operator's chat with anyone on staff, starting it if there is none yet. */
+  const openChatWith = useCallback(
+    async (agentId: string) => {
+      const conversation = state.conversations.find((candidate) => candidate.agentId === agentId) ?? (await commands.openChat(agentId));
+      setChatId(conversation.id);
+      setProfileId(null);
+      setDrawer("chat");
+    },
+    [state.conversations, commands],
+  );
+
+  // Wikilinks in chat resolve as the staff member would: its folder, then Office, then anyone's.
+  const chatLinkFrom = useMemo(() => ({ ownerId: partner?.agent.id ?? chief?.id ?? null }), [partner?.agent.id, chief?.id]);
   const resolveChatLink = useCallback(
     (target: string) => {
       const found = resolveWikilink(target, chatLinkFrom, state.notes);
@@ -121,12 +144,13 @@ export function App() {
         unread={unread}
         assignments={openAssignments}
         assignmentsOpen={drawer === "assignments"}
-        chatOpen={drawer === "chat"}
+        chatOpen={chiefOpen}
         rosterOpen={rosterOpen}
         theme={theme}
         now={now}
         onToggleAssignments={() => setDrawer((current) => (current === "assignments" ? null : "assignments"))}
-        onToggleChat={() => setDrawer((current) => (current === "chat" ? null : "chat"))}
+        // The HUD's chat is the Chief of Staff's; with another chat open, it switches to it.
+        onToggleChat={() => (chiefOpen ? setDrawer(null) : openChiefChat())}
         onToggleRoster={() => setRosterOpen((open) => !open)}
         onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
       />
@@ -146,7 +170,7 @@ export function App() {
               state={state}
               now={now}
               onSelectAgent={setProfileId}
-              onOpenChat={() => setDrawer("chat")}
+              onOpenChat={openChiefChat}
               onOpenInbox={(responsibilityId) => {
                 setInboxFocus(responsibilityId ?? null);
                 setView("inbox");
@@ -181,20 +205,26 @@ export function App() {
         </main>
 
         {drawer === "chat" &&
-          (chief && chiefChat ? (
+          (chat && partner ? (
             <ChatDrawer
-              key={chiefChat.id}
-              agent={chief}
-              conversation={chiefChat}
+              key={chat.id}
+              agent={partner.agent}
+              present={partner.present}
+              conversation={chat}
               messages={chatMessages}
               runs={state.runs}
               streaming={streaming}
               proposals={state.proposals}
-              onSend={(text) => commands.send(chiefChat.id, text)}
+              readers={state.readers}
+              scope={chatScope(partner.agent)}
+              back={chief && chiefChat && chat.id !== chiefChat.id ? { name: chief.name, unread } : null}
+              onBack={openChiefChat}
+              onSend={(text) => commands.send(chat.id, text)}
+              onPreview={commands.preview}
               onApprove={commands.approve}
               onDecline={commands.decline}
               onClose={() => setDrawer(null)}
-              onOpenProfile={() => setProfileId(chief.id)}
+              onOpenProfile={() => setProfileId(partner.agent.id)}
               resolveLink={resolveChatLink}
               onOpenLink={openChatLink}
             />
@@ -223,14 +253,11 @@ export function App() {
           activity={state.activity}
           assignments={state.assignments}
           notes={state.notes}
-          hasChat={state.conversations.some((conversation) => conversation.agentId === profile.id)}
+          readers={state.readers}
           now={now}
           onClose={() => setProfileId(null)}
           onSelectAgent={setProfileId}
-          onOpenChat={() => {
-            setProfileId(null);
-            setDrawer("chat");
-          }}
+          onOpenChat={() => openChatWith(profile.id)}
           onOpenNote={openNote}
           onUpdate={(changes) => commands.updateAgent(profile.id, changes)}
           onRunRoutine={commands.runRoutine}
@@ -270,6 +297,16 @@ function useTheme(): [Theme, (theme: Theme) => void] {
     }
   }, [theme]);
   return [theme, setTheme];
+}
+
+/**
+ * Every staff member as last seen on the roster. Someone who leaves drops off it, but a chat open
+ * with them still shows who they were.
+ */
+function useLastSeen(agents: Agent[]): ReadonlyMap<string, Agent> {
+  const seen = useRef(new Map<string, Agent>());
+  for (const agent of agents) seen.current.set(agent.id, agent);
+  return seen.current;
 }
 
 /** Agent messages the operator hasn't seen with the chat open, remembered in this browser. */
