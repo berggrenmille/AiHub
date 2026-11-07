@@ -37,8 +37,9 @@ export const demo: Responder = async (input, options) => {
     const outcome = await options.onToolCall({ name: "aihub_submit_report", arguments: { summary: `${records.length} records, ${items.length} overlaps.`, items } });
     return { status: "completed", text: outcome.text, error: null, usage: { inputTokens: 900, cachedInputTokens: 0, outputTokens: 30 } };
   }
-  let text = `This is the fake runtime, so nobody is thinking. You said: “${input}”`;
-  if (/tool/i.test(input)) {
+  const delegated = await delegate(input, options);
+  let text = delegated ?? `This is the fake runtime, so nobody is thinking. You said: “${input}”`;
+  if (delegated === null && /tool/i.test(input)) {
     const outcome = await options.onToolCall({ name: "aihub_get_roster", arguments: {} });
     text += `
 
@@ -50,6 +51,62 @@ The roster tool returned: ${outcome.text}`;
   }
   return { status: "completed", text, error: null, usage: { inputTokens: 1200, cachedInputTokens: 800, outputTokens: 40 } };
 };
+
+const HELPER_NAMES = ["Pip", "Juno", "Otto", "Wren"];
+
+/**
+ * Delegation for the fake office, so the UI shows it without Codex. In chat, "ask Elin when …" asks
+ * a colleague and "give Elin a task: …" assigns one; mention a helper and the supervisor recruits a
+ * worker, and accepts its work in the follow-up. Returns null when the input calls for none of it.
+ */
+async function delegate(input: string, options: RunTurnOptions): Promise<string | null> {
+  const call = (name: string, args: object) => options.onToolCall({ name, arguments: args });
+  const between = (marker: string) => new RegExp(`BEGIN ${marker} DATA\\n([\\s\\S]*?)\\nEND ${marker} DATA`).exec(input)?.[1] ?? "";
+
+  // A chat follow-up: pass on what came back.
+  const back = between("ANSWER") || between("DELIVERABLE");
+  if (back) return `Here's what came back: ${back.split("\n")[0]}`;
+  // Answering a colleague.
+  // Answers and work take a few seconds, so the office has time to show the visit or the worker.
+  const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  if (input.includes("asks you a question")) {
+    await pause(4_000);
+    return `Nothing in my records stands in the way of that. (A fake answer to “${between("QUESTION").slice(0, 80)}”.)`;
+  }
+  // A task: a supervisor asked for a helper recruits one; anyone else, workers included, does the work.
+  if (input.includes("hands you a task")) {
+    const task = between("TASK");
+    const fromChief = input.includes("(Chief of Staff) hands you a task");
+    if (fromChief && /helper|worker/i.test(task)) {
+      for (const name of HELPER_NAMES) {
+        const recruit = { name, title: "Helper", description: "Goes through the records for one task.", taskTitle: "Go through the records", task };
+        // Share the work calendar when the supervisor has it; recruit without a source otherwise.
+        const hired = (await call("aihub_recruit_worker", { ...recruit, sources: ["Work calendar"] })).ok || (await call("aihub_recruit_worker", recruit)).ok;
+        if (hired) return `${name} is on it.`;
+      }
+    }
+    await pause(fromChief ? 2_000 : 8_000);
+    return `Done: ${task.split("\n")[0]?.slice(0, 120)} (A fake deliverable.)`;
+  }
+  // Following up a task: accept every worker's work, then deliver.
+  if (input.includes("BEGIN RESULT DATA")) {
+    for (const [, worker] of input.matchAll(/^(\w+)'s work on "/gm)) await call("aihub_review_work", { worker, verdict: "accept" });
+    return "Checked the team's work. (A fake deliverable.)";
+  }
+  // The operator's request in chat.
+  const message = input.includes("The operator's new message:\n") ? input.split("The operator's new message:\n").at(-1)! : input.slice(input.lastIndexOf("\n\n") + 1).trim();
+  const ask = /\bask (\w+)\b/i.exec(message);
+  if (ask) {
+    const outcome = await call("aihub_ask_colleague", { colleague: ask[1], question: message });
+    return outcome.ok ? `I've asked ${ask[1]}.` : outcome.text;
+  }
+  const assign = /\b(?:give|assign) (\w+) a task\b/i.exec(message);
+  if (assign) {
+    const outcome = await call("aihub_assign_task", { colleague: assign[1], title: "A task from the operator", deliverable: message });
+    return outcome.ok ? `${assign[1]} is on it.` : outcome.text;
+  }
+  return null;
+}
 
 /** An in-process AgentRuntime for tests and UI work. Records every call it receives. */
 export class FakeRuntime implements AgentRuntime {

@@ -47,6 +47,14 @@ Ask the Chief of Staff in chat to look after something, such as your work calend
 
 `npm run dev:fake` opens a furnished sample office with the same flow, reading `apps/daemon/test/fixtures/work.ics`.
 
+## Teams and delegation
+
+The Chief of Staff can ask a supervisor a question or hand one a task. Her turn ends there, the supervisor works in a run of its own, and she brings you the answer in a new message in the same chat. A supervisor working on a task can ask a colleague, or recruit a worker for one bounded part and share some of its own sources with it. The supervisor accepts the worker's result or sends it back once with feedback, and then the worker leaves the office with its access revoked. Its notes stay. The Assignments button in the top bar shows who works on what, nested by task.
+
+Caps keep this bounded: 3 open questions per staff member, 4 open tasks, 2 workers per supervisor, a run budget per task, and the daily turn limit. A run that answers a question or follows up results can't delegate again, so nothing loops.
+
+In the fake office, try "ask Oskar whether …" or "give Elin a task with a helper: …" in the Chief of Staff's chat.
+
 ## Staff notes
 
 Staff keep their notes in a vault of markdown files at `data/vault/`, one folder per staff member under `Staff/` plus a shared `Office/` folder. Open the folder in Obsidian to browse the notes and their graph, or point `AIHUB_VAULT_DIR` at a folder inside an existing vault. AiHub picks up notes you edit there. Profile notes follow each staff card, so edit profiles in AiHub instead.
