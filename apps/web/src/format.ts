@@ -56,6 +56,8 @@ const ACTIVITY_TONES: Record<ActivityKind, Tone> = {
   responsibility_ended: "done",
   briefing: "done",
   health: "failed",
+  assignment: "working",
+  worker: "waiting",
 };
 
 export function activityTone(kind: ActivityKind): Tone {
@@ -132,4 +134,7 @@ export const RUN_KIND_LABELS: Record<RunKind, string> = {
   chat: "Chat",
   briefing: "Briefing",
   report: "Report",
+  question: "Question",
+  assignment: "Task",
+  follow_up: "Follow-up",
 };

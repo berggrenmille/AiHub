@@ -30,6 +30,7 @@ function run(id: string, overrides: Partial<Run> = {}): Run {
     id,
     agentId: "chief",
     responsibilityId: null,
+    assignmentId: null,
     kind: "chat",
     title: "Reply in chat",
     state: "queued",

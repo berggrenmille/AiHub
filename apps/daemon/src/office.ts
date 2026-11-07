@@ -173,6 +173,7 @@ export class Office {
       routines: this.store.listRoutines().map((routine) => ({ ...routine, nextRunAt: this.scheduler?.nextRunAt(routine) ?? null })),
       proposals: this.store.listProposals(),
       items: this.store.listItems(),
+      assignments: [],
       notes: this.notebook.list(),
       office: this.officeStats(),
       runtime: this.runtimeStatus,

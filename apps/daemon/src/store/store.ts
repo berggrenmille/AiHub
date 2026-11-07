@@ -732,6 +732,7 @@ function toRun(row: Row): Run {
     id: String(row.id),
     agentId: String(row.agent_id),
     responsibilityId: row.responsibility_id as string | null,
+    assignmentId: (row.assignment_id as string | null | undefined) ?? null,
     kind: row.kind as RunKind,
     title: String(row.title),
     state: row.state as RunState,

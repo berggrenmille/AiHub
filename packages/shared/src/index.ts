@@ -59,13 +59,20 @@ export interface Usage {
   outputTokens: number;
 }
 
-export type RunKind = "chat" | "briefing" | "report";
+/**
+ * What a run is for. chat: a conversation turn. briefing and report: the morning briefing and a
+ * supervisor's section of it. question: answering a colleague. assignment: working on a task.
+ * follow_up: the requester resuming once what it asked for has arrived.
+ */
+export type RunKind = "chat" | "briefing" | "report" | "question" | "assignment" | "follow_up";
 
 export interface Run {
   id: string;
   agentId: string;
   /** The responsibility the run works under. Its expiry applies to every tool call. */
   responsibilityId: string | null;
+  /** The assignment the run works on or follows up, for question, assignment, and follow-up runs. */
+  assignmentId: string | null;
   kind: RunKind;
   title: string;
   state: RunState;
@@ -115,7 +122,9 @@ export type ActivityKind =
   | "item"
   | "responsibility_ended"
   | "briefing"
-  | "health";
+  | "health"
+  | "assignment"
+  | "worker";
 
 export interface ActivityEntry {
   id: number;
@@ -124,6 +133,43 @@ export interface ActivityEntry {
   runId: string | null;
   kind: ActivityKind;
   summary: string;
+}
+
+/** A question to a colleague, or bounded work handed to one (DESIGN.md › Recruitment and delegation). */
+export type AssignmentKind = "question" | "task";
+
+/**
+ * open: the owner is on it. waiting: the owner handed parts to others and waits for them.
+ * delivered: the result is in. accepted: the requester reviewed a worker's result and took it.
+ * failed: a run failed or the run budget ran out.
+ */
+export type AssignmentStatus = "open" | "waiting" | "delivered" | "accepted" | "failed";
+
+export interface Assignment {
+  id: string;
+  kind: AssignmentKind;
+  requesterId: string;
+  /** Kept on the record, so it reads well after a worker has left. */
+  requesterName: string;
+  ownerId: string;
+  ownerName: string;
+  /** The assignment this one serves, such as the supervisor's task a worker helps with. */
+  parentId: string | null;
+  /** The chat the requester continues in when the result arrives, for one asked from a chat. */
+  conversationId: string | null;
+  title: string;
+  /** The question or the deliverable, in the requester's words. */
+  brief: string;
+  status: AssignmentStatus;
+  /** Most runs it may use: the owner's runs plus follow-ups. */
+  runBudget: number;
+  runsUsed: number;
+  /** The answer or the deliverable, once delivered. */
+  result: string | null;
+  /** The requester's review of a worker's result: what to revise, or a note on acceptance. */
+  review: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** An ongoing or time-bounded outcome. One with an expiry is a mandate (DESIGN.md › Autonomy and knowledge). */
@@ -273,6 +319,8 @@ export interface StateSnapshot {
   proposals: Proposal[];
   /** New and open items, then recently resolved or dismissed ones. */
   items: Item[];
+  /** Open and waiting assignments, then the most recent settled ones, newest first. */
+  assignments: Assignment[];
   notes: NoteSummary[];
   office: OfficeStats;
   runtime: RuntimeStatus | null;
@@ -295,6 +343,9 @@ export type DaemonEvent =
   | { type: "item"; item: Item }
   | { type: "note"; note: NoteSummary }
   | { type: "office"; office: OfficeStats }
+  | { type: "assignment"; assignment: Assignment }
+  /** A staff member left the office, such as a worker whose task is accepted. Its records stay. */
+  | { type: "agent_left"; agentId: string }
   /** The stream can't catch up from the client's last event. Reload `/api/state`, then reconnect. */
   | { type: "resync" };
 
