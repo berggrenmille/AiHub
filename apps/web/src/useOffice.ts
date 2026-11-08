@@ -49,7 +49,7 @@ export interface OfficeCommands {
   preview(proposalId: string, sourcePath: string): Promise<SourcePreview>;
   approve(proposalId: string, sourcePath?: string): Promise<void>;
   decline(proposalId: string): Promise<void>;
-  dismiss(itemId: number): Promise<void>;
+  dismiss(itemId: number, note?: string): Promise<void>;
   resolve(itemId: number, note?: string): Promise<void>;
   runRoutine(routineId: string): Promise<void>;
   saveNote(path: string, body: string): Promise<void>;
@@ -110,7 +110,7 @@ export function useOffice() {
       approve: async (proposalId, sourcePath) =>
         apply({ type: "proposal", proposal: await approveProposal(proposalId, sourcePath ? { sourcePath } : {}) }),
       decline: async (proposalId) => apply({ type: "proposal", proposal: await declineProposal(proposalId) }),
-      dismiss: async (itemId) => apply({ type: "item", item: await dismissItem(itemId) }),
+      dismiss: async (itemId, note) => apply({ type: "item", item: await dismissItem(itemId, note ? { note } : {}) }),
       resolve: async (itemId, note) => apply({ type: "item", item: await resolveItem(itemId, note ? { note } : {}) }),
       runRoutine: async (routineId) => {
         await runRoutine(routineId);

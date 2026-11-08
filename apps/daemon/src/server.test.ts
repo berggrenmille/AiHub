@@ -387,6 +387,10 @@ describe("HTTP server: decisions", () => {
     assert.deepEqual([resolved.json().state, resolved.json().resolution], ["resolved", "Found it"]);
     assert.equal((await post(`/api/items/${item.id}/dismiss`)).statusCode, 409);
     assert.equal((await post("/api/items/999/dismiss")).statusCode, 404);
+    const other = store.upsertItem({ responsibilityId: responsibility.id, sourceKey: "r-2", sourceVersion: "v1", title: "Old invoice", detail: "", urgency: "fyi", expiresAt: null }).item;
+    assert.equal((await post(`/api/items/${other.id}/dismiss`, { note: 42 })).statusCode, 400);
+    const dismissed = await post(`/api/items/${other.id}/dismiss`, { note: " Paid last year " });
+    assert.deepEqual([dismissed.json().state, dismissed.json().resolution], ["dismissed", "Paid last year"]);
 
     assert.equal((await post(`/api/responsibilities/${responsibility.id}/end`)).json().status, "ended");
     assert.equal((await post(`/api/responsibilities/${responsibility.id}/end`)).statusCode, 409);

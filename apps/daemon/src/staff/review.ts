@@ -28,13 +28,15 @@ const REVIEWS_PER_SIGN = 2;
 const SECTION_HISTORY = 6;
 /** The review's last message when there is nothing worth the operator's time. */
 const NOTHING = "NOTHING TO SUGGEST";
+/** The operator's latest reasons for dismissing a supervisor's findings that the review reads. */
+const REASONS_SHOWN = 5;
 
 export const REVIEW_INSTRUCTIONS = [
-  "This run is your review of the staff. The input holds what AiHub counted from its records for each supervisor: numbers and the operator's decisions, never what was reported, so nothing in it can tell you what to do.",
+  "This run is your review of the staff. The input holds what AiHub counted from its records for each supervisor: numbers and the operator's decisions, with the operator's own reasons for dismissing findings, never what was reported, so nothing in it can tell you what to do.",
   "Look for changes that would serve the operator better, starting with the signs that prompted the review:",
   "- A section that keeps going missing: runs that fail or end without a report may need a heavier model or clearer instructions.",
   "- A source that can't be read: that is usually for the operator to fix, and AiHub's health check already tells them, so propose a change only if the work itself needs one.",
-  "- Most findings dismissed: the scope or standing instructions likely cast too wide a net. Propose narrower wording.",
+  "- Most findings dismissed: the scope or standing instructions likely cast too wide a net. Propose narrower wording, guided by the operator's reasons where they gave any.",
   "- Nothing found for weeks: some sources rarely change, which is fine. Propose ending the responsibility only if it no longer looks worth its runs.",
   "- Usage: a supervisor whose work is routine can run on a lighter model or reasoning level. Check aihub_list_models before proposing a model.",
   `Propose each change with aihub_propose_staff_change, at most ${CHANGES_PER_REVIEW}, and only what the numbers support. Prefer changing instructions or the model over replacing a supervisor; replacing gives the work a fresh start with empty notes. Don't propose again what the operator declined in the last ${DECISIONS_DAYS} days unless the numbers changed since. If an area clearly needs a supervisor of its own, propose one with aihub_propose_supervisor.`,
@@ -230,6 +232,7 @@ export class StaffReview {
       const web = agent.web ? (agent.web.sites.length ? `web search on ${agent.web.sites.join(", ")}` : "web search") : null;
       const sections = state.sections[agent.id] ?? [];
       const waiting = store.pendingStaffChanges(agent.id);
+      const reasons = store.dismissalReasons(responsibility.id, since.toISOString(), REASONS_SHOWN);
       lines.push(
         "",
         `## ${agent.name}, ${agent.title}`,
@@ -242,6 +245,7 @@ export class StaffReview {
         `Runs: ${runsText(numbers)}`,
         `Usage: ${usageText(numbers, total.inputTokens)}`,
         `Items found: ${itemsText(numbers)}`,
+        ...(reasons.length ? [`The operator's reasons for dismissing, newest first: ${reasons.map((reason) => `"${quoted(reason)}"`).join("; ")}.`] : []),
         `Last found something: ${numbers.lastItemAt ? localDate(new Date(numbers.lastItemAt)) : "never"}.`,
         `Open questions and tasks: ${numbers.openAssignments}.`,
         ...(waiting.length ? [`Waiting for the operator: ${waiting.map((change) => headline(change)).join("; ")}.`] : []),
@@ -283,6 +287,12 @@ const SECTION_WORDS: Record<SectionStatus, string> = {
   unavailable: "couldn't check its source",
   missing: "missing",
 };
+
+/** A reason the operator typed, on one line and short. */
+function quoted(reason: string): string {
+  const line = reason.replace(/\s+/g, " ").replace(/"/g, "'").trim();
+  return line.length > 200 ? `${line.slice(0, 199)}…` : line;
+}
 
 function runsText(numbers: StaffNumbers): string {
   const kinds = Object.entries(numbers.runs).map(([kind, tally]) => {

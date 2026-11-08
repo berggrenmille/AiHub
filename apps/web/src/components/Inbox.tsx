@@ -17,7 +17,7 @@ interface InboxProps {
   now: number;
   /** A responsibility to scroll to and highlight, such as from a pod sign. */
   focus: string | null;
-  onDismiss(itemId: number): Promise<void>;
+  onDismiss(itemId: number, note?: string): Promise<void>;
   onResolve(itemId: number, note?: string): Promise<void>;
   onSelectAgent(agentId: string): void;
 }
@@ -131,8 +131,24 @@ export function Inbox({ items, responsibilities, agents, now, focus, onDismiss, 
   );
 }
 
-function ItemCard({ item, now, onDismiss, onResolve }: { item: Item; now: number; onDismiss(id: number): Promise<void>; onResolve(id: number, note?: string): Promise<void> }) {
-  const [resolving, setResolving] = useState(false);
+/** How closing an item asks for its note: how it was resolved, or why it was dismissed. */
+const CLOSING = {
+  resolved: { question: "How was it resolved?", placeholder: "Moved the review to 11:00", button: "Resolve", busy: "Resolving…" },
+  dismissed: { question: "Why dismiss it?", placeholder: "Not mine to act on", button: "Dismiss", busy: "Dismissing…" },
+} as const;
+
+function ItemCard({
+  item,
+  now,
+  onDismiss,
+  onResolve,
+}: {
+  item: Item;
+  now: number;
+  onDismiss(id: number, note?: string): Promise<void>;
+  onResolve(id: number, note?: string): Promise<void>;
+}) {
+  const [closing, setClosing] = useState<keyof typeof CLOSING | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -151,7 +167,8 @@ function ItemCard({ item, now, onDismiss, onResolve }: { item: Item; now: number
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    void act(() => onResolve(item.id, note.trim() || undefined));
+    const close = closing === "dismissed" ? onDismiss : onResolve;
+    void act(() => close(item.id, note.trim() || undefined));
   };
 
   return (
@@ -165,27 +182,36 @@ function ItemCard({ item, now, onDismiss, onResolve }: { item: Item; now: number
       </div>
       <p className="item-title">{item.title}</p>
       {item.detail && <p className="item-detail">{item.detail}</p>}
-      {resolving ? (
+      {closing ? (
         <form className="resolve-form" onSubmit={submit}>
           <label htmlFor={noteId} className="small">
-            How was it resolved? <span className="muted">(optional)</span>
+            {CLOSING[closing].question} <span className="muted">(optional)</span>
           </label>
-          <input id={noteId} type="text" value={note} maxLength={500} placeholder="Moved the review to 11:00" onChange={(event) => setNote(event.target.value)} autoFocus />
+          <input
+            id={noteId}
+            type="text"
+            value={note}
+            maxLength={500}
+            placeholder={CLOSING[closing].placeholder}
+            onChange={(event) => setNote(event.target.value)}
+            autoFocus
+          />
+          {closing === "dismissed" && <p className="tiny muted">The staff review reads your reasons.</p>}
           <div className="button-row">
-            <button type="submit" className="button primary small" disabled={busy}>
-              {busy ? "Resolving…" : "Resolve"}
+            <button type="submit" className={`button small ${closing === "resolved" ? "primary" : ""}`} disabled={busy}>
+              {busy ? CLOSING[closing].busy : CLOSING[closing].button}
             </button>
-            <button type="button" className="button ghost small" onClick={() => setResolving(false)} disabled={busy}>
+            <button type="button" className="button ghost small" onClick={() => setClosing(null)} disabled={busy}>
               Cancel
             </button>
           </div>
         </form>
       ) : (
         <div className="button-row">
-          <button type="button" className="button small" onClick={() => setResolving(true)} disabled={busy}>
+          <button type="button" className="button small" onClick={() => setClosing("resolved")} disabled={busy}>
             <Icon name="check" size={14} /> Resolve
           </button>
-          <button type="button" className="button ghost small" onClick={() => void act(() => onDismiss(item.id))} disabled={busy}>
+          <button type="button" className="button ghost small" onClick={() => setClosing("dismissed")} disabled={busy}>
             Dismiss
           </button>
         </div>

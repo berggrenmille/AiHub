@@ -3,6 +3,7 @@ import type {
   ApproveProposalRequest,
   ChatRequest,
   ChatResponse,
+  CloseItemRequest,
   DaemonEvent,
   Item,
   ModelChoice,
@@ -12,11 +13,10 @@ import type {
   OpenChatResponse,
   PolicyVersion,
   Proposal,
-  StaffChange,
-  ResolveItemRequest,
   Routine,
   RunRoutineResponse,
   SourcePreview,
+  StaffChange,
   StateSnapshot,
   UpdateAgentRequest,
   UpdateRoutineRequest,
@@ -154,11 +154,11 @@ export function declineProposal(proposalId: string): Promise<Proposal> {
   return request<Proposal>(`/api/proposals/${encodeURIComponent(proposalId)}/decline`, json("POST", {}));
 }
 
-export function dismissItem(itemId: number): Promise<Item> {
-  return request<Item>(`/api/items/${itemId}/dismiss`, json("POST", {}));
+export function dismissItem(itemId: number, body: CloseItemRequest = {}): Promise<Item> {
+  return request<Item>(`/api/items/${itemId}/dismiss`, json("POST", body));
 }
 
-export function resolveItem(itemId: number, body: ResolveItemRequest): Promise<Item> {
+export function resolveItem(itemId: number, body: CloseItemRequest): Promise<Item> {
   return request<Item>(`/api/items/${itemId}/resolve`, json("POST", body));
 }
 

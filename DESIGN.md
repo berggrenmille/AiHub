@@ -153,10 +153,10 @@ When a sign appears, the Chief of Staff reviews the staff after that briefing. A
 A review is a run of its own kind. Its input is what AiHub counts from its records for each active supervisor over the last 14 days:
 
 - Its section in recent briefings, and its runs and their usage.
-- The items it found, how many of them needed the operator, and how many the operator resolved or dismissed.
+- The items it found, how many of them needed the operator, and how many the operator resolved or dismissed, with the operator's latest reasons for dismissing, up to five.
 - Its sources' state, its model and reasoning level, and its responsibility's scope and standing instructions.
 
-The input also holds the signs, and the staff changes proposed in the last 30 days with the operator's decisions. It holds no reports, item text, notes, or source data, and the run has no tools to read them, so nothing a source says can steer it. The run can only propose staff changes, propose a new supervisor, and list models.
+The input also holds the signs, and the staff changes proposed in the last 30 days with the operator's decisions. It holds no reports, item text, notes, or source data, and the run has no tools to read them, so nothing a source says can steer it. Reasons for dismissing are the operator's own words, since only the operator dismisses items. The run can only propose staff changes, propose a new supervisor, and list models.
 
 A staff change waits on an approval card in the Chief of Staff's chat. Nothing applies until the operator approves it:
 
@@ -193,7 +193,7 @@ The Chief of Staff can delegate and arrange internal follow-ups to meet standing
 
 Store standing instructions with responsibilities. For example, asking to always surface payroll messages that need a response becomes an editable instruction. Sharing a summary with the Chief of Staff and granting it access to the underlying mailbox are separate decisions.
 
-Operator actions on items are also knowledge. A dismissed item stays out of later briefings unless its source changes. A resolved item records how it was resolved.
+Operator actions on items are also knowledge. A dismissed item stays out of later briefings unless its source changes. A resolved item records how it was resolved, and a dismissed one why, when the operator says. Either goes in the supervisor's journal.
 
 ### Memory and notes
 

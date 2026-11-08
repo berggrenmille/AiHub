@@ -550,8 +550,8 @@ export interface SourcePreview {
   code: string | null;
 }
 
-/** `POST /api/items/:id/resolve`. */
-export interface ResolveItemRequest {
+/** `POST /api/items/:id/resolve` and `/dismiss`: how it was resolved, or why it was dismissed. */
+export interface CloseItemRequest {
   note?: string;
 }
 

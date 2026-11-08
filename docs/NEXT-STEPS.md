@@ -469,10 +469,10 @@ The input itself is about 1K tokens for three supervisors; the rest is the chart
 | --- | --- |
 | When Vera let a sign stand, her reasoning was lost, and nothing showed why. | She gives one sentence on why, which goes in her journal, not the chat. |
 | Review now wrapped onto two lines on her profile card. | Buttons in the routine list never wrap. |
+| Vera let Nora's sign stand partly because no dismissal reasons were recorded: Dismiss took none. | Dismiss asks why, optionally, like Resolve asks how. The review reads the operator's five latest reasons for each supervisor, quoted as theirs. Only the operator dismisses, so a reason never carries source data. |
 
 ### Known gaps
 
-- Dismiss takes no reason, so a review sees how many findings the operator dismissed but not why. Vera named this when she let Nora's sign stand.
 - Section history starts with the first briefing after this change, so the missing and unreadable signs need a few briefings before they can show.
 - On a borderline sign, the same numbers led to a proposal in some runs and not others. A sign that still stands gets one more review a week later.
 - The review judges from counts alone. It can't tell a useful finding from a noisy one except by what the operator did with it.

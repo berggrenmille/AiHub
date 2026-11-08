@@ -741,6 +741,20 @@ export class Store {
     return numbers;
   }
 
+  /**
+   * The reasons the operator gave for dismissing a responsibility's items since a time, newest first.
+   * Only the operator dismisses, so these are always their own words.
+   */
+  dismissalReasons(responsibilityId: string, since: string, limit = 5): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT resolution FROM items WHERE responsibility_id = ? AND state = 'dismissed' AND resolution IS NOT NULL AND resolution <> ''
+         AND updated_at >= ? ORDER BY updated_at DESC, id DESC LIMIT ?`,
+      )
+      .all(responsibilityId, since, limit) as Row[];
+    return rows.map((row) => String(row.resolution));
+  }
+
   /** The web search a staff member holds, or null. */
   webGrantOf(agentId: string): WebGrant | null {
     const row = this.db.prepare("SELECT sites FROM web_grants WHERE agent_id = ?").get(agentId) as Row | undefined;

@@ -72,7 +72,7 @@ const ModelBody = z.object({ model: z.string().trim().min(1).max(80).nullable(),
 const ApproveBody = z.object({ sourcePath: z.string().max(1_000).optional() }).strict();
 const PreviewBody = z.object({ sourcePath: z.string().max(1_000) }).strict();
 const ReasonBody = z.object({ reason: z.string().max(500).optional() }).strict();
-const ResolveBody = z.object({ note: z.string().max(500).optional() }).strict();
+const CloseItemBody = z.object({ note: z.string().max(500).optional() }).strict();
 const ViewDataBody = z.object({ tool: z.string().trim().min(1).max(60), args: z.record(z.string(), z.unknown()).optional() }).strict();
 
 /** Parses an optional JSON body: a POST without one counts as `{}`. */
@@ -238,15 +238,17 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   });
 
   app.post<{ Params: { id: string } }>("/api/items/:id/dismiss", async (request, reply) => {
+    const body = bodyOf(CloseItemBody, request.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
     try {
-      return office.closeItem(Number(request.params.id), "dismissed", null);
+      return office.closeItem(Number(request.params.id), "dismissed", body.data.note?.trim() || null);
     } catch (error) {
       return sendError(reply, error);
     }
   });
 
   app.post<{ Params: { id: string } }>("/api/items/:id/resolve", async (request, reply) => {
-    const body = bodyOf(ResolveBody, request.body);
+    const body = bodyOf(CloseItemBody, request.body);
     if (!body.ok) return reply.code(400).send({ error: body.error });
     try {
       return office.closeItem(Number(request.params.id), "resolved", body.data.note?.trim() || null);
