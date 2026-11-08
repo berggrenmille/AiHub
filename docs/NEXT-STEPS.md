@@ -11,26 +11,22 @@ The operator decided how real integrations work on 2026-11-08:
 
 Staff can't write the part that reaches an account. A reader is safe because it has no network. Code written by staff that holds an account, reads untrusted mail, and reaches the internet could send that mail anywhere. So the code that reaches out is a service the operator approves, and AiHub's code stands between it and the staff. Approving and signing in stay with the operator, and AiHub never sees a password.
 
-0. **Probe Codex.** These questions decide the design, and most need no model turn:
-   - What `app/list` shows for this sign-in. Whether the daemon can call a ChatGPT app's tool with `mcpServer/tool/call` from a process where no model turn ever runs.
-   - Whether an MCP server can be given to one thread through its config, so the data and conversation processes never load it, and where Codex keeps its sign-in.
-   - Whether the sign-in works and lasts. `mcpServer/oauth/login` returns an address for the operator's browser. Does the token survive a restart, and does Codex refresh it with no one at the PC?
-   - Whether one service can hold two accounts, such as work and personal mail, as two connections.
-   - What a tool's output looks like, and whether tools label themselves as reading or changing things.
-
-   The answers pick ChatGPT apps, MCP servers, or both. They go in this file before step 1.
+0. **Probe Codex.** Done: both ChatGPT apps and MCP servers work for AiHub (below, What the probe settled).
 1. **Services.** A service reaches an outside account. It is one of:
-   - a ChatGPT app connected to the operator's account;
+   - a ChatGPT app connected to the operator's account, with one of its linked accounts;
    - a remote MCP server at an address;
    - a local MCP server, which is a program on this PC.
 
-   AiHub keeps services in its own Codex home, each with its operations, how each is labeled (reads, changes something, or unlabeled), and its sign-in. A third Codex process, the connector process, loads them, and no model turn ever runs in it. The daemon only lists tools, signs in, and calls operations there. Data and conversation runs keep the locked-down features and never see a service.
-2. **Sources on a service.** A new source kind, `service`, sits behind the same source contract. Its connection names the service, the read operation the collector calls, and that operation's arguments, which are fixed on the card.
-   - **Records.** A mapping turns the output into records: where the list is, and which fields give each record its key, version, title, time, and link. The Chief of Staff writes the mapping from the tool's declared output, and the card's preview checks it. A toolsmith writes a reader only when a mapping can't express the output. It works from the declared output and a made-up sample, never real output.
+   AiHub keeps each service in its database. For an app it keeps the app and the linked account. For an MCP server it keeps the address or the command. It never writes a service into Codex's `config.toml`, where every process would load it. Codex keeps the sign-ins.
+
+   A third Codex process, the connector process, runs with apps on. A service's config goes only to the thread that calls it, and no model turn ever runs there: the daemon only lists tools, signs in, and calls operations. Data and conversation runs keep the locked-down features and never see a service.
+2. **Sources on a service.** A new source kind, `service`, sits behind the same source contract. Its connection names three things, all fixed on the card: the service, the read operation the collector calls, and that operation's arguments. For an app, the arguments include the linked account's `link_id`, which the daemon sets, never staff.
+   - **Records.** A mapping turns the output, usually its `structuredContent`, into records: where the list is, and which fields give each record its key, version, title, time, and link. The Chief of Staff writes the mapping from the tool's declared output, and the card's preview checks it. A toolsmith writes a reader only when a mapping can't express the output. It works from the declared output and a made-up sample, never real output.
+   - **Errors.** A tool's error result counts as a failed read.
    - **From there, the folder flow.** The source has a cursor and a diff, a big change is cut, and no model turn runs when nothing is new. Items link back to their record in the service.
 3. **Set up from chat.**
    - `aihub_list_services` lists for the Chief of Staff what is installed and signed in, with each service's operations.
-   - When nothing fits, she proposes adding a service with `aihub_propose_service`: a ChatGPT app the operator connects at ChatGPT, or an MCP server by its address or command. The operator approves it and signs in from the card.
+   - When nothing fits, she proposes adding a service with `aihub_propose_service`. It is either a ChatGPT app, found in the app list, which the operator connects at ChatGPT from the card's link, or an MCP server by its address or command. The operator approves it on the card. For an MCP server they also sign in from the card: AiHub opens Codex's sign-in address in their browser and waits for it to finish.
    - Then she proposes the supervisor with a source on the service, as with folders. Preview reads the account in code, shows the records, and names the account it read. Approve waits for the preview.
 4. **Using it.**
    - **At the briefing**, the collector calls the read operation in the connector process and hands the supervisor records, as data.
@@ -66,6 +62,33 @@ Staff can't write the part that reaches an account. A reader is safe because it 
 Not in this milestone:
 - Asking the operator before each send: approved unsafe operations run without asking each time. A queue for that is Roadmap phase A.
 - Connecting ChatGPT apps from inside AiHub: the operator connects them at ChatGPT.
+
+### What the probe settled (step 0, 2026-11-08)
+
+`npm run spike:connectors` runs it (`spikes/connectors/`):
+- **Part A** runs a made-up mail service, an MCP server behind its own OAuth server with two mailboxes, plus a local MCP program. It uses a throwaway Codex home, with no sign-in and no usage.
+- **Part B** lists the ChatGPT apps on AiHub's real sign-in. On request it makes one call: here, the GitHub app's login lookup.
+
+No model turn ran.
+
+| Finding | What it means for AiHub |
+| --- | --- |
+| An MCP server given in one thread's config loads only for that thread. Other threads in the same process list none, and so does the process itself. A local MCP program starts only when its thread does. | A service's config stays in AiHub's database and goes only to connector threads. |
+| `mcpServer/oauth/login` signs a service in. Codex registers itself with the service, uses PKCE, and returns an address for the browser, and the redirect comes back to a port Codex opens. A thread started before the sign-in can use it. | The operator signs in from the card: AiHub opens the address and waits for Codex's completion notice. |
+| Codex refreshed expired tokens by itself, and sign-ins survived a restart of Codex. | A sign-in lasts until 07:00 with no one at the PC, for as long as the service's refresh token does. The health check still checks each one. |
+| Two named servers on one address held two accounts. A thread could call only the servers in its own config. | Work and personal accounts on one MCP service are two services to AiHub. |
+| Called from code, Codex ran a tool that sends, and a tool with no labels, without asking anything. | AiHub's gateway is the only boundary between staff and a service's operations. The connector process never runs a model turn, and the daemon calls only what a grant names. |
+| Tools keep their labels (`readOnlyHint`, `destructiveHint`, `openWorldHint`) and return `structuredContent` alongside text. | The card shows each operation's label, and a mapping reads records from the structured output. |
+| With apps on, a thread gets one server, `codex_apps`, with every connected app's tools. Here that is 198 tools for GitHub, Sites, and ChatGPT Space, all labeled and 105 read-only. It also carries OpenAI's own tools, such as web search. The locked-down features hide all of it. | The connector process runs with apps on, and staff processes keep them off. |
+| An app connected with two accounts (GitHub: Personal and Work) needs the account's `link_id` as an argument on every call. The tool's `_meta` lists the accounts by name. Called with one, `github.get_user_login` answered from code. A public repository search timed out at the service twice and came back as an error result. | A connection on an app pins its `link_id`, and the daemon sets it. A tool's error result counts as a failed read. |
+| `app/list` lists 5,010 apps, three of them connected here, each with an address for connecting it at ChatGPT. | The Chief of Staff searches the list, and the card links to where the operator connects the app. AiHub can't connect one itself. |
+
+**Decision (2026-11-08):** both paths, behind one kind of service in AiHub: ChatGPT apps for what OpenAI offers, and MCP servers for everything else.
+
+Not tested yet, and covered by the proof:
+- Windows Credential Manager as the store for sign-ins. It is Codex's default; the probe used a file so it left nothing behind.
+- A real service's sign-in.
+- How long a real refresh token lasts.
 
 ## Milestone 1: runtime, isolation, and control surface (done 2026-11-07)
 

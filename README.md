@@ -12,6 +12,7 @@ A local, game-like office for your personal staff of AI agents. The Chief of Sta
 | `packages/views` | The components views may use, defined once for the daemon's check and the UI's renderers, and the guide staff read. |
 | `packages/codex-protocol` | Codex App Server protocol types, generated from the pinned Codex version. |
 | `spikes/codex-app-server` | Milestone 1 spike that drives Codex App Server and probes run isolation. |
+| `spikes/connectors` | Milestone 6 probe of ChatGPT apps and MCP servers through Codex App Server. |
 | `scripts/codex.mjs` | Runs the project's pinned Codex CLI with AiHub's own `CODEX_HOME`. |
 
 ## Setup
@@ -38,6 +39,7 @@ npm run codex -- login
 | `npm test` | Runs the tests. They use a fake Codex App Server, so they need no sign-in. |
 | `npm run build` | Builds the UI. |
 | `npm run spike:codex` | Runs the Codex App Server spike. |
+| `npm run spike:connectors` | Runs the Milestone 6 connector probe: a made-up mail service over MCP with its own sign-in, and a list of the ChatGPT apps on AiHub's sign-in. It runs no model turn. |
 | `npm run measure:briefing` | Runs a simulated four-section briefing against real Codex and reports its turns, tokens, and isolation checks. Uses about 100K input tokens. |
 | `npm run codex -- <args>` | Runs the pinned Codex CLI with AiHub's `CODEX_HOME`. |
 | `npm run codex:protocol` | Regenerates the App Server protocol types after a Codex upgrade. |
