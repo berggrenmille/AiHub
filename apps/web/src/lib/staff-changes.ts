@@ -15,7 +15,18 @@ export function staffChangeTitle(change: StaffChange, models: ModelOption[] | nu
       return `End ${title}`;
     case "replace":
       return `Replace ${name} with ${change.change.profile.name}`;
+    case "operations": {
+      const { operations } = change.change;
+      const services = [...new Set(operations.map((operation) => operation.serviceName))];
+      return `Let ${name} call ${operations.length === 1 ? operations[0]!.operation : `${operations.length} operations`} on ${services.join(" and ")}`;
+    }
   }
+}
+
+/** For an operations change: whether the ticks leave anything to grant. Every operation unsafe and none ticked grants nothing. */
+export function grantsNothing(change: StaffChange, ticked: ReadonlySet<string>): boolean {
+  if (change.change.kind !== "operations") return false;
+  return change.change.operations.every((operation) => operation.unsafe) && !change.change.unsafe.some((grant) => ticked.has(grant.key));
 }
 
 /** What the supervisor runs on before the change, such as "the office default". */

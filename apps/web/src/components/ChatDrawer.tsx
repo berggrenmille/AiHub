@@ -55,7 +55,7 @@ interface ChatDrawerProps {
   onDecline(proposalId: string): Promise<void>;
   onApprovePolicy(policyId: number): Promise<void>;
   onDeclinePolicy(policyId: number): Promise<void>;
-  onApproveStaffChange(changeId: number): Promise<void>;
+  onApproveStaffChange(changeId: number, unsafe: string[]): Promise<void>;
   onDeclineStaffChange(changeId: number): Promise<void>;
   onClose(): void;
   onOpenProfile(): void;
@@ -311,7 +311,7 @@ interface MessageViewProps {
   onDecline(proposalId: string): Promise<void>;
   onApprovePolicy(policyId: number): Promise<void>;
   onDeclinePolicy(policyId: number): Promise<void>;
-  onApproveStaffChange(changeId: number): Promise<void>;
+  onApproveStaffChange(changeId: number, unsafe: string[]): Promise<void>;
   onDeclineStaffChange(changeId: number): Promise<void>;
   resolveLink(target: string): WikilinkTarget;
   onOpenLink(target: string): void;
@@ -401,7 +401,7 @@ function MessageView(props: MessageViewProps) {
           intro={message.body}
           authorName={agentName}
           models={props.models}
-          onApprove={() => props.onApproveStaffChange(Number(message.refId))}
+          onApprove={(unsafe) => props.onApproveStaffChange(Number(message.refId), unsafe)}
           onDecline={() => props.onDeclineStaffChange(Number(message.refId))}
         />
         <p className="message-meta">{time}</p>

@@ -48,7 +48,8 @@ export interface OfficeCommands {
   savePolicy(body: string): Promise<void>;
   approvePolicy(policyId: number): Promise<void>;
   declinePolicy(policyId: number): Promise<void>;
-  approveStaffChange(changeId: number): Promise<void>;
+  /** `unsafe` holds the keys of the unsafe grants the operator ticked. */
+  approveStaffChange(changeId: number, unsafe?: string[]): Promise<void>;
   declineStaffChange(changeId: number): Promise<void>;
   /** Asks the Chief of Staff to review the staff now. */
   reviewStaff(): Promise<void>;
@@ -119,7 +120,7 @@ export function useOffice() {
       savePolicy: async (body) => apply({ type: "policy", policy: await writePolicy(body) }),
       approvePolicy: async (policyId) => apply({ type: "policy", policy: await approvePolicy(policyId) }),
       declinePolicy: async (policyId) => apply({ type: "policy", policy: await declinePolicy(policyId) }),
-      approveStaffChange: async (changeId) => apply({ type: "staff_change", change: await approveStaffChange(changeId) }),
+      approveStaffChange: async (changeId, unsafe) => apply({ type: "staff_change", change: await approveStaffChange(changeId, unsafe) }),
       declineStaffChange: async (changeId) => apply({ type: "staff_change", change: await declineStaffChange(changeId) }),
       reviewStaff: () => runStaffReview(),
       preview: (proposalId, sourcePath) => previewProposal(proposalId, { sourcePath }),

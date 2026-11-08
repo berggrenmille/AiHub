@@ -1,15 +1,16 @@
-import type { ProposedModel, Responsibility, StaffChange, StaffChangeDetail, StaffProfile } from "@aihub/shared";
-import { ConflictError, NotFoundError } from "../errors.ts";
+import type { ProposedModel, ProposedOperation, Responsibility, StaffChange, StaffChangeDetail, StaffProfile, UnsafeGrant } from "@aihub/shared";
+import { ConflictError, InvalidRequestError, NotFoundError } from "../errors.ts";
 import type { Caller } from "../gateway/gateway.ts";
 import type { Office } from "../office.ts";
+import { unsafeKey } from "../services/catalog.ts";
 import type { AgentRecord } from "../store/store.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "./chief-of-staff.ts";
 import { describeModel, modelChoiceProblem } from "./models.ts";
 import { SUPERVISOR_CHARTER } from "./supervisor.ts";
 
 // Staff changes (DESIGN.md › Staff review): the Chief of Staff proposes changing a supervisor's
-// instructions or model, ending its responsibility, or replacing it, from her review of the staff or
-// when the operator asks in chat. Each waits on a card, and nothing changes until the operator
+// instructions or model, letting it call more operations on a service, ending its responsibility, or
+// replacing it, from her review of the staff or when the operator asks in chat. Each waits on a card, and nothing changes until the operator
 // approves it, against the supervisor and responsibility as they were when it was proposed.
 
 /** A review proposes at most this many changes. */
@@ -20,7 +21,8 @@ export type StaffChangeRequest =
   | { kind: "instructions"; scope?: string; standingInstructions?: string }
   | { kind: "model"; model: ProposedModel }
   | { kind: "end" }
-  | { kind: "replace"; profile: StaffProfile; model: ProposedModel | null };
+  | { kind: "replace"; profile: StaffProfile; model: ProposedModel | null }
+  | { kind: "operations"; operations: Array<{ service: string; operation: string; why: string }> };
 
 /** The active supervisor called `name`, with the responsibility it works on. Throws with a reason the model can act on. */
 function supervisorNamed(office: Office, name: string): { agent: AgentRecord; responsibility: Responsibility } {
@@ -99,7 +101,21 @@ async function detailOf(office: Office, agent: AgentRecord, responsibility: Resp
       if (request.model) await checkModel(office, request.model);
       return { kind: "replace", profile: { ...request.profile, name }, model: request.model };
     }
+    case "operations": {
+      // AiHub words each risk, so an unsafe operation carries its sentence onto the card.
+      const planned = office.services.planAccess(agent.name, { operations: request.operations });
+      const held = planned.operations.filter((operation) => store.serviceGrantFor(agent.id, operation.serviceId, operation.operation));
+      const operations = planned.operations.filter((operation) => !held.includes(operation));
+      if (!operations.length) throw new Error(`${agent.name} may already call ${callList(held)}.`);
+      const keys = new Set(operations.map((operation) => unsafeKey.operation(operation.serviceId, operation.operation)));
+      return { kind: "operations", operations, unsafe: planned.unsafe.filter((grant) => keys.has(grant.key)) };
+    }
   }
+}
+
+/** Operations as a list, such as "search_messages on Work mail, send_message on Work mail". */
+function callList(operations: ProposedOperation[]): string {
+  return operations.map((operation) => `${operation.operation} on ${operation.serviceName}`).join(", ");
 }
 
 async function checkModel(office: Office, model: ProposedModel) {
@@ -119,6 +135,8 @@ export function headline(change: StaffChange): string {
       return `end ${name}'s ${title}`;
     case "replace":
       return `replace ${name} with ${change.change.profile.name}`;
+    case "operations":
+      return `let ${name} call ${callList(change.change.operations)}`;
   }
 }
 
@@ -128,8 +146,11 @@ export function postStaffChangeCard(office: Office, change: StaffChange) {
   office.postMessage(CHIEF_OF_STAFF_CONVERSATION_ID, change.proposedBy, text, change.runId, "staff_change", String(change.id), change.fromSourceData);
 }
 
-/** The operator approves a change. It applies to the supervisor and responsibility only as they were when proposed. */
-export async function approveStaffChange(office: Office, id: number): Promise<StaffChange> {
+/**
+ * The operator approves a change. It applies to the supervisor and responsibility only as they were
+ * when proposed. `ticked` holds the unsafe grants the operator ticked: an unticked one is left out.
+ */
+export async function approveStaffChange(office: Office, id: number, ticked: string[] = []): Promise<StaffChange> {
   const { store } = office;
   const proposed = store.getStaffChange(id);
   if (!proposed) throw new NotFoundError(`No staff change ${id}`);
@@ -158,10 +179,11 @@ export async function approveStaffChange(office: Office, id: number): Promise<St
     const problem = modelChoiceProblem(await office.models(), { model: change.model.id, effort: change.model.effort });
     if (problem) throw new ConflictError(problem);
   }
+  const access = change.kind === "operations" ? accessOf(office, change, new Set(ticked)) : { granted: [], leftOut: [] };
   // Another decision may have come in while the catalog was read.
   if (store.getStaffChange(id)?.status !== "pending") throw new ConflictError("This proposal was already decided.");
 
-  const outcome = await apply(office, proposed, agent.id, responsibility);
+  const outcome = await apply(office, proposed, agent.id, responsibility, access);
   const approved = store.decideStaffChange(id, "approved", outcome)!;
   office.bus.publish({ type: "staff_change", change: approved });
   office.bus.publish({ type: "activity", entry: store.addActivity({ agentId: agent.id, runId: null, kind: "approved", summary: `The operator approved: ${headline(approved)}` }) });
@@ -170,8 +192,27 @@ export async function approveStaffChange(office: Office, id: number): Promise<St
   return approved;
 }
 
+/** What an operations change grants with the operator's ticks, and what it leaves out. Throws when it would grant nothing. */
+function accessOf(office: Office, change: Extract<StaffChangeDetail, { kind: "operations" }>, ticked: ReadonlySet<string>): { granted: ProposedOperation[]; leftOut: UnsafeGrant[] } {
+  const granted = change.operations.filter((operation) => !operation.unsafe || ticked.has(unsafeKey.operation(operation.serviceId, operation.operation)));
+  if (!granted.length) throw new InvalidRequestError("Every operation here is unsafe and none is ticked. Tick the ones you allow, or decline.");
+  for (const serviceId of new Set(granted.map((operation) => operation.serviceId))) {
+    const service = office.store.getService(serviceId);
+    if (!service || !["connected", "signed_out", "failed"].includes(service.status)) {
+      throw new ConflictError(`${service?.name ?? "A service this proposal uses"} is no longer in use. Ask the Chief of Staff for a new proposal.`);
+    }
+  }
+  return { granted, leftOut: change.unsafe.filter((grant) => !ticked.has(grant.key)) };
+}
+
 /** Makes the change and says what it did. */
-async function apply(office: Office, proposed: StaffChange, agentId: string, responsibility: Responsibility): Promise<string> {
+async function apply(
+  office: Office,
+  proposed: StaffChange,
+  agentId: string,
+  responsibility: Responsibility,
+  access: { granted: ProposedOperation[]; leftOut: UnsafeGrant[] },
+): Promise<string> {
   const { store, bus, notebook } = office;
   const { change, agentName: name } = proposed;
   switch (change.kind) {
@@ -217,6 +258,22 @@ async function apply(office: Office, proposed: StaffChange, agentId: string, res
       notebook.journal(newId, `I took over ${responsibility.title} from [[${name}]].`);
       leave(office, agentId, `${profile.name} took over ${responsibility.title} from ${name}, who left the office`, proposed.id);
       return `${profile.name} took over ${responsibility.title} from ${name}, with the same sources and items, and reports in the next briefing. ${name} left the office.`;
+    }
+    case "operations": {
+      const { granted, leftOut } = access;
+      store.transaction(() => {
+        for (const operation of granted) store.grantOperation(agentId, operation.serviceId, operation.operation, operation.unsafe);
+      });
+      office.services.publishGrants();
+      for (const operation of granted.filter((one) => one.unsafe)) {
+        bus.publish({
+          type: "activity",
+          entry: store.addActivity({ agentId, runId: null, kind: "service", summary: `Unsafe: the operator let ${name} call ${operation.operation} on ${operation.serviceName}` }),
+        });
+      }
+      notebook.journal(agentId, `The operator let me call ${callList(granted)}, with aihub_use_service.`);
+      const notGiven = leftOut.length ? ` Left out, as you didn't tick ${leftOut.length === 1 ? "it" : "them"}: ${leftOut.map((grant) => grant.what).join("; ")}.` : "";
+      return `${name} may call ${granted.map((operation) => `${operation.operation} on ${operation.serviceName}${operation.unsafe ? " (unsafe, as you ticked)" : ""}`).join(", ")} from the next run.${notGiven}`;
     }
   }
 }

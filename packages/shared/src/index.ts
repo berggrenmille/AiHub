@@ -486,7 +486,9 @@ export type StaffChangeDetail =
   /** Ends the responsibility; the supervisor leaves. */
   | { kind: "end" }
   /** A new supervisor takes over the responsibility; the old one leaves. Without a model, it keeps the old one's. */
-  | { kind: "replace"; profile: StaffProfile; model: ProposedModel | null };
+  | { kind: "replace"; profile: StaffProfile; model: ProposedModel | null }
+  /** The supervisor may call more operations on approved services. Each unsafe one is ticked on its own, and left out when it isn't. */
+  | { kind: "operations"; operations: ProposedOperation[]; unsafe: UnsafeGrant[] };
 
 export type StaffChangeKind = StaffChangeDetail["kind"];
 

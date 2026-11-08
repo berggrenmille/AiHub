@@ -216,8 +216,8 @@ export function declinePolicy(policyId: number): Promise<PolicyVersion> {
   return request<PolicyVersion>(`/api/policy/${policyId}/decline`, json("POST", {}));
 }
 
-export function approveStaffChange(changeId: number): Promise<StaffChange> {
-  return request<StaffChange>(`/api/staff-changes/${changeId}/approve`, json("POST", {}));
+export function approveStaffChange(changeId: number, unsafe: string[] = []): Promise<StaffChange> {
+  return request<StaffChange>(`/api/staff-changes/${changeId}/approve`, json("POST", { unsafe }));
 }
 
 export function declineStaffChange(changeId: number): Promise<StaffChange> {

@@ -210,6 +210,15 @@ const ModelInput = z
   })
   .strict();
 
+/** An operation on an approved service a supervisor may call itself. */
+const OperationInput = z
+  .object({
+    service: z.string().trim().min(1).max(80),
+    operation: z.string().trim().min(1).max(120),
+    why: z.string().trim().min(1).max(200).describe("Why the supervisor needs it, in a sentence the operator reads on the card."),
+  })
+  .strict();
+
 const MappingInput = z
   .object({
     list: z.string().trim().max(120).describe('Where the list of records is in the output, as a dotted path such as "messages" or "data.items". Empty when the output is the list.'),
@@ -268,15 +277,7 @@ export const proposeSupervisorTool = defineTool({
           "What the supervisor reads: a calendar export, a folder of files, or a read operation on a service. For a file or folder the operator picks it on the card; a service source is all set here. Null for none.",
         ),
       operations: z
-        .array(
-          z
-            .object({
-              service: z.string().trim().min(1).max(80),
-              operation: z.string().trim().min(1).max(120),
-              why: z.string().trim().min(1).max(200).describe("Why the supervisor needs it, in a sentence the operator reads on the card."),
-            })
-            .strict(),
-        )
+        .array(OperationInput)
         .max(10)
         .default([])
         .describe(
@@ -409,13 +410,15 @@ export const proposePolicyTool = defineTool({
 export const proposeStaffChangeTool = defineTool({
   name: "aihub_propose_staff_change",
   description:
-    "Propose a change to a supervisor: new scope or standing instructions for its responsibility, another model or reasoning level, ending its responsibility so it leaves the office, or replacing it with a new supervisor who takes over the work with empty notes. Nothing changes until the operator approves the card. A newer proposal for the same supervisor replaces one still waiting.",
+    "Propose a change to a supervisor: new scope or standing instructions for its responsibility, another model or reasoning level, more operations it may call on approved services, ending its responsibility so it leaves the office, or replacing it with a new supervisor who takes over the work with empty notes. Nothing changes until the operator approves the card. A newer proposal for the same supervisor replaces one still waiting.",
   input: z
     .object({
       supervisor: z.string().trim().min(1).max(40).describe("The supervisor's name."),
       change: z
-        .enum(["instructions", "model", "end", "replace"])
-        .describe("instructions: new scope or standing instructions. model: another model or reasoning level. end: end the responsibility; the supervisor leaves. replace: a new supervisor takes over the work."),
+        .enum(["instructions", "model", "operations", "end", "replace"])
+        .describe(
+          "instructions: new scope or standing instructions. model: another model or reasoning level. operations: more operations it may call on approved services. end: end the responsibility; the supervisor leaves. replace: a new supervisor takes over the work.",
+        ),
       scope: z.string().trim().min(1).max(SCOPE_LIMIT).optional().describe("For instructions: the whole new scope. Left out, it stays as it is."),
       standingInstructions: z
         .string()
@@ -425,6 +428,12 @@ export const proposeStaffChangeTool = defineTool({
         .describe("For instructions: the whole new standing instructions. Left out, they stay as they are."),
       model: ModelInput.optional().describe("For model: what to run on. For replace: what the new supervisor runs on; left out, the old one's."),
       profile: ProfileInput.optional().describe("For replace: who takes over."),
+      operations: z
+        .array(OperationInput)
+        .min(1)
+        .max(10)
+        .optional()
+        .describe("For operations: what it may call besides what it already may. One that changes things or reaches others is an unsafe grant the operator ticks on its own."),
       reason: z.string().trim().min(1).max(300).describe("Why, in the operator's terms, with the numbers that show it."),
     })
     .strict(),
@@ -436,8 +445,8 @@ export const proposeStaffChangeTool = defineTool({
     if (!proposeStaffChange) throw new Error("Staff changes aren't available in this office");
     const { supervisor, reason } = input;
     const extra = (allowed: string[]) => {
-      const given = (["scope", "standingInstructions", "model", "profile"] as const).filter((key) => input[key] !== undefined && !allowed.includes(key));
-      if (given.length) throw new Error(`A ${input.change} change takes no ${given.join(" or ")}.`);
+      const given = (["scope", "standingInstructions", "model", "profile", "operations"] as const).filter((key) => input[key] !== undefined && !allowed.includes(key));
+      if (given.length) throw new Error(`${/^[aeiou]/.test(input.change) ? "An" : "A"} ${input.change} change takes no ${given.join(" or ")}.`);
     };
     switch (input.change) {
       case "instructions":
@@ -450,6 +459,11 @@ export const proposeStaffChangeTool = defineTool({
         if (!input.model) throw new Error("Give the model and reasoning level to run on. See aihub_list_models.");
         await proposeStaffChange(caller, { supervisor, reason, change: { kind: "model", model: input.model } });
         break;
+      case "operations":
+        extra(["operations"]);
+        if (!input.operations?.length) throw new Error("Give the operations to add, by service and name. See aihub_list_services.");
+        await proposeStaffChange(caller, { supervisor, reason, change: { kind: "operations", operations: input.operations } });
+        return "Proposal recorded. The operator sees an approval card in your chat, where each unsafe operation has its own tick. Tell them in a sentence what you proposed.";
       case "end":
         extra([]);
         await proposeStaffChange(caller, { supervisor, reason, change: { kind: "end" } });

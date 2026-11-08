@@ -220,7 +220,7 @@ describe("Staff changes", () => {
     assert.match((await propose({ supervisor: "Rut", change: "end" })).text, /There is no supervisor called Rut\. The supervisors: Nora\./);
     assert.match((await propose({ change: "instructions" })).text, /Give the new scope, the new standing instructions, or both\./);
     assert.match((await propose({ change: "instructions", standingInstructions: "Flag clashes." })).text, /That is the responsibility as it stands/);
-    assert.match((await propose({ change: "end", scope: "Less." })).text, /A end change takes no scope\./);
+    assert.match((await propose({ change: "end", scope: "Less." })).text, /An end change takes no scope\./);
     assert.match((await propose({ change: "model", model: { id: "gpt-9", effort: "low", why: "Fast." } })).text, /There is no model "gpt-9"/);
     assert.match((await propose({ change: "replace", profile: { name: "Vera", title: "Calendar Supervisor", description: "Watches the calendar." } })).text, /already called Vera/);
 

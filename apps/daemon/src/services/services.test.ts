@@ -10,6 +10,7 @@ import { FAKE_MAIL_URL } from "../runtime/fake-connectors.ts";
 import { demo, FakeRuntime } from "../runtime/fake-runtime.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "../staff/chief-of-staff.ts";
 import { approveProposal } from "../staff/proposals.ts";
+import { approveStaffChange } from "../staff/staff-changes.ts";
 import { Store } from "../store/store.ts";
 import { unsafeKey } from "./catalog.ts";
 
@@ -186,6 +187,31 @@ describe("Services", () => {
     office.services.revokeGrant(send.id);
     const again = await tool("aihub_use_service", { service: "Work mail", operation: "send_message", arguments: { to: "anna@example.test", subject: "Again", body: "Hi" } }, caller);
     assert.equal(again.ok, false);
+    assert.equal(mail.sent.length, 1);
+  });
+
+  it("adds an operation later with a staff change, where the unsafe one needs its own tick too", async () => {
+    const { store, office, tool, mail } = setUp();
+    const service = await connectMail(office, tool);
+    const { ines, caller } = await hireInes(office, tool);
+    const change = (operations: object[]) => tool("aihub_propose_staff_change", { supervisor: "Ines", change: "operations", operations, reason: "You asked for it." });
+    assert.match((await change([{ service: "Work mail", operation: "search_messages", why: "Again." }])).text, /Ines may already call search_messages on Work mail\./);
+    assert.match((await change([{ service: "Work mail", operation: "delete_everything", why: "No." }])).text, /Work mail has no operation called delete_everything/);
+    assert.match((await tool("aihub_propose_staff_change", { supervisor: "Ines", change: "end", operations: [{ service: "Work mail", operation: "send_message", why: "x" }], reason: "x" })).text, /An end change takes no operations\./);
+
+    const proposed = await change([{ service: "Work mail", operation: "send_message", why: "To send replies you ask for." }]);
+    assert.equal(proposed.ok, true, proposed.text);
+    const [pending] = store.pendingStaffChanges(ines.id);
+    assert.equal(pending?.change.kind, "operations");
+    assert.deepEqual(pending?.change.kind === "operations" && pending.change.unsafe.map((grant) => grant.key), [unsafeKey.operation(service.id, "send_message")]);
+
+    await assert.rejects(() => approveStaffChange(office, pending!.id), /none is ticked/);
+    assert.equal(store.getStaffChange(pending!.id)?.status, "pending", "nothing was decided");
+    const approved = await approveStaffChange(office, pending!.id, [unsafeKey.operation(service.id, "send_message")]);
+    assert.match(approved.outcome ?? "", /Ines may call send_message on Work mail \(unsafe, as you ticked\) from the next run\./);
+    assert.ok(store.recentActivity(10).some((entry) => entry.summary === "Unsafe: the operator let Ines call send_message on Work mail"));
+    const sent = await tool("aihub_use_service", { service: "Work mail", operation: "send_message", arguments: { to: "anna@example.test", subject: "Hi", body: "Hello" } }, caller);
+    assert.equal(sent.ok, true, sent.text);
     assert.equal(mail.sent.length, 1);
   });
 

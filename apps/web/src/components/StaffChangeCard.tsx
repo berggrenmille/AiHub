@@ -4,14 +4,17 @@ import { errorText } from "../api.ts";
 import { formatDateTime } from "../format.ts";
 import { lookFor } from "../lib/avatar.ts";
 import { describeModel } from "../lib/models.ts";
-import { modelBefore, staffChangeTitle } from "../lib/staff-changes.ts";
+import { grantsNothing, modelBefore, staffChangeTitle } from "../lib/staff-changes.ts";
 import { Icon } from "./Icon.tsx";
 import { Portrait } from "./office/Figure.tsx";
 import { PolicyDiff } from "./PolicyCard.tsx";
+import { toggled } from "./ServiceCard.tsx";
+import { UnsafeGrants } from "./UnsafeGrants.tsx";
 
 // The approval card for a change to a supervisor that the Chief of Staff proposed (DESIGN.md › Staff
-// review): new instructions, another model, ending the responsibility, or a replacement. It shows
-// what changes; nothing applies until the operator approves.
+// review): new instructions, another model, more operations on a service, ending the responsibility,
+// or a replacement. It shows what changes; nothing applies until the operator approves, and an unsafe
+// operation only with its own tick.
 
 const STATUS_LABELS: Record<StaffChange["status"], string> = {
   pending: "Waiting for you",
@@ -26,13 +29,15 @@ interface StaffChangeCardProps {
   intro: string;
   authorName: string;
   models: ModelOption[] | null;
-  onApprove(): Promise<void>;
+  /** `unsafe` holds the keys of the unsafe grants the operator ticked. */
+  onApprove(unsafe: string[]): Promise<void>;
   onDecline(): Promise<void>;
 }
 
 export function StaffChangeCard({ change, intro, authorName, models, onApprove, onDecline }: StaffChangeCardProps) {
   const [busy, setBusy] = useState<"approve" | "decline" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
 
   if (!change) {
     return (
@@ -47,7 +52,7 @@ export function StaffChangeCard({ change, intro, authorName, models, onApprove, 
     setBusy(which);
     setError(null);
     try {
-      await (which === "approve" ? onApprove() : onDecline());
+      await (which === "approve" ? onApprove([...ticked]) : onDecline());
     } catch (failure) {
       setError(errorText(failure));
     } finally {
@@ -56,6 +61,8 @@ export function StaffChangeCard({ change, intro, authorName, models, onApprove, 
   };
 
   const title = staffChangeTitle(change, models);
+  const unsafe = change.change.kind === "operations" ? change.change.unsafe : [];
+  const blocked = grantsNothing(change, ticked);
   return (
     <article className={`card policy-card staff-change-card status-${change.status}`} aria-label={`Proposal: ${title}`}>
       <header className="policy-card-head">
@@ -71,9 +78,13 @@ export function StaffChangeCard({ change, intro, authorName, models, onApprove, 
         </p>
       )}
       <ChangeDetail change={change} models={models} />
+      {change.status === "pending" && (
+        <UnsafeGrants grants={unsafe} ticked={ticked} disabled={busy !== null} onToggle={(key, on) => setTicked(toggled(ticked, key, on))} />
+      )}
+      {change.status === "pending" && blocked && <p className="muted small">Every operation here is unsafe. Tick the ones you allow, or decline.</p>}
       {change.status === "pending" ? (
         <div className="button-row">
-          <button type="button" className="button primary" disabled={busy !== null} onClick={() => void decide("approve")}>
+          <button type="button" className="button primary" disabled={busy !== null || blocked} onClick={() => void decide("approve")}>
             <Icon name="check" size={16} /> {busy === "approve" ? "Approving…" : "Approve"}
           </button>
           <button type="button" className="button ghost" disabled={busy !== null} onClick={() => void decide("decline")}>
@@ -131,6 +142,22 @@ function ChangeDetail({ change, models }: { change: StaffChange; models: ModelOp
             </dd>
           </div>
         </dl>
+      );
+    case "operations":
+      return (
+        <div className="staff-change-detail">
+          <p className="eyebrow">{name} may also call</p>
+          <ul className="operation-grants">
+            {detail.operations.map((operation) => (
+              <li key={`${operation.serviceId}/${operation.operation}`}>
+                <code>{operation.operation}</code> on {operation.serviceName}
+                {operation.unsafe && <span className="pill tiny unsafe-optional">Unsafe</span>}
+                <span className="block muted small">{operation.why}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="muted small">With aihub_use_service, in chat and tasks. Every call shows in the activity log, and you can take any of it back in Access.</p>
+        </div>
       );
     case "end":
       return (

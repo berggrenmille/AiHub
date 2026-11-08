@@ -218,7 +218,19 @@ async function delegate(input: string, options: RunTurnOptions): Promise<string 
   }
   // Mail: connect the fake mail service, then a supervisor that watches the inbox.
   // Only in a chat, since a briefing's own prompt names its sections, such as "Inbox".
-  if (input.includes("The operator's new message:\n") && /\b(inbox|e-?mail|mail)\b/i.test(message)) return mail(message, call);
+  const inChat = input.includes("The operator's new message:\n");
+  // "Let Ines send replies": more operations for a supervisor, the sending an unsafe grant.
+  const letSend = inChat ? /\blet (\w+) (?:also )?send\b/i.exec(message) : null;
+  if (letSend) {
+    const proposed = await call("aihub_propose_staff_change", {
+      supervisor: letSend[1],
+      change: "operations",
+      operations: [{ service: "Fake mail", operation: "send_message", why: "To send replies you ask for." }],
+      reason: "You asked for it.",
+    });
+    return proposed.ok ? `I've proposed letting ${letSend[1]} send mail. It's unsafe, so it has its own tick on the card.` : proposed.text;
+  }
+  if (inChat && /\b(inbox|e-?mail|mail)\b/i.test(message)) return mail(message, call);
   // "Watch my reading list": a supervisor for a folder, on the built-in reader its words suggest.
   const watch = /\bwatch (?:my |the )?([\w ]+?)(?: folder)?(?:[.:,?!]|$)/i.exec(message);
   if (watch) {

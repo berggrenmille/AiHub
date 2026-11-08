@@ -76,6 +76,7 @@ const ModelBody = z.object({ model: z.string().trim().min(1).max(80).nullable(),
 const UnsafeTicks = z.array(z.string().max(300)).max(40).optional();
 const ApproveBody = z.object({ sourcePath: z.string().max(1_000).optional(), unsafe: UnsafeTicks }).strict();
 const PreviewBody = z.object({ sourcePath: z.string().max(1_000).default("") }).strict();
+/** For a service or a staff change: the unsafe grants the operator ticked. */
 const ApproveServiceBody = z.object({ unsafe: UnsafeTicks }).strict();
 const ReasonBody = z.object({ reason: z.string().max(500).optional() }).strict();
 const CloseItemBody = z.object({ note: z.string().max(500).optional() }).strict();
@@ -381,7 +382,9 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   // Staff changes from the Chief of Staff's review (DESIGN.md › Staff review): the operator approves or declines each.
   app.post<{ Params: { id: string } }>("/api/staff-changes/:id/approve", async (request, reply) => {
     try {
-      const change: StaffChange = await approveStaffChange(office, numericId(request.params.id, "staff change"));
+      const body = bodyOf(ApproveServiceBody, request.body ?? {});
+      if (!body.ok) return reply.code(400).send({ error: body.error });
+      const change: StaffChange = await approveStaffChange(office, numericId(request.params.id, "staff change"), body.data.unsafe ?? []);
       return change;
     } catch (error) {
       return sendError(reply, error);

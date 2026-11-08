@@ -384,4 +384,28 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE web_grants ADD COLUMN live INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE items ADD COLUMN link TEXT;
   `,
+
+  // v15: a staff change can let a supervisor call more operations on a service (Milestone 6).
+  `
+  CREATE TABLE staff_changes_v15 (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL REFERENCES agents (id),
+    agent_name TEXT NOT NULL,
+    responsibility_id TEXT NOT NULL REFERENCES responsibilities (id),
+    kind TEXT NOT NULL CHECK (kind IN ('instructions', 'model', 'operations', 'end', 'replace')),
+    detail TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    proposed_by TEXT NOT NULL REFERENCES agents (id),
+    run_id TEXT REFERENCES runs (id),
+    from_source_data INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'declined', 'withdrawn')),
+    outcome TEXT,
+    created_at TEXT NOT NULL,
+    decided_at TEXT
+  );
+  INSERT INTO staff_changes_v15 SELECT * FROM staff_changes;
+  DROP TABLE staff_changes;
+  ALTER TABLE staff_changes_v15 RENAME TO staff_changes;
+  CREATE INDEX staff_changes_by_status ON staff_changes (status, agent_id);
+  `,
 ];
