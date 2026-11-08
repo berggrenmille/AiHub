@@ -4910,3 +4910,259 @@ button.wikilink:hover {
 .view-loading {
   min-height: 80px;
 }
+
+/* Services and access (Milestone 6): the service card, unsafe ticks, and the Access panel. */
+
+.service-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  border-color: var(--border-strong);
+  background: linear-gradient(180deg, var(--accent-soft), transparent 140px), var(--surface);
+}
+
+.service-card.status-proposed {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-sm);
+}
+
+.service-badge {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  flex: none;
+  border-radius: 16px;
+  background: var(--surface-2);
+  color: var(--accent);
+}
+
+.pill.status-signed_out,
+.pill.status-proposed {
+  background: var(--queued-bg);
+  color: var(--queued-fg);
+}
+
+.dot.status-signed_out,
+.dot.status-proposed {
+  background: #ffb340;
+}
+
+.pill.label-reads {
+  background: var(--done-bg);
+  color: var(--done-fg);
+}
+
+.pill.label-reads.open-world,
+.pill.label-changes,
+.pill.label-unlabeled,
+.pill.unsafe-optional,
+.pill.unsafe-required {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+
+.pill.unsafe-required {
+  background: var(--failed-bg);
+  color: var(--failed-fg);
+}
+
+.operation-list summary {
+  cursor: pointer;
+}
+
+.operation-list ul,
+.operation-grants {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.operation-grants .pill,
+.unsafe-grants .pill {
+  margin-left: 6px;
+}
+
+.unsafe-grants {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--warn-fg);
+  border-radius: 12px;
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+
+.unsafe-grants legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+  font-weight: 700;
+}
+
+.unsafe-grants ul {
+  display: grid;
+  gap: 8px;
+}
+
+.unsafe-grants label,
+.unsafe-tick {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.unsafe-grants input,
+.unsafe-tick input {
+  margin-top: 3px;
+  flex: none;
+}
+
+.service-actions {
+  display: grid;
+  gap: 6px;
+}
+
+.button.danger {
+  background: var(--failed-bg);
+  color: var(--failed-fg);
+  border-color: var(--failed-fg);
+}
+
+.access-drawer {
+  width: min(560px, 96vw);
+}
+
+.access-body {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+}
+
+.access-focus {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+}
+
+.access-section {
+  display: grid;
+  gap: 8px;
+}
+
+.access-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.access-list {
+  display: grid;
+  gap: 8px;
+}
+
+.access-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.access-row.unsafe,
+.connection-list li.unsafe {
+  border: 1px solid var(--warn-fg);
+  box-shadow: inset 3px 0 0 var(--warn-fg);
+}
+
+.access-row > div,
+.access-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.access-row .dot {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.holder-list {
+  display: grid;
+  gap: 4px;
+}
+
+.holder-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  border-top: 1px dashed var(--border);
+}
+
+.holder-list li.unsafe {
+  color: var(--warn-fg);
+}
+
+.action-button {
+  flex: none;
+  text-align: right;
+}
+
+.tool-kinds {
+  display: grid;
+  gap: 4px;
+  font-size: 12.5px;
+}
+
+.tool-kinds > div {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 8px;
+}
+
+.tool-kinds dt {
+  color: var(--muted);
+}
+
+.tool-kinds dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tool-kinds code {
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--surface-3);
+  font-size: 11.5px;
+}
+
+.tool-kinds code.unsafe-tool {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+
+.access-link {
+  margin-top: 8px;
+}
+
+.access-link .link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.item-link a {
+  color: var(--accent);
+}

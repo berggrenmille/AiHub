@@ -9,6 +9,8 @@ import type {
   Responsibility,
   Routine,
   Run,
+  Service,
+  ServiceGrant,
   SourceConnection,
   StaffReader,
   UpdateAgentRequest,
@@ -46,6 +48,8 @@ interface ProfileCardProps {
   responsibilities: Responsibility[];
   routines: Routine[];
   connections: SourceConnection[];
+  services: Service[];
+  serviceGrants: ServiceGrant[];
   runs: Record<string, Run>;
   activity: ActivityEntry[];
   assignments: Assignment[];
@@ -60,6 +64,8 @@ interface ProfileCardProps {
   onUpdate(changes: UpdateAgentRequest): Promise<void>;
   /** Gives web search, or with null takes it away. */
   onSetWeb(web: WebGrant | null): Promise<void>;
+  /** Opens the Access panel on this staff member's rows. */
+  onOpenAccess(): void;
   /** The models Codex offers, or null until loaded. */
   models: ModelOption[] | null;
   onLoadModels(): Promise<unknown>;
@@ -99,6 +105,8 @@ export function ProfileCard(props: ProfileCardProps) {
     null;
   const routines = props.routines.filter((routine) => routine.ownerId === agent.id);
   const connections = props.connections.filter((connection) => agent.connectionIds.includes(connection.id));
+  const operations = props.serviceGrants.filter((grant) => grant.agentId === agent.id);
+  const serviceName = (serviceId: string) => props.services.find((service) => service.id === serviceId)?.name ?? "a removed service";
   const runs = runsOf(agent.id, props.runs).slice(0, 6);
   const activity = props.activity.filter((entry) => entry.agentId === agent.id).slice(0, 8);
   const notes = props.notes.filter((note) => note.ownerId === agent.id);
@@ -272,7 +280,7 @@ export function ProfileCard(props: ProfileCardProps) {
                       <span>
                         <strong>{connection.label}</strong>
                         {connection.detail && <span className="muted small block">{connection.detail}</span>}
-                        <ConnectionFacts connection={connection} readers={props.readers} />
+                        <ConnectionFacts connection={connection} readers={props.readers} serviceName={connection.service ? serviceName(connection.service.serviceId) : null} />
                       </span>
                       <span className={`pill status-${connection.status}`}>{CONNECTION_STATUS_LABELS[connection.status]}</span>
                     </li>
@@ -280,7 +288,31 @@ export function ProfileCard(props: ProfileCardProps) {
                 </ul>
               </>
             )}
+            {operations.length > 0 && (
+              <ul className="connection-list">
+                {operations.map((grant) => (
+                  <li key={grant.id} className={grant.unsafe ? "unsafe" : undefined}>
+                    <span className="dot status-connected" aria-hidden="true" />
+                    <span>
+                      <strong>
+                        <code>{grant.operation}</code> on {serviceName(grant.serviceId)}
+                      </strong>
+                      <span className="muted small block">
+                        {grant.unsafe ? `Unsafe, as you allowed: ${grant.unsafe}` : "Only reads, and reaches no one else."}{" "}
+                        {grant.lastUsedAt ? `Last used ${formatAgo(grant.lastUsedAt, now)}.` : "Never used."}
+                      </span>
+                    </span>
+                    {grant.unsafe && <span className="pill unsafe-optional">Unsafe</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
             <WebAccess key={agent.id} agent={agent} onSet={props.onSetWeb} />
+            <p className="access-link">
+              <button type="button" className="link-button small" onClick={props.onOpenAccess}>
+                <Icon name="key" size={14} /> Everything {agent.name} can reach, in Access
+              </button>
+            </p>
           </section>
 
           <section className="profile-section" aria-label="Model">
@@ -414,6 +446,7 @@ function ChatButton({ name, onOpen }: { name: string; onOpen(): Promise<void> })
 function WebAccess({ agent, onSet }: { agent: Agent; onSet(web: WebGrant | null): Promise<void> }) {
   const [editing, setEditing] = useState(false);
   const [sites, setSites] = useState(agent.web?.sites.join(", ") ?? "");
+  const [live, setLive] = useState(agent.web?.live ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const id = useId();
@@ -432,7 +465,7 @@ function WebAccess({ agent, onSet }: { agent: Agent; onSet(web: WebGrant | null)
   };
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    void save({ sites: sites.split(/[\s,]+/).filter(Boolean) });
+    void save({ sites: sites.split(/[\s,]+/).filter(Boolean), live });
   };
   const failure = error && (
     <p className="form-error small" role="alert">
@@ -459,6 +492,15 @@ function WebAccess({ agent, onSet }: { agent: Agent; onSet(web: WebGrant | null)
           Search answers from OpenAI's index and opens no live pages, so no site sees what {agent.name} looks up. What it finds is treated as untrusted, and every
           search shows in the activity log.
         </p>
+        <label className="unsafe-tick small">
+          <input type="checkbox" checked={live} onChange={(event) => setLive(event.target.checked)} />
+          <span>
+            <strong>Live search</strong> <span className="pill tiny unsafe-optional">Unsafe</span>
+            <span className="block tiny">
+              Opens pages on the sites themselves. Something {agent.name} reads could make them put what they know in an address a site's owner sees.
+            </span>
+          </span>
+        </label>
         <div className="button-row">
           <button type="submit" className="button primary" disabled={saving}>
             {saving ? "Saving…" : agent.web ? "Save sites" : "Give web search"}
@@ -488,11 +530,15 @@ function WebAccess({ agent, onSet }: { agent: Agent; onSet(web: WebGrant | null)
           <span className="dot status-connected" aria-hidden="true" />
           <span>
             <strong>Web search</strong>
-            <span className="muted small block">{agent.web.sites.length ? `Only ${agent.web.sites.join(", ")}` : "Any site"}. Searches an index, opens no live pages.</span>
+            <span className="muted small block">
+              {agent.web.sites.length ? `Only ${agent.web.sites.join(", ")}` : "Any site"}.{" "}
+              {agent.web.live ? "Live: opens pages on the sites themselves, as you allowed." : "Searches an index, opens no live pages."}
+            </span>
           </span>
+          {agent.web.live && <span className="pill unsafe-optional">Unsafe</span>}
           <span className="button-row">
             <button type="button" className="button ghost small" disabled={saving} onClick={() => setEditing(true)}>
-              Sites
+              Change
             </button>
             <button type="button" className="button ghost small" disabled={saving} onClick={() => void save(null)}>
               {saving ? "Turning off…" : "Turn off"}
@@ -505,8 +551,24 @@ function WebAccess({ agent, onSet }: { agent: Agent; onSet(web: WebGrant | null)
   );
 }
 
-/** Where a source is: a calendar's file, or a folder with the files it reads and the reader for them. */
-function ConnectionFacts({ connection, readers }: { connection: SourceConnection; readers: StaffReader[] }) {
+/** Where a source is: a calendar's file, a folder with the files it reads and the reader for them, or an operation on a service. */
+function ConnectionFacts({ connection, readers, serviceName }: { connection: SourceConnection; readers: StaffReader[]; serviceName: string | null }) {
+  if (connection.kind === "service") {
+    return (
+      <dl className="connection-facts">
+        <div>
+          <dt>Service</dt>
+          <dd>{serviceName ?? "Not on file"}</dd>
+        </div>
+        <div>
+          <dt>Reads</dt>
+          <dd>
+            <code>{connection.service?.operation ?? "?"}</code>, in code, at each briefing
+          </dd>
+        </div>
+      </dl>
+    );
+  }
   if (connection.kind !== "folder") {
     return (
       <dl className="connection-facts">

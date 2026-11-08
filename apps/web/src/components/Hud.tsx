@@ -23,6 +23,10 @@ interface HudProps {
   policyPending: boolean;
   policyOpen: boolean;
   onTogglePolicy(): void;
+  /** Grants in force that break the data boundary. */
+  unsafeCount: number;
+  accessOpen: boolean;
+  onToggleAccess(): void;
   chatOpen: boolean;
   rosterOpen: boolean;
   theme: "dark" | "light";
@@ -135,6 +139,21 @@ export function Hud(props: HudProps) {
             <span className="count-badge tone-open">
               <span aria-hidden="true">1</span>
               <span className="visually-hidden">, a proposed change waits for you</span>
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
+          className="hud-button"
+          aria-pressed={props.accessOpen}
+          onClick={props.onToggleAccess}
+          title="Access: what staff can reach, and who holds it"
+        >
+          <Icon name="key" />
+          <span>Access</span>
+          {props.unsafeCount > 0 && (
+            <span className="count-badge tone-urgent" aria-label={`${props.unsafeCount} unsafe grant${props.unsafeCount === 1 ? "" : "s"}`}>
+              {props.unsafeCount}
             </span>
           )}
         </button>

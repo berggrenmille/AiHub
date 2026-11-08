@@ -692,6 +692,17 @@ export interface AppsResponse {
   apps: AppListing[];
 }
 
+/** A staff member's AiHub tools for each kind of run, as the gateway gives them. */
+export interface StaffTools {
+  agentId: string;
+  kinds: Array<{ kind: RunKind; tools: string[] }>;
+}
+
+/** `GET /api/access`: what the Access panel needs beyond the snapshot. */
+export interface AccessResponse {
+  staff: StaffTools[];
+}
+
 /**
  * `POST /api/proposals/:id/preview` with `{ sourcePath }`: what the proposed source would read there,
  * such as the first records a toolsmith's reader finds in the real folder. Nothing is created.

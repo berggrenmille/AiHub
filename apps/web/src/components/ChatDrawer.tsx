@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import type { Agent, ChatMessage, Conversation, Item, ModelOption, PolicyVersion, Proposal, Run, SourcePreview, StaffChange, StaffReader, View } from "@aihub/shared";
+import type { Agent, ChatMessage, Conversation, Item, ModelOption, PolicyVersion, Proposal, Run, Service, SourcePreview, StaffChange, StaffReader, View } from "@aihub/shared";
 import { errorText } from "../api.ts";
 import { lookFor } from "../lib/avatar.ts";
 import { formatClock, formatDateTime, formatLongDate, STATE_LABELS, toneOf } from "../format.ts";
@@ -8,6 +8,7 @@ import { Icon } from "./Icon.tsx";
 import { Markdown, type WikilinkTarget } from "./Markdown.tsx";
 import { Portrait } from "./office/Figure.tsx";
 import { ProposalCard } from "./ProposalCard.tsx";
+import { ServiceCard } from "./ServiceCard.tsx";
 import { PolicyCard } from "./PolicyCard.tsx";
 import { StaffChangeCard } from "./StaffChangeCard.tsx";
 import { baseOf } from "../lib/policy.ts";
@@ -18,6 +19,14 @@ import { ViewFrame, type ViewActions } from "../views/LazyViewFrame.tsx";
 const MAX_LENGTH = 20_000;
 /** How close to the bottom, in pixels, still counts as following the conversation. */
 const FOLLOW_SLACK = 48;
+
+/** What a service card in the chat can ask of the daemon. */
+export interface ServiceCardActions {
+  approve(serviceId: string, unsafe: string[]): Promise<void>;
+  decline(serviceId: string): Promise<void>;
+  signIn(serviceId: string): Promise<string>;
+  refresh(serviceId: string): Promise<void>;
+}
 
 interface ChatDrawerProps {
   agent: Agent;
@@ -33,6 +42,8 @@ interface ChatDrawerProps {
   /** The models Codex offers, for naming the one a proposal picks. */
   models: ModelOption[] | null;
   readers: StaffReader[];
+  services: Service[];
+  serviceActions: ServiceCardActions;
   /** What the staff member answers from, for anyone but the Chief of Staff. */
   scope: string | null;
   /** The way back to the Chief of Staff's chat, while someone else's is open. */
@@ -40,7 +51,7 @@ interface ChatDrawerProps {
   onBack(): void;
   onSend(text: string): Promise<void>;
   onPreview(proposalId: string, sourcePath: string): Promise<SourcePreview>;
-  onApprove(proposalId: string, sourcePath?: string): Promise<void>;
+  onApprove(proposalId: string, sourcePath: string | undefined, unsafe: string[]): Promise<void>;
   onDecline(proposalId: string): Promise<void>;
   onApprovePolicy(policyId: number): Promise<void>;
   onDeclinePolicy(policyId: number): Promise<void>;
@@ -212,6 +223,8 @@ export function ChatDrawer(props: ChatDrawerProps) {
               staffChange={message.kind === "staff_change" ? props.staffChanges.find((change) => String(change.id) === message.refId) : undefined}
               models={props.models}
               readers={props.readers}
+              services={props.services}
+              serviceActions={props.serviceActions}
               onPreview={props.onPreview}
               onApprove={props.onApprove}
               onDecline={props.onDecline}
@@ -291,8 +304,10 @@ interface MessageViewProps {
   staffChange: StaffChange | undefined;
   models: ModelOption[] | null;
   readers: StaffReader[];
+  services: Service[];
+  serviceActions: ServiceCardActions;
   onPreview(proposalId: string, sourcePath: string): Promise<SourcePreview>;
-  onApprove(proposalId: string, sourcePath?: string): Promise<void>;
+  onApprove(proposalId: string, sourcePath: string | undefined, unsafe: string[]): Promise<void>;
   onDecline(proposalId: string): Promise<void>;
   onApprovePolicy(policyId: number): Promise<void>;
   onDeclinePolicy(policyId: number): Promise<void>;
@@ -333,10 +348,29 @@ function MessageView(props: MessageViewProps) {
           proposal={proposal}
           intro={message.body}
           readers={readers}
+          services={props.services}
           models={props.models}
           onPreview={(sourcePath) => onPreview(message.refId ?? "", sourcePath)}
-          onApprove={(sourcePath) => onApprove(message.refId ?? "", sourcePath)}
+          onApprove={(sourcePath, unsafe) => onApprove(message.refId ?? "", sourcePath, unsafe)}
           onDecline={() => onDecline(message.refId ?? "")}
+        />
+        <p className="message-meta">{time}</p>
+      </li>
+    );
+  }
+
+  if (message.kind === "service") {
+    const serviceId = message.refId ?? "";
+    const actions = props.serviceActions;
+    return (
+      <li className="message message-card">
+        <ServiceCard
+          service={props.services.find((service) => service.id === serviceId)}
+          intro={message.body}
+          onApprove={(unsafe) => actions.approve(serviceId, unsafe)}
+          onDecline={() => actions.decline(serviceId)}
+          onSignIn={() => actions.signIn(serviceId)}
+          onRefresh={() => actions.refresh(serviceId)}
         />
         <p className="message-meta">{time}</p>
       </li>

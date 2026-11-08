@@ -182,6 +182,13 @@ function ItemCard({
       </div>
       <p className="item-title">{item.title}</p>
       {item.detail && <p className="item-detail">{item.detail}</p>}
+      {item.link && (
+        <p className="item-link small">
+          <a href={item.link} target="_blank" rel="noreferrer noopener">
+            Open where it came from
+          </a>
+        </p>
+      )}
       {closing ? (
         <form className="resolve-form" onSubmit={submit}>
           <label htmlFor={noteId} className="small">

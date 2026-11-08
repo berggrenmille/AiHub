@@ -25,6 +25,7 @@ export type IconName =
   | "play"
   | "warning"
   | "lock"
+  | "key"
   | "back"
   | "chevron"
   | "activity"
@@ -61,6 +62,7 @@ const PATHS: Record<IconName, string> = {
   play: "M7 4.5v15l12.5-7.5z",
   warning: "M12 3.5l9.5 16.5h-19zM12 10v4.5M12 17.5v.01",
   lock: "M6 11h12v10H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3",
+  key: "M11.5 9.5a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM11 11.5l9 9M16.5 16l2.5-2.5M14 13.5l2-2",
   back: "M15 5l-7 7 7 7",
   chevron: "M9 6l6 6-6 6",
   activity: "M3 12h4l3-8 4 16 3-8h4",

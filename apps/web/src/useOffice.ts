@@ -3,7 +3,14 @@ import type { Conversation, DaemonEvent, ModelChoice, ModelOption, SourcePreview
 import {
   approvePolicy,
   approveProposal,
+  approveService,
   approveStaffChange,
+  declineService,
+  refreshService,
+  removeService,
+  revokeServiceGrant,
+  revokeSource,
+  signInService,
   connectOffice,
   declinePolicy,
   declineProposal,
@@ -47,8 +54,17 @@ export interface OfficeCommands {
   reviewStaff(): Promise<void>;
   /** What a proposal's source would read at a path. Changes nothing. */
   preview(proposalId: string, sourcePath: string): Promise<SourcePreview>;
-  approve(proposalId: string, sourcePath?: string): Promise<void>;
+  /** `unsafe` holds the keys of the unsafe grants the operator ticked. */
+  approve(proposalId: string, sourcePath?: string, unsafe?: string[]): Promise<void>;
   decline(proposalId: string): Promise<void>;
+  approveService(serviceId: string, unsafe: string[]): Promise<void>;
+  declineService(serviceId: string): Promise<void>;
+  /** Starts a sign-in and returns the address to open in the browser. */
+  signInService(serviceId: string): Promise<string>;
+  refreshService(serviceId: string): Promise<void>;
+  removeService(serviceId: string): Promise<void>;
+  revokeServiceGrant(grantId: number): Promise<void>;
+  revokeSource(connectionId: string, agentId: string): Promise<void>;
   dismiss(itemId: number, note?: string): Promise<void>;
   resolve(itemId: number, note?: string): Promise<void>;
   runRoutine(routineId: string): Promise<void>;
@@ -107,9 +123,16 @@ export function useOffice() {
       declineStaffChange: async (changeId) => apply({ type: "staff_change", change: await declineStaffChange(changeId) }),
       reviewStaff: () => runStaffReview(),
       preview: (proposalId, sourcePath) => previewProposal(proposalId, { sourcePath }),
-      approve: async (proposalId, sourcePath) =>
-        apply({ type: "proposal", proposal: await approveProposal(proposalId, sourcePath ? { sourcePath } : {}) }),
+      approve: async (proposalId, sourcePath, unsafe) =>
+        apply({ type: "proposal", proposal: await approveProposal(proposalId, { ...(sourcePath && { sourcePath }), ...(unsafe?.length && { unsafe }) }) }),
       decline: async (proposalId) => apply({ type: "proposal", proposal: await declineProposal(proposalId) }),
+      approveService: async (serviceId, unsafe) => apply({ type: "service", service: await approveService(serviceId, unsafe.length ? { unsafe } : {}) }),
+      declineService: async (serviceId) => apply({ type: "service", service: await declineService(serviceId) }),
+      signInService: async (serviceId) => (await signInService(serviceId)).url,
+      refreshService: async (serviceId) => apply({ type: "service", service: await refreshService(serviceId) }),
+      removeService: async (serviceId) => apply({ type: "service", service: await removeService(serviceId) }),
+      revokeServiceGrant: (grantId) => revokeServiceGrant(grantId),
+      revokeSource: (connectionId, agentId) => revokeSource(connectionId, agentId),
       dismiss: async (itemId, note) => apply({ type: "item", item: await dismissItem(itemId, note ? { note } : {}) }),
       resolve: async (itemId, note) => apply({ type: "item", item: await resolveItem(itemId, note ? { note } : {}) }),
       runRoutine: async (routineId) => {

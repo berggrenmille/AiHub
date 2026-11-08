@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import fastifyStatic from "@fastify/static";
 import type {
+  AccessResponse,
   Agent,
   AppsResponse,
   ChatResponse,
@@ -299,6 +300,14 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     } catch (error) {
       return sendError(reply, error);
     }
+  });
+
+  // The Access panel: what staff can reach, beyond what the snapshot holds.
+  app.get("/api/access", async () => {
+    const response: AccessResponse = {
+      staff: office.store.listAgents().map((agent) => ({ agentId: agent.id, kinds: office.gateway.toolsByKind(agent.id) })),
+    };
+    return response;
   });
 
   app.delete<{ Params: { id: string } }>("/api/service-grants/:id", async (request, reply) => {

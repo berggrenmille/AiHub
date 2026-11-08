@@ -1,5 +1,5 @@
 import { useId, useRef, useState, type FormEvent } from "react";
-import type { ModelOption, Proposal, ProposedSource, SourcePreview, StaffReader } from "@aihub/shared";
+import type { ModelOption, Proposal, ProposedSource, Service, SourcePreview, StaffReader } from "@aihub/shared";
 import { errorText } from "../api.ts";
 import { lookFor } from "../lib/avatar.ts";
 import { approvalGate, describeSource, patternOf, previewRows, READER_STATUS_LABELS, readerOf, type PreviewState } from "../lib/sources.ts";
@@ -7,6 +7,9 @@ import { formatDateTime } from "../format.ts";
 import { describeModel } from "../lib/models.ts";
 import { Portrait } from "./office/Figure.tsx";
 import { Icon } from "./Icon.tsx";
+import { missingTicks } from "../lib/access.ts";
+import { toggled } from "./ServiceCard.tsx";
+import { UnsafeGrants } from "./UnsafeGrants.tsx";
 
 // An approval card for a proposal in the Chief of Staff's chat (DESIGN.md › Recruitment and
 // delegation): who would join, what they'd own, what they'd watch, and why. A source can be
@@ -18,10 +21,13 @@ interface ProposalCardProps {
   /** The chat message that carried the card. */
   intro: string;
   readers: StaffReader[];
+  /** For naming the service a source or operation is on. */
+  services: Service[];
   /** For naming the model the proposal picks. */
   models: ModelOption[] | null;
   onPreview(sourcePath: string): Promise<SourcePreview>;
-  onApprove(sourcePath?: string): Promise<void>;
+  /** `unsafe` holds the keys of the unsafe grants the operator ticked. */
+  onApprove(sourcePath: string | undefined, unsafe: string[]): Promise<void>;
   onDecline(): Promise<void>;
 }
 
@@ -31,8 +37,9 @@ const STATUS_LABELS: Record<Proposal["status"], string> = {
   declined: "Declined",
 };
 
-export function ProposalCard({ proposal, intro, readers, models, onPreview, onApprove, onDecline }: ProposalCardProps) {
+export function ProposalCard({ proposal, intro, readers, services, models, onPreview, onApprove, onDecline }: ProposalCardProps) {
   const [path, setPath] = useState("");
+  const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState<"approve" | "decline" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewState>({ status: "idle" });
@@ -50,19 +57,24 @@ export function ProposalCard({ proposal, intro, readers, models, onPreview, onAp
   }
 
   const { profile, responsibility, source, web, model, reason } = proposal.payload;
+  const operations = proposal.payload.operations ?? [];
+  const unsafe = proposal.payload.unsafe ?? [];
   const pending = proposal.status === "pending";
-  const pathNeeded = pending && source !== null;
-  const trimmed = path.trim();
+  const onService = source?.kind === "service";
+  const pathNeeded = pending && source !== null && !onService;
+  const trimmed = onService ? "" : path.trim();
   const looksLikeIcs = /\.ics$/i.test(trimmed);
-  const described = source ? describeSource(source, readers) : null;
+  const sourceService = onService ? services.find((service) => service.id === source.service?.serviceId) : undefined;
+  const described = source ? describeSource(source, readers, sourceService?.name) : null;
   const gate = approvalGate(source, readers, trimmed, preview);
+  const missing = missingTicks(unsafe, ticked);
   const previewedCode = preview.status === "done" ? preview.preview.code : null;
 
   const run = async (kind: "approve" | "decline") => {
     setBusy(kind);
     setError(null);
     try {
-      if (kind === "approve") await onApprove(source ? trimmed : undefined);
+      if (kind === "approve") await onApprove(source && !onService ? trimmed : undefined, [...ticked]);
       else await onDecline();
     } catch (failure) {
       setError(errorText(failure));
@@ -83,7 +95,7 @@ export function ProposalCard({ proposal, intro, readers, models, onPreview, onAp
   };
 
   const runPreview = async () => {
-    if (!trimmed) {
+    if (!trimmed && !onService) {
       setError(`Enter the path of ${whatToPick} first.`);
       return;
     }
@@ -106,6 +118,10 @@ export function ProposalCard({ proposal, intro, readers, models, onPreview, onAp
     }
     if (!gate.ready) {
       setError(gate.reason);
+      return;
+    }
+    if (missing.length) {
+      setError(`Tick “${missing[0]!.what}” first.`);
       return;
     }
     void run("approve");
@@ -153,12 +169,41 @@ export function ProposalCard({ proposal, intro, readers, models, onPreview, onAp
           <dt>Source</dt>
           <dd>{source && described ? `${source.label} (${described.kind})` : web ? "None: searches the web instead" : "None needed"}</dd>
         </div>
+        {onService && (
+          <div>
+            <dt>Account</dt>
+            <dd>
+              {sourceService ? `${sourceService.name}, ${sourceService.where}` : "A service no longer on file"}
+              <span className="block muted">AiHub calls it in code at each briefing, with arguments fixed here, and hands the supervisor what it reads as data.</span>
+            </dd>
+          </div>
+        )}
+        {operations.length > 0 && (
+          <div>
+            <dt>May call</dt>
+            <dd>
+              <ul className="operation-grants">
+                {operations.map((operation) => (
+                  <li key={`${operation.serviceId}/${operation.operation}`}>
+                    <code>{operation.operation}</code> on {operation.serviceName}
+                    {operation.unsafe && <span className="pill tiny unsafe-optional">Unsafe</span>}
+                    <span className="block muted small">{operation.why}</span>
+                  </li>
+                ))}
+              </ul>
+            </dd>
+          </div>
+        )}
         {web && (
           <div>
             <dt>Web search</dt>
             <dd>
               {web.sites.length ? `Only ${web.sites.join(", ")}` : "Any site"}
-              <span className="block muted">Searches OpenAI's index and opens no live pages, so no site sees what is looked up.</span>
+              <span className="block muted">
+                {web.live
+                  ? "Live search opens pages on the sites themselves, so only if you tick it below. Otherwise it searches OpenAI's index."
+                  : "Searches OpenAI's index and opens no live pages, so no site sees what is looked up."}
+              </span>
             </dd>
           </div>
         )}
@@ -182,7 +227,14 @@ export function ProposalCard({ proposal, intro, readers, models, onPreview, onAp
 
       {pending ? (
         <form className="proposal-actions" onSubmit={onSubmit}>
-          {source && described && (
+          {onService && (
+            <div className="button-row">
+              <button type="button" className="button" disabled={busy !== null || preview.status === "loading"} onClick={() => void runPreview()}>
+                {preview.status === "loading" ? "Reading…" : `Preview ${source.label}`}
+              </button>
+            </div>
+          )}
+          {source && described && !onService && (
             <div className="field">
               <label htmlFor={pathId}>
                 {source.label}: {described.pick}
@@ -205,6 +257,7 @@ export function ProposalCard({ proposal, intro, readers, models, onPreview, onAp
             </div>
           )}
           {source && <PreviewPanel state={preview} />}
+          <UnsafeGrants grants={unsafe} ticked={ticked} disabled={busy !== null} onToggle={(key, on) => setTicked(toggled(ticked, key, on))} />
           {gate.reason && (
             <p className={`callout gate gate-${gate.tone}`}>
               <Icon name={gate.tone === "done" ? "check" : gate.tone === "blocked" ? "warning" : "lock"} size={16} />
@@ -212,7 +265,12 @@ export function ProposalCard({ proposal, intro, readers, models, onPreview, onAp
             </p>
           )}
           <div className="button-row">
-            <button type="submit" className="button primary" disabled={busy !== null || !gate.ready} title={gate.ready ? undefined : (gate.reason ?? undefined)}>
+            <button
+              type="submit"
+              className="button primary"
+              disabled={busy !== null || !gate.ready || missing.length > 0}
+              title={!gate.ready ? (gate.reason ?? undefined) : missing.length ? `Tick “${missing[0]!.what}” first` : undefined}
+            >
               <Icon name="check" />
               {busy === "approve" ? "Approving…" : `Approve ${profile.name}`}
             </button>

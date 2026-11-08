@@ -1,4 +1,4 @@
-import type { AgentRole, Assignment, ModelOption, PolicyVersion, Proposal, RecruitProposal, RunKind, RunProfile, StaffChange, StaffReader } from "@aihub/shared";
+import { RUN_KINDS, type AgentRole, type Assignment, type ModelOption, type PolicyVersion, type Proposal, type RecruitProposal, type RunKind, type RunProfile, type StaffChange, type StaffReader } from "@aihub/shared";
 import type { StaffChangeRequest } from "../staff/staff-changes.ts";
 import type { ReaderFile } from "../sources/reader.ts";
 import { z } from "zod";
@@ -120,6 +120,14 @@ export class Gateway {
     return [...this.tools.values()]
       .filter((tool) => permits(tool, agent, caller, kind, this.store))
       .map((tool) => ({ name: tool.name, description: tool.description, inputSchema: jsonSchemaOf(tool.input) }));
+  }
+
+  /** The tools each kind of run gets for a staff member, for the Access panel. Kinds that get none are left out. */
+  toolsByKind(agentId: string): Array<{ kind: RunKind; tools: string[] }> {
+    const agent = this.store.getAgentRecord(agentId);
+    if (!agent) return [];
+    const caller: Caller = { agentId, runId: "", profile: agent.profile };
+    return RUN_KINDS.map((kind) => ({ kind, tools: this.specsFor(caller, kind).map((tool) => tool.name) })).filter((entry) => entry.tools.length > 0);
   }
 
   async call(caller: Caller, call: ToolCall): Promise<ToolOutcome> {

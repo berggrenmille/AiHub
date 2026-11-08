@@ -1,6 +1,8 @@
 import type {
+  AccessResponse,
   Agent,
   ApproveProposalRequest,
+  ApproveServiceRequest,
   ChatRequest,
   ChatResponse,
   CloseItemRequest,
@@ -15,6 +17,8 @@ import type {
   Proposal,
   Routine,
   RunRoutineResponse,
+  Service,
+  ServiceSignInResponse,
   SourcePreview,
   StaffChange,
   StateSnapshot,
@@ -152,6 +156,43 @@ export function approveProposal(proposalId: string, body: ApproveProposalRequest
 
 export function declineProposal(proposalId: string): Promise<Proposal> {
   return request<Proposal>(`/api/proposals/${encodeURIComponent(proposalId)}/decline`, json("POST", {}));
+}
+
+export function approveService(serviceId: string, body: ApproveServiceRequest): Promise<Service> {
+  return request<Service>(`/api/services/${encodeURIComponent(serviceId)}/approve`, json("POST", body));
+}
+
+export function declineService(serviceId: string): Promise<Service> {
+  return request<Service>(`/api/services/${encodeURIComponent(serviceId)}/decline`, json("POST", {}));
+}
+
+/** Starts a sign-in to an MCP server: the address to open in the browser. Codex finishes it. */
+export function signInService(serviceId: string): Promise<ServiceSignInResponse> {
+  return request<ServiceSignInResponse>(`/api/services/${encodeURIComponent(serviceId)}/sign-in`, json("POST", {}));
+}
+
+/** Checks a service again, such as after connecting an app at ChatGPT. */
+export function refreshService(serviceId: string): Promise<Service> {
+  return request<Service>(`/api/services/${encodeURIComponent(serviceId)}/refresh`, json("POST", {}));
+}
+
+export function removeService(serviceId: string): Promise<Service> {
+  return request<Service>(`/api/services/${encodeURIComponent(serviceId)}/remove`, json("POST", {}));
+}
+
+/** Takes one operation on a service away from a staff member. */
+export function revokeServiceGrant(grantId: number): Promise<void> {
+  return request<void>(`/api/service-grants/${grantId}`, { method: "DELETE" });
+}
+
+/** Takes a source away from a staff member. */
+export function revokeSource(connectionId: string, agentId: string): Promise<void> {
+  return request<void>(`/api/connections/${encodeURIComponent(connectionId)}/grants/${encodeURIComponent(agentId)}`, { method: "DELETE" });
+}
+
+/** Each staff member's tools for each kind of run. */
+export function loadAccess(): Promise<AccessResponse> {
+  return request<AccessResponse>("/api/access");
 }
 
 export function dismissItem(itemId: number, body: CloseItemRequest = {}): Promise<Item> {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Agent } from "@aihub/shared";
 import { ActivityLog, ActivityTicker, Toasts } from "./components/Activity.tsx";
 import { AssignmentsDrawer } from "./components/Assignments.tsx";
+import { AccessPanel } from "./components/AccessPanel.tsx";
 import { ChatDrawer } from "./components/ChatDrawer.tsx";
 import { Dashboards } from "./components/Dashboards.tsx";
 import { Hud, type View } from "./components/Hud.tsx";
@@ -14,6 +15,7 @@ import { Roster } from "./components/Roster.tsx";
 import { nameOf, openAssignmentCount } from "./lib/assignments.ts";
 import { chatPartner, chatScope, shownConversation } from "./lib/chat.ts";
 import { openCount } from "./lib/inbox.ts";
+import { unsafeRows } from "./lib/access.ts";
 import { resolveWikilink } from "./lib/notes.ts";
 import { pendingPolicy } from "./lib/policy.ts";
 import { dashboardsOf, viewsByMessage } from "./lib/views.ts";
@@ -21,7 +23,7 @@ import { isActive, rosterOrder } from "./state.ts";
 import { useOffice } from "./useOffice.ts";
 
 type Theme = "dark" | "light";
-type Drawer = "chat" | "activity" | "assignments" | "policy" | null;
+type Drawer = "chat" | "activity" | "assignments" | "policy" | "access" | null;
 
 export function App() {
   const { state, commands, models } = useOffice();
@@ -41,6 +43,8 @@ export function App() {
   const [notePath, setNotePath] = useState<string | null>(null);
   const [notesTab, setNotesTab] = useState<"note" | "graph">("note");
   const [inboxFocus, setInboxFocus] = useState<string | null>(null);
+  // The staff member the Access panel shows alone, from a profile card's link.
+  const [accessFocus, setAccessFocus] = useState<string | null>(null);
   // A message a dashboard's button puts in a chat box, for the operator to edit or send.
   const [prefill, setPrefill] = useState<{ conversationId: string; text: string; key: number } | null>(null);
   const [theme, setTheme] = useTheme();
@@ -66,6 +70,16 @@ export function App() {
   const dashboards = useMemo(() => dashboardsOf(state.views), [state.views]);
   const viewActions = useMemo(() => ({ resolve: commands.resolve, dismiss: commands.dismiss }), [commands]);
   const clearPrefill = useCallback(() => setPrefill(null), []);
+  const unsafeCount = useMemo(() => unsafeRows(state.services, state.serviceGrants, state.agents).length, [state.services, state.serviceGrants, state.agents]);
+  const serviceActions = useMemo(
+    () => ({ approve: commands.approveService, decline: commands.declineService, signIn: commands.signInService, refresh: commands.refreshService }),
+    [commands],
+  );
+  const openAccess = useCallback((agentId: string | null) => {
+    setAccessFocus(agentId);
+    setProfileId(null);
+    setDrawer("access");
+  }, []);
 
   // Workers who have left still have names: their assignments keep them.
   const agentName = useCallback(
@@ -179,6 +193,9 @@ export function App() {
         policyPending={pendingPolicy(state.policies) !== null}
         policyOpen={drawer === "policy"}
         onTogglePolicy={() => setDrawer((current) => (current === "policy" ? null : "policy"))}
+        unsafeCount={unsafeCount}
+        accessOpen={drawer === "access"}
+        onToggleAccess={() => (drawer === "access" ? setDrawer(null) : openAccess(null))}
         chatOpen={chiefOpen}
         rosterOpen={rosterOpen}
         theme={theme}
@@ -267,6 +284,8 @@ export function App() {
               staffChanges={state.staffChanges}
               models={models}
               readers={state.readers}
+              services={state.services}
+              serviceActions={serviceActions}
               scope={chatScope(partner.agent)}
               back={chief && chiefChat && chat.id !== chiefChat.id ? { name: chief.name, unread } : null}
               onBack={openChiefChat}
@@ -298,6 +317,26 @@ export function App() {
         {drawer === "policy" && (
           <PolicyDrawer policies={state.policies} agentName={agentName} onSave={commands.savePolicy} onOpenProposal={openChiefChat} onClose={() => setDrawer(null)} />
         )}
+        {drawer === "access" && (
+          <AccessPanel
+            services={state.services}
+            grants={state.serviceGrants}
+            connections={state.connections}
+            readers={state.readers}
+            agents={state.agents}
+            focusId={accessFocus}
+            onFocus={setAccessFocus}
+            agentName={agentName}
+            onSelectAgent={setProfileId}
+            onRevokeGrant={commands.revokeServiceGrant}
+            onRevokeSource={commands.revokeSource}
+            onSetWeb={commands.setWeb}
+            onSignIn={commands.signInService}
+            onRefresh={commands.refreshService}
+            onRemove={commands.removeService}
+            onClose={() => setDrawer(null)}
+          />
+        )}
         {drawer === "assignments" && (
           <AssignmentsDrawer assignments={state.assignments} agents={state.agents} now={now} onSelectAgent={setProfileId} onClose={() => setDrawer(null)} />
         )}
@@ -313,6 +352,8 @@ export function App() {
           responsibilities={state.responsibilities}
           routines={state.routines}
           connections={state.connections}
+          services={state.services}
+          serviceGrants={state.serviceGrants}
           runs={state.runs}
           activity={state.activity}
           assignments={state.assignments}
@@ -325,6 +366,7 @@ export function App() {
           onOpenNote={openNote}
           onUpdate={(changes) => commands.updateAgent(profile.id, changes)}
           onSetWeb={(web) => commands.setWeb(profile.id, web)}
+          onOpenAccess={() => openAccess(profile.id)}
           models={models}
           onLoadModels={commands.loadModels}
           onSetModel={(choice) => commands.setModel(profile.id, choice)}

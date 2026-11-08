@@ -84,8 +84,11 @@ export function readersInHand(readers: StaffReader[]): Map<string, StaffReader> 
   return inHand;
 }
 
-/** What a proposal card says about a source, and what it asks the operator to pick. */
-export function describeSource(source: ProposedSource, readers: StaffReader[]): { kind: string; pick: string; placeholder: string } {
+/** What a proposal card says about a source, and what it asks the operator to pick. A service source asks for nothing. */
+export function describeSource(source: ProposedSource, readers: StaffReader[], serviceName?: string): { kind: string; pick: string; placeholder: string } {
+  if (source.kind === "service") {
+    return { kind: `${source.service?.operation ?? "an operation"} on ${serviceName ?? "a service"}, read in code`, pick: "", placeholder: "" };
+  }
   if (source.kind === "folder") {
     const info = readerOf(source.reader, readers);
     const pattern = patternOf(source, readers);
@@ -122,6 +125,12 @@ export interface ApprovalGate {
  * approves the reader, so the operator sees what it reads before it runs for real.
  */
 export function approvalGate(source: ProposedSource | null, readers: StaffReader[], path: string, preview: PreviewState): ApprovalGate {
+  // A source on a service reads an account: the operator sees what it reads, and from which account, first.
+  if (source?.kind === "service") {
+    if (preview.status === "done") return { ready: true, reason: null, tone: "done" };
+    if (preview.status === "failed") return { ready: false, reason: "The preview couldn't read the service. Check it in the Access panel, then preview again.", tone: "info" };
+    return { ready: false, reason: "Preview first: AiHub reads the account now, so you see what the supervisor would get.", tone: "info" };
+  }
   const info = source?.kind === "folder" ? readerOf(source.reader, readers) : null;
   if (info?.kind !== "staff") return { ready: true, reason: null, tone: "info" };
   const reader = info.reader;
@@ -179,7 +188,7 @@ export function previewRows(data: unknown, fieldLimit = 3): PreviewRow[] {
     return data.records.filter(isObject).map((record, index) => ({
       key: text(record.id) || `record-${index}`,
       title: text(record.title) || "(untitled)",
-      detail: text(record.file) || null,
+      detail: text(record.file) || text(record.time) || null,
       fields: isObject(record.fields) ? Object.entries(record.fields).slice(0, fieldLimit).map(([name, value]) => [name, showValue(value)]) : [],
     }));
   }

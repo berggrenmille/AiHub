@@ -10,7 +10,7 @@ import { officeStatus } from "./office-status.ts";
 import { NO_PLATFORM } from "./platform.ts";
 import { CodexRuntime, pinnedCodexCommand } from "./runtime/codex-runtime.ts";
 import { Scheduler } from "./scheduler.ts";
-import { demo, FakeRuntime } from "./runtime/fake-runtime.ts";
+import { demoRuntime } from "./runtime/fake-runtime.ts";
 import { installToken } from "./security.ts";
 import { buildServer } from "./server.ts";
 import { Store } from "./store/store.ts";
@@ -27,7 +27,7 @@ const store = new Store(join(config.dataDir, "aihub.db"));
 const token = installToken(store);
 const runtime =
   config.fakeRuntime
-    ? Object.assign(new FakeRuntime(), { respond: demo })
+    ? demoRuntime()
     : new CodexRuntime({ command: pinnedCodexCommand(config.root), codexHome: config.codexHome });
 const platform = config.osIntegration
   ? windowsPlatform({

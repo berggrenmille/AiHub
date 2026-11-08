@@ -1,4 +1,5 @@
 import { DASHBOARD_EXAMPLE, REPLY_EXAMPLE } from "@aihub/views";
+import { FAKE_MAIL_URL, FakeConnectors } from "./fake-connectors.ts";
 import {
   ContextUnavailableError,
   type AgentRuntime,
@@ -40,9 +41,9 @@ export const demo: Responder = async (input, options) => {
         sourceRef: record.id,
       }));
     const changed = records
-      .filter((record) => record.change === "added" || record.change === "changed")
+      .filter((record) => record.change === "new" || record.change === "changed")
       .slice(0, 3)
-      .map((record) => ({ title: `${record.change === "added" ? "New" : "Changed"}: ${record.title}`, detail: "The fake runtime flags the first few new or changed records.", urgency: "fyi", needsOperator: false, sourceRef: record.id }));
+      .map((record) => ({ title: `${record.change === "new" ? "New" : "Changed"}: ${record.title}`, detail: "The fake runtime flags the first few new or changed records.", urgency: "fyi", needsOperator: false, sourceRef: record.id }));
     const items = [...overlaps, ...changed];
     if (items.length > 0) {
       // A view on the section, so the briefing shows one without Codex.
@@ -215,6 +216,9 @@ async function delegate(input: string, options: RunTurnOptions): Promise<string 
       if (!/already called/.test(outcome.text)) return outcome.text;
     }
   }
+  // Mail: connect the fake mail service, then a supervisor that watches the inbox.
+  // Only in a chat, since a briefing's own prompt names its sections, such as "Inbox".
+  if (input.includes("The operator's new message:\n") && /\b(inbox|e-?mail|mail)\b/i.test(message)) return mail(message, call);
   // "Watch my reading list": a supervisor for a folder, on the built-in reader its words suggest.
   const watch = /\bwatch (?:my |the )?([\w ]+?)(?: folder)?(?:[.:,?!]|$)/i.exec(message);
   if (watch) {
@@ -238,6 +242,59 @@ async function delegate(input: string, options: RunTurnOptions): Promise<string 
     return outcome.ok ? `${assign[1]} is on it.` : outcome.text;
   }
   return null;
+}
+
+/**
+ * Mail in the fake office. For the Chief of Staff: propose the fake mail service, then once it is
+ * signed in, a supervisor that reads the inbox and may search it and send replies, the sending an
+ * unsafe grant. For a supervisor with the grants: search the mail, or send a reply.
+ */
+async function mail(message: string, call: (name: string, args: object) => Promise<{ ok: boolean; text: string }>): Promise<string> {
+  const send = /\b(?:send|reply|write)\b.*?\b(?:to\s+)?([\w.+-]+@[\w.-]+)/i.exec(message);
+  if (send) {
+    const sent = await call("aihub_use_service", {
+      service: "Fake mail",
+      operation: "send_message",
+      arguments: { to: send[1], subject: "A reply from your office", body: "This is the fake runtime, replying for the operator." },
+    });
+    return sent.ok ? `Sent a reply to ${send[1]}.` : `I can't send that: ${sent.text}`;
+  }
+  const search = /\bsearch (?:my |the )?(?:inbox|e-?mail|mail) for (.+?)[.?!]?$/i.exec(message);
+  if (search) {
+    const found = await call("aihub_use_service", { service: "Fake mail", operation: "search_messages", arguments: { query: search[1] } });
+    return found.ok ? `Here's what I found: ${(found.text.split("BEGIN SOURCE DATA\n")[1] ?? "").slice(0, 300)}` : `I can't search the mail: ${found.text}`;
+  }
+  const listed = await call("aihub_list_services", {});
+  if (!listed.ok) return listed.text;
+  const line = listed.text.split("\n").find((candidate) => candidate.startsWith("- Fake mail:"));
+  if (!line) {
+    const proposed = await call("aihub_propose_service", { kind: "remote_mcp", name: "Fake mail", url: FAKE_MAIL_URL, reason: "You asked for help with your mail." });
+    return proposed.ok ? "I've proposed connecting your mail. Approve it on the card and sign in, then ask me again." : proposed.text;
+  }
+  if (!line.includes("Connected.")) return "Your mail isn't signed in yet. Sign in from its card, then ask me again.";
+  for (const name of SUPERVISOR_NAMES) {
+    const proposed = await call("aihub_propose_supervisor", {
+      profile: { name, title: "Mail Supervisor", description: "Watches the inbox and reports what needs you.", workingStyle: "Brief." },
+      responsibility: { title: "Inbox", scope: "New mail in the inbox. Newsletters and receipts only when they need you." },
+      source: {
+        kind: "service",
+        label: "Inbox",
+        service: "Fake mail",
+        operation: "list_messages",
+        arguments: { limit: 20 },
+        mapping: { list: "messages", key: "id", title: "subject", time: "received_at", link: "url" },
+      },
+      operations: [
+        { service: "Fake mail", operation: "search_messages", why: "To look up earlier mail when you ask about it." },
+        { service: "Fake mail", operation: "send_message", why: "To send replies you ask for." },
+      ],
+      model: { id: "fake-light", effort: "medium", why: "Reading mail is light work." },
+      reason: "You asked for someone to watch your inbox.",
+    });
+    if (proposed.ok) return `I've proposed ${name} to watch your inbox. Sending replies is an unsafe grant, so it has its own tick on the card.`;
+    if (!/already/i.test(proposed.text)) return proposed.text;
+  }
+  return "Everyone I'd propose is already on staff.";
 }
 
 /** The models a fake office offers: a default and a lighter one. */
@@ -271,6 +328,8 @@ export const FAKE_MODELS: ModelOption[] = [
 export class FakeRuntime implements AgentRuntime {
   readonly contexts = new Map<string, { options: ContextOptions & { ephemeral?: boolean }; inputs: string[] }>();
   readonly calls: string[] = [];
+  /** A made-up mail service and app list, so services work without Codex. */
+  readonly connectors = new FakeConnectors();
   respond: Responder = echo;
   /** What account() and usageLimits() report; tests change them. */
   signedIn = true;
@@ -319,4 +378,11 @@ export class FakeRuntime implements AgentRuntime {
   }
 
   async close(): Promise<void> {}
+}
+
+/** The fake office for working on the UI: demo replies, and a sign-in that takes a moment, as in a browser. */
+export function demoRuntime(): FakeRuntime {
+  const runtime = Object.assign(new FakeRuntime(), { respond: demo });
+  runtime.connectors.signInDelayMs = 3_000;
+  return runtime;
 }
