@@ -2,6 +2,44 @@
 
 Where the build stands against [DESIGN.md](../DESIGN.md) › Build sequence and acceptance.
 
+## Up next
+
+The operator set the order on 2026-11-08: views first, then the Chief of Staff's review of the staff. Nothing in this section is built yet. When a phase starts, its rules move into DESIGN.md.
+
+### 1. Views: answers, reports, and dashboards as interface
+
+Staff answer with interface where it reads better than text: a chart, a table, cards, a timeline, or a small working tool. The language is [OpenUI](https://github.com/thesysdev/open-intelligent-ui): the model writes a short program of components, values that update as the operator interacts, and calculations such as `@GroupBy` and `@Stats`. AiHub checks it and draws it with its own components. It needs `@openuidev/lang-core` and `@openuidev/react-lang` (MIT, React 19 and zod 4, like the web app), but not the demo's Next.js app or Thesys's hosted Gateway, so no Thesys key and nothing beyond Codex sees the data.
+
+Where views appear, in the order to build them:
+
+1. **Chat answers and briefing sections**, with the data written into the program. A supervisor's section carries a view, such as electricity prices as a chart with the cheap hours marked. The text stays the record: a view that fails the check falls back to it.
+2. **Dashboards**: saved views, pinned to a staff member or the office, that fetch fresh data each time they open. The Chief of Staff can make one when asked.
+
+Rules:
+
+- **Views are part of AiHub. Any runtime can write one, and none can change what a view may do.** A staff member reads the language guide and hands a view in through gateway tools, so a Claude or other runtime offers the same tools through its own tool use. Nothing depends on Codex-only features, on Thesys's correction step, or on streaming a view as it is written; a view appears once it is handed in.
+- **Nothing in a view loads from outside.** A view comes from a model that may have read mail or web pages, and an image whose address is built from data sends that data to the image's server. So AiHub's components leave out external images, embedded pages (the demo's HtmlView), external map tiles, and video embeds, and the page's content security policy blocks outside loads as a second barrier.
+- **Live data goes through the gateway.** A dashboard's data tools are read-only and limited to what its author may read, checked each time it opens. They read AiHub's records: items, runs, assignments, and what readers pull from sources. None acts.
+- **A button that messages the assistant shows what it sends.** The message arrives as the operator's own.
+- **The daemon checks every program** when it is handed in and returns the errors, so the staff member fixes it in the same turn, as with readers.
+- **The guide is read on demand.** The demo's guide is about 8,000 tokens, so it comes from a tool when a staff member makes a view, not in every run's instructions.
+- **Each model is measured before it writes views.** Smaller models write worse programs without a correction step. OpenUI ships a benchmark that checks any model's output; a model that scores poorly answers in text.
+
+To settle when it starts: the first view the operator wants to see; what the install script in `lang-core` does (the demo disables it); and how mature the 1.0 packages are.
+
+### 2. The Chief of Staff reviews the staff
+
+The operator wants to revisit how the Chief of Staff behaves. One of the role's purposes is to review the supervisors' work over time and keep them as effective as they can be: catch blockers, and suggest replacing, removing, or adding supervisors, or changing their responsibilities, when something needs to improve. It shouldn't happen all the time, but over time the role is responsible for it: the Chief of Staff runs the staff overall.
+
+What exists today: the Chief of Staff reads the roster, the activity log, and notes; asks a supervisor a question or gives them a task; proposes a new supervisor or a policy change; and composes the briefing, whose health check flags failed sections. There is no way to propose ending, replacing, or changing a supervisor's responsibility, or changing a supervisor's model, and no routine looks back over the supervisors' work.
+
+To settle when it starts:
+
+- How often the review runs, such as weekly or monthly, and which signals bring it forward: repeated failures, access blocked for days, a section whose items the operator keeps dismissing, or one that never finds anything.
+- What the review reads. Counts and the operator's decisions (resolved, dismissed, runs, failures, usage) carry no source data, so a review on them can't be steered by injected text. Reading what supervisors reported is source data, and a proposal made from it carries the warning, as policy proposals do.
+- Which changes the Chief of Staff may propose: a responsibility's scope or standing instructions, ending one, replacing a supervisor, adding one, a supervisor's model and reasoning level. Each goes on an approval card, and nothing changes until the operator approves.
+- How the review reaches the operator: a short staff review in the chat or the briefing, and what it costs in usage.
+
 ## Milestone 1: runtime, isolation, and control surface (done 2026-11-07)
 
 | Acceptance | Where it is shown |
