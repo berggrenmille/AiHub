@@ -4,7 +4,7 @@ import type { Caller } from "../gateway/gateway.ts";
 import type { Office } from "../office.ts";
 import { callsOn, unsafeKey } from "../services/catalog.ts";
 import type { AgentRecord } from "../store/store.ts";
-import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "./chief-of-staff.ts";
+import { CHIEF_OF_STAFF_ID } from "./chief-of-staff.ts";
 import { describeModel, modelChoiceProblem } from "./models.ts";
 import { SUPERVISOR_CHARTER } from "./supervisor.ts";
 
@@ -145,7 +145,7 @@ export function headline(change: StaffChange): string {
 /** The card for a staff change, in the Chief of Staff's chat. */
 export function postStaffChangeCard(office: Office, change: StaffChange) {
   const text = `Proposal: ${headline(change)}. ${change.reason}`;
-  office.postMessage(CHIEF_OF_STAFF_CONVERSATION_ID, change.proposedBy, text, change.runId, "staff_change", String(change.id), change.fromSourceData);
+  office.postMessage(office.cardChat(change.runId), change.proposedBy, text, change.runId, "staff_change", String(change.id), change.fromSourceData);
 }
 
 /**
@@ -190,7 +190,7 @@ export async function approveStaffChange(office: Office, id: number, ticked: str
   office.bus.publish({ type: "staff_change", change: approved });
   office.bus.publish({ type: "activity", entry: store.addActivity({ agentId: agent.id, runId: null, kind: "approved", summary: `The operator approved: ${headline(approved)}` }) });
   office.notebook.journal(CHIEF_OF_STAFF_ID, `The operator approved my proposal to ${headline(approved)}.`);
-  office.postMessage(CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID, `You approved: ${outcome}`, null, "notice", String(id));
+  office.postMessage(office.chatOfCard("staff_change", String(id)), CHIEF_OF_STAFF_ID, `You approved: ${outcome}`, null, "notice", String(id));
   return approved;
 }
 
@@ -313,6 +313,6 @@ export function declineStaffChange(office: Office, id: number, reason: string | 
   bus.publish({ type: "activity", entry: store.addActivity({ agentId: declined.agentId, runId: null, kind: "declined", summary: `The operator declined: ${headline(declined)}` }) });
   const why = reason ? `: ${reason}` : ".";
   notebook.journal(CHIEF_OF_STAFF_ID, `The operator declined my proposal to ${headline(declined)}${why}`);
-  office.postMessage(CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID, `You declined the proposal to ${headline(declined)}${why}`, null, "notice", String(id));
+  office.postMessage(office.chatOfCard("staff_change", String(id)), CHIEF_OF_STAFF_ID, `You declined the proposal to ${headline(declined)}${why}`, null, "notice", String(id));
   return declined;
 }

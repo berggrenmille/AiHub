@@ -25,8 +25,8 @@ function agent(id: string, overrides: Partial<Agent> = {}): Agent {
   };
 }
 
-const chiefChat: Conversation = { id: "chief-of-staff", agentId: "chief", title: "Chief of Staff" };
-const inesChat: Conversation = { id: "chat-ines", agentId: "ines", title: "Ines" };
+const chiefChat: Conversation = { id: "chief-of-staff", agentId: "chief", title: "Chief of Staff", topic: false, createdAt: "2026-11-01T08:00:00.000Z" };
+const inesChat: Conversation = { id: "chat-ines", agentId: "ines", title: "Ines", topic: false, createdAt: "2026-11-01T08:00:00.000Z" };
 
 describe("chat drawer", () => {
   it("shows the chat the operator opened, else the Chief of Staff's", () => {
@@ -43,7 +43,7 @@ describe("chat drawer", () => {
     assert.deepEqual(chatPartner(inesChat, [ines], new Map()), { agent: ines, present: true });
 
     const working = agent("ada", { name: "Ada", role: "worker", state: "working" });
-    const adaChat = { id: "chat-ada", agentId: "ada", title: "Ada" };
+    const adaChat: Conversation = { id: "chat-ada", agentId: "ada", title: "Ada", topic: false, createdAt: "2026-11-01T08:00:00.000Z" };
     const left = chatPartner(adaChat, [ines], new Map([["ada", working]]));
     assert.equal(left.present, false);
     assert.equal(left.agent.name, "Ada");

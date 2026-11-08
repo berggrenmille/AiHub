@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, it } from "node:test";
-import type { ChatResponse, DaemonEvent, StateSnapshot } from "@aihub/shared";
+import type { ChatResponse, DaemonEvent, OpenChatResponse, StateSnapshot } from "@aihub/shared";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { FakeRuntime } from "./runtime/fake-runtime.ts";
 import { Office } from "./office.ts";
 import { Scheduler } from "./scheduler.ts";
 import { buildServer } from "./server.ts";
-import { CHIEF_OF_STAFF_CONVERSATION_ID as CHAT } from "./staff/chief-of-staff.ts";
+import { CHIEF_OF_STAFF_CONVERSATION_ID as CHAT, CHIEF_OF_STAFF_ID } from "./staff/chief-of-staff.ts";
 import { Store } from "./store/store.ts";
 
 const PORT = 7420;
@@ -171,6 +171,19 @@ describe("HTTP server", () => {
 
     assert.equal((await post({ conversationId: CHAT, text: "   " })).statusCode, 400);
     assert.equal((await post({ conversationId: "nobody", text: "Hi" })).statusCode, 404);
+  });
+
+  it("starts and renames a topic", async () => {
+    ({ app } = await server());
+    const started = await app.inject({ method: "POST", url: `/api/agents/${CHIEF_OF_STAFF_ID}/topics`, headers: PAGE, payload: {} });
+    assert.equal(started.statusCode, 201);
+    const { conversation } = started.json<OpenChatResponse>();
+    assert.deepEqual([conversation.title, conversation.topic], ["New topic", true]);
+    const rename = (id: string, title: string) => app!.inject({ method: "PATCH", url: `/api/conversations/${id}`, headers: PAGE, payload: { title } });
+    assert.equal((await rename(conversation.id, "Travel")).json<OpenChatResponse>().conversation.title, "Travel");
+    assert.equal((await rename(CHAT, "Travel")).statusCode, 409);
+    assert.equal((await rename("nobody", "Travel")).statusCode, 404);
+    assert.equal((await app.inject({ method: "POST", url: "/api/agents/nobody/topics", headers: PAGE, payload: {} })).statusCode, 404);
   });
 
   it("streams events that follow the state snapshot", async () => {

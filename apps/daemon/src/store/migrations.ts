@@ -408,4 +408,9 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE staff_changes_v15 RENAME TO staff_changes;
   CREATE INDEX staff_changes_by_status ON staff_changes (status, agent_id);
   `,
+
+  // v16: the operator can start a chat on a topic, beside a staff member's general chat.
+  `
+  ALTER TABLE conversations ADD COLUMN topic INTEGER NOT NULL DEFAULT 0;
+  `,
 ];

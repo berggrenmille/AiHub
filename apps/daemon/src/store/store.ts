@@ -285,10 +285,12 @@ export class Store {
 
   // Conversations -----------------------------------------------------------
 
-  ensureConversation(conversation: Conversation) {
+  /** Records a conversation unless it exists, and returns it as stored. */
+  ensureConversation(conversation: { id: string; agentId: string; title: string; topic?: boolean }): Conversation {
     this.db
-      .prepare("INSERT INTO conversations (id, agent_id, title, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (id) DO NOTHING")
-      .run(conversation.id, conversation.agentId, conversation.title, this.timestamp());
+      .prepare("INSERT INTO conversations (id, agent_id, title, topic, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING")
+      .run(conversation.id, conversation.agentId, conversation.title, conversation.topic ? 1 : 0, this.timestamp());
+    return this.conversation(conversation.id)!;
   }
 
   getConversation(id: string): ConversationRecord | null {
@@ -296,12 +298,31 @@ export class Store {
     return row ? toConversation(row) : null;
   }
 
+  /** A conversation as the web app sees it, without its thread's bookkeeping. */
+  conversation(id: string): Conversation | null {
+    const record = this.getConversation(id);
+    return record ? publicConversation(record) : null;
+  }
+
   listConversations(): Conversation[] {
     const rows = this.db.prepare("SELECT * FROM conversations ORDER BY created_at, id").all() as Row[];
-    return rows.map((row) => {
-      const { contextId: _id, contextFingerprint: _fingerprint, sourceData: _data, seenMessageId: _seen, ...conversation } = toConversation(row);
-      return conversation;
-    });
+    return rows.map((row) => publicConversation(toConversation(row)));
+  }
+
+  renameConversation(id: string, title: string): Conversation | null {
+    this.db.prepare("UPDATE conversations SET title = ? WHERE id = ?").run(title, id);
+    return this.conversation(id);
+  }
+
+  /** The conversation a card was posted in, such as a proposal's, by the card's kind and what it refers to. */
+  cardConversation(kind: MessageKind, refId: string): string | null {
+    const row = this.db.prepare("SELECT conversation_id FROM messages WHERE kind = ? AND ref_id = ? ORDER BY id LIMIT 1").get(kind, refId) as Row | undefined;
+    return row ? String(row.conversation_id) : null;
+  }
+
+  countMessages(conversationId: string): number {
+    const row = this.db.prepare("SELECT COUNT(*) AS count FROM messages WHERE conversation_id = ?").get(conversationId) as Row;
+    return Number(row.count);
   }
 
   setConversationContext(id: string, contextId: string | null, fingerprint: string | null) {
@@ -1526,11 +1547,18 @@ function toAgentRecord(row: Row): AgentRecord {
   };
 }
 
+function publicConversation(record: ConversationRecord): Conversation {
+  const { contextId: _id, contextFingerprint: _fingerprint, sourceData: _data, seenMessageId: _seen, ...conversation } = record;
+  return conversation;
+}
+
 function toConversation(row: Row): ConversationRecord {
   return {
     id: String(row.id),
     agentId: String(row.agent_id),
     title: String(row.title),
+    topic: Number(row.topic) === 1,
+    createdAt: String(row.created_at),
     contextId: row.context_id as string | null,
     contextFingerprint: row.context_fingerprint as string | null,
     sourceData: Number(row.source_data) === 1,

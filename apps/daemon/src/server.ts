@@ -69,6 +69,8 @@ const ProfileBody = z
   .refine((profile) => Object.keys(profile).length > 0, "Change at least one field");
 
 const NoteBody = z.object({ body: z.string().max(20_000) }).strict();
+const TopicBody = z.object({ title: z.string().max(200).optional() }).strict();
+const RenameBody = z.object({ title: z.string().trim().min(1).max(200) }).strict();
 const WebBody = z.object({ sites: z.array(z.string().max(200)).max(50), live: z.boolean().optional() }).strict();
 const RoutineBody = z.object({ weekends: z.boolean() }).strict();
 const PolicyBody = z.object({ body: z.string().max(20_000) }).strict();
@@ -154,6 +156,28 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   app.post<{ Params: { id: string } }>("/api/agents/:id/chat", async (request, reply) => {
     try {
       const response: OpenChatResponse = { conversation: office.openChat(request.params.id) };
+      return response;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/agents/:id/topics", async (request, reply) => {
+    const body = TopicBody.safeParse(request.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: z.prettifyError(body.error) });
+    try {
+      const response: OpenChatResponse = { conversation: office.startTopic(request.params.id, body.data.title) };
+      return reply.code(201).send(response);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.patch<{ Params: { id: string } }>("/api/conversations/:id", async (request, reply) => {
+    const body = RenameBody.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: z.prettifyError(body.error) });
+    try {
+      const response: OpenChatResponse = { conversation: office.renameTopic(request.params.id, body.data.title) };
       return response;
     } catch (error) {
       return sendError(reply, error);

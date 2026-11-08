@@ -271,10 +271,18 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+/**
+ * A chat between the operator and one staff member. Each staff member has a general chat, where
+ * AiHub's news arrives, and the operator can start more on a topic of their own, each in a thread of
+ * its own.
+ */
 export interface Conversation {
   id: string;
   agentId: string;
   title: string;
+  /** A topic the operator started, as opposed to the staff member's general chat. */
+  topic: boolean;
+  createdAt: string;
 }
 
 export type ActivityKind =

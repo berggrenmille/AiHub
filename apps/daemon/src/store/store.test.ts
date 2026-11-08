@@ -102,16 +102,19 @@ describe("Store", () => {
     store.ensureConversation({ id: "chief-chat", agentId: "chief", title: "Chief of Staff" });
     store.setConversationContext("chief-chat", "thread-1", "abc");
 
-    assert.deepEqual(store.getConversation("chief-chat"), {
+    const { createdAt, ...stored } = store.getConversation("chief-chat")!;
+    assert.match(createdAt, /^\d{4}-\d{2}-\d{2}T/);
+    assert.deepEqual(stored, {
       id: "chief-chat",
       agentId: "chief",
       title: "Chief of Staff",
+      topic: false,
       contextId: "thread-1",
       contextFingerprint: "abc",
       sourceData: false,
       seenMessageId: 0,
     });
-    assert.deepEqual(store.listConversations(), [{ id: "chief-chat", agentId: "chief", title: "Chief of Staff" }]);
+    assert.deepEqual(store.listConversations(), [{ id: "chief-chat", agentId: "chief", title: "Chief of Staff", topic: false, createdAt }]);
   });
 
   it("stores settings", () => {

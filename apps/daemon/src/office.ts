@@ -152,6 +152,8 @@ export class Office {
   private readonly turnTimeoutMs: number | undefined;
   /** Contexts started or resumed by this daemon process, so they need no resume before a turn. */
   private readonly liveContexts = new Set<string>();
+  /** The chat each turn in progress replies in, so what it hands in lands where the operator is talking. */
+  private readonly chats = new Map<string, string>();
   private catalog: { models: ModelOption[]; at: number } | null = null;
   private catalogLoading: Promise<ModelOption[]> | null = null;
   private runtimeStatus: RuntimeStatus | null = null;
@@ -377,17 +379,62 @@ export class Office {
     return responsibility;
   }
 
-  /** Opens the operator's chat with a staff member, or finds the one already open. */
+  /** Opens the operator's general chat with a staff member, or finds the one already open. */
   openChat(agentId: string): Conversation {
     const agent = this.store.getAgentRecord(agentId);
     if (!agent) throw new NotFoundError(`No agent ${agentId}`);
-    const existing = this.store.listConversations().find((conversation) => conversation.agentId === agentId);
+    const existing = this.store.listConversations().find((conversation) => conversation.agentId === agentId && !conversation.topic);
     if (existing) return existing;
     if (agent.status !== "active") throw new ConflictError(`${agent.name} has left the office.`);
-    const conversation = { id: `chat-${agentId}`, agentId, title: agent.name };
-    this.store.ensureConversation(conversation);
+    const conversation = this.store.ensureConversation({ id: `chat-${agentId}`, agentId, title: agent.name });
     this.bus.publish({ type: "conversation", conversation });
     return conversation;
+  }
+
+  /**
+   * Starts a chat on a topic with a staff member, in a thread of its own. Without a title, the
+   * operator's first message names it. What the staff member knows carries over through records and
+   * notes, not through the other chats.
+   */
+  startTopic(agentId: string, title?: string): Conversation {
+    const agent = this.store.getAgentRecord(agentId);
+    if (!agent) throw new NotFoundError(`No agent ${agentId}`);
+    if (agent.status !== "active") throw new ConflictError(`${agent.name} has left the office.`);
+    const conversation = this.store.ensureConversation({ id: `topic-${crypto.randomUUID()}`, agentId, title: topicTitle(title) ?? NEW_TOPIC, topic: true });
+    this.bus.publish({ type: "conversation", conversation });
+    return conversation;
+  }
+
+  /** The operator renames a topic. A general chat keeps the staff member's name. */
+  renameTopic(conversationId: string, title: string): Conversation {
+    const existing = this.store.getConversation(conversationId);
+    if (!existing) throw new NotFoundError(`No conversation ${conversationId}`);
+    if (!existing.topic) throw new ConflictError("A general chat keeps its name. Start a topic to name one.");
+    const named = topicTitle(title);
+    if (!named) throw new InvalidRequestError("A topic needs a name.");
+    const conversation = this.store.renameConversation(conversationId, named)!;
+    this.bus.publish({ type: "conversation", conversation });
+    return conversation;
+  }
+
+  /** The chat a turn in progress replies in, if it is a chat turn. */
+  chatOf(runId: string | null | undefined): string | null {
+    return runId ? (this.chats.get(runId) ?? null) : null;
+  }
+
+  /**
+   * Where a card a run hands in goes: the Chief of Staff's chat the operator asked in, a topic
+   * included, and otherwise the general one.
+   */
+  cardChat(runId: string | null | undefined): string {
+    const chat = this.chatOf(runId);
+    const conversation = chat ? this.store.getConversation(chat) : null;
+    return conversation?.agentId === CHIEF_OF_STAFF.id ? conversation.id : CHIEF_OF_STAFF_CONVERSATION_ID;
+  }
+
+  /** Where news about a card goes, such as the operator's answer to it: the chat the card is in. */
+  chatOfCard(kind: MessageKind, refId: string): string {
+    return this.store.cardConversation(kind, refId) ?? CHIEF_OF_STAFF_CONVERSATION_ID;
   }
 
   /** Records the operator's message and queues the reply. Returns before the reply starts. */
@@ -396,6 +443,11 @@ export class Office {
     if (!conversation) throw new NotFoundError(`No conversation ${conversationId}`);
     const member = this.store.getAgentRecord(conversation.agentId);
     if (member?.status !== "active") throw new ConflictError(`${member?.name ?? "This staff member"} has left the office, so the chat is closed.`);
+    // A topic started without a name takes it from what the operator says first.
+    if (conversation.topic && conversation.title === NEW_TOPIC && this.store.countMessages(conversationId) === 0) {
+      const named = this.store.renameConversation(conversationId, topicTitle(text) ?? NEW_TOPIC)!;
+      this.bus.publish({ type: "conversation", conversation: named });
+    }
     const run = this.store.createRun({ agentId: conversation.agentId, kind: "chat", title: "Reply in chat" });
     const message = this.store.addMessage({ conversationId, author: "operator", agentId: null, body: text, runId: run.id });
     this.bus.publish({ type: "message", message });
@@ -446,6 +498,7 @@ export class Office {
       web: webAccessOf(web),
     };
     this.setRunState(runId, "working");
+    this.chats.set(runId, conversationId);
     this.views.replying(runId);
     this.activity(agent.id, runId, "run_started", run.kind === "chat" ? `${agent.name} is replying in chat` : `${agent.name}: ${run.title}`);
 
@@ -502,6 +555,8 @@ export class Office {
       else this.finishRun(runId, "failed", result.error ?? `The turn was ${result.status}`, prompt.journal);
     } catch (error) {
       this.finishRun(runId, "failed", errorText(error));
+    } finally {
+      this.chats.delete(runId);
     }
     return { run: this.store.getRun(runId)!, text, blocker };
   }
@@ -803,4 +858,14 @@ function clip(text: string, max: number): string {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** What a topic is called until the operator's first message names it. */
+const NEW_TOPIC = "New topic";
+
+/** A topic's name from what the operator typed: one line, at most 60 characters. Null if blank. */
+function topicTitle(text: string | undefined): string | null {
+  const line = (text ?? "").replace(/\s+/g, " ").trim();
+  if (!line) return null;
+  return line.length > 60 ? `${line.slice(0, 59).trimEnd()}…` : line;
 }

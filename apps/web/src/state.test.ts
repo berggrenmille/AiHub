@@ -74,7 +74,7 @@ function activity(id: number, overrides: Partial<ActivityEntry> = {}): ActivityE
 function snapshot(overrides: Partial<StateSnapshot> = {}): StateSnapshot {
   return {
     agents: [agent()],
-    conversations: [{ id: CHAT, agentId: "chief-of-staff", title: "Chief of Staff" }],
+    conversations: [{ id: CHAT, agentId: "chief-of-staff", title: "Chief of Staff", topic: false, createdAt: "2026-11-01T08:00:00.000Z" }],
     messages: [],
     runs: [],
     activity: [],
@@ -637,7 +637,7 @@ describe("staff changes", () => {
 });
 
 describe("conversations", () => {
-  const nora = { id: "chat-work-schedule", agentId: "work-schedule", title: "Nora" };
+  const nora = { id: "chat-work-schedule", agentId: "work-schedule", title: "Nora", topic: false, createdAt: "2026-11-01T08:00:00.000Z" };
 
   it("adds a conversation once, whether the stream or the response to opening it comes first", () => {
     const state = events(loaded(), { type: "conversation", conversation: nora });
@@ -655,7 +655,7 @@ describe("conversations", () => {
 
   it("keeps a departed staff member's conversation and messages", () => {
     const worker = agent({ id: "ada", name: "Ada", role: "worker", managerId: "chief-of-staff" });
-    const chat = { id: "chat-ada", agentId: "ada", title: "Ada" };
+    const chat = { id: "chat-ada", agentId: "ada", title: "Ada", topic: false, createdAt: "2026-11-01T08:00:00.000Z" };
     const state = events(
       loaded(),
       { type: "agent", agent: worker },

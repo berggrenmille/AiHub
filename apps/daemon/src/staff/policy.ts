@@ -2,7 +2,7 @@ import type { PolicyVersion } from "@aihub/shared";
 import { ConflictError, InvalidRequestError, NotFoundError } from "../errors.ts";
 import type { Caller } from "../gateway/gateway.ts";
 import type { Office } from "../office.ts";
-import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "./chief-of-staff.ts";
+import { CHIEF_OF_STAFF_ID } from "./chief-of-staff.ts";
 
 // The office policy (DESIGN.md › Memory and notes): the operator's rules for every staff member, in
 // every run's instructions. Unlike a note it carries authority, so only the operator changes it. The
@@ -58,7 +58,7 @@ export function proposePolicy(office: Office, caller: Caller, input: { body: str
     type: "activity",
     entry: store.addActivity({ agentId: caller.agentId, runId: caller.runId, kind: "policy", summary: "Proposed a change to the office policy" }),
   });
-  office.postMessage(CHIEF_OF_STAFF_CONVERSATION_ID, caller.agentId, `Policy proposal: ${input.reason}`, caller.runId, "policy", String(proposal.id), caller.sourceData === true);
+  office.postMessage(office.cardChat(caller.runId), caller.agentId, `Policy proposal: ${input.reason}`, caller.runId, "policy", String(proposal.id), caller.sourceData === true);
   return proposal;
 }
 
@@ -74,7 +74,7 @@ export function approvePolicy(office: Office, id: number): PolicyVersion {
   bus.publish({ type: "policy", policy: approved });
   bus.publish({ type: "activity", entry: store.addActivity({ agentId: approved.authorId, runId: null, kind: "policy", summary: "The operator approved the new office policy" }) });
   if (approved.authorId) notebook.journal(approved.authorId, "The operator approved my proposed office policy.");
-  office.postMessage(CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID, "You approved the new office policy. Every staff member works under it from their next run.", null, "notice", String(id));
+  office.postMessage(office.chatOfCard("policy", String(id)), CHIEF_OF_STAFF_ID, "You approved the new office policy. Every staff member works under it from their next run.", null, "notice", String(id));
   return approved;
 }
 
@@ -89,6 +89,6 @@ export function declinePolicy(office: Office, id: number, reason: string | null 
   bus.publish({ type: "activity", entry: store.addActivity({ agentId: declined.authorId, runId: null, kind: "policy", summary: "The operator declined a change to the office policy" }) });
   const why = reason ? `: ${reason}` : ".";
   if (declined.authorId) notebook.journal(declined.authorId, `The operator declined my proposed office policy${why}`);
-  office.postMessage(CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID, `You declined the policy proposal${why}`, null, "notice", String(id));
+  office.postMessage(office.chatOfCard("policy", String(id)), CHIEF_OF_STAFF_ID, `You declined the policy proposal${why}`, null, "notice", String(id));
   return declined;
 }

@@ -4,6 +4,7 @@ import type { DaemonEvent } from "@aihub/shared";
 import { FakeRuntime } from "./runtime/fake-runtime.ts";
 import { Office } from "./office.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID as CHAT, CHIEF_OF_STAFF_ID } from "./staff/chief-of-staff.ts";
+import { approvePolicy } from "./staff/policy.ts";
 import { Store } from "./store/store.ts";
 const NOTE_TOOLS = ["aihub_list_notes", "aihub_read_note", "aihub_write_note"];
 const VIEW_TOOLS = ["aihub_view_guide", "aihub_show_view", "aihub_save_dashboard"];
@@ -230,7 +231,7 @@ describe("Chat with any staff member", () => {
     const { office, events } = withSupervisor();
     assert.equal(office.openChat(CHIEF_OF_STAFF_ID).id, CHAT);
     const chat = office.openChat("schedule");
-    assert.deepEqual(chat, { id: "chat-schedule", agentId: "schedule", title: "Elin" });
+    assert.deepEqual([chat.id, chat.agentId, chat.title, chat.topic], ["chat-schedule", "schedule", "Elin", false]);
     assert.deepEqual(office.openChat("schedule"), chat, "the same chat again");
     assert.equal(events.filter((event) => event.type === "conversation").length, 1);
     assert.throws(() => office.openChat("nobody"), /No agent nobody/);
@@ -294,6 +295,50 @@ describe("Chat with any staff member", () => {
     assert.equal(runtime.contexts.size, 2);
     assert.equal([...runtime.contexts.values()].at(-1)!.options.web, null);
     assert.throws(() => office.setWebGrant(CHIEF_OF_STAFF_ID, { sites: ["not a site"] }), /isn't a site/);
+  });
+
+  it("starts a topic in a thread of its own, named by the operator's first message", async () => {
+    const { office, store, runtime, events } = withSupervisor();
+    await say(office, "Good morning");
+    const topic = office.startTopic(CHIEF_OF_STAFF_ID);
+    assert.deepEqual([topic.agentId, topic.title, topic.topic], [CHIEF_OF_STAFF_ID, "New topic", true]);
+    assert.ok(events.some((event) => event.type === "conversation" && event.conversation.id === topic.id));
+    assert.equal(office.openChat(CHIEF_OF_STAFF_ID).id, CHAT, "the general chat stays the one AiHub's news goes to");
+
+    office.chat(topic.id, "Plan the GitHub setup\n  with Elias");
+    await office.queue.idle();
+    assert.equal(store.conversation(topic.id)?.title, "Plan the GitHub setup with Elias");
+    assert.equal(runtime.contexts.size, 2, "a thread for the general chat and one for the topic");
+    assert.deepEqual(
+      store.recentMessages(5, topic.id).map((message) => message.body),
+      ["Plan the GitHub setup\n  with Elias", "Echo: Plan the GitHub setup\n  with Elias"],
+    );
+    office.chat(topic.id, "Another thing");
+    await office.queue.idle();
+    assert.equal(store.conversation(topic.id)?.title, "Plan the GitHub setup with Elias", "only the first message names it");
+
+    assert.equal(office.renameTopic(topic.id, "  GitHub setup ").title, "GitHub setup");
+    assert.throws(() => office.renameTopic(topic.id, "   "), /A topic needs a name/);
+    assert.throws(() => office.renameTopic(CHAT, "Vera"), /A general chat keeps its name/);
+    assert.equal(office.startTopic("schedule", "x".repeat(80)).title, `${"x".repeat(59)}…`);
+    store.archiveAgent("schedule");
+    assert.throws(() => office.startTopic("schedule"), /Elin has left the office/);
+  });
+
+  it("puts a card where the operator asked for it, and the answer to the card beside it", async () => {
+    const { office, store, runtime } = startOffice();
+    const topic = office.startTopic(CHIEF_OF_STAFF_ID, "House rules");
+    runtime.respond = async (_input, options) => {
+      const outcome = await options.onToolCall({ name: "aihub_propose_policy", arguments: { policy: "- Write in English.", reason: "You asked for it." } });
+      return { status: "completed", text: outcome.text, error: null, usage: null };
+    };
+    office.chat(topic.id, "Everyone should write in English.");
+    await office.queue.idle();
+    const card = store.recentMessages(5, topic.id).find((message) => message.kind === "policy");
+    assert.ok(card, "the card is in the topic");
+    assert.equal(store.recentMessages(5, CHAT).filter((message) => message.kind === "policy").length, 0);
+    approvePolicy(office, Number(card.refId));
+    assert.match(store.recentMessages(1, topic.id)[0]!.body, /^You approved the new office policy/);
   });
 
   it("closes the chat once its staff member has left", () => {

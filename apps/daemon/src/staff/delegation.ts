@@ -213,7 +213,7 @@ export class Delegation implements DelegationService {
     const requester = store.getAgentRecord(caller.agentId)!;
     // From a task, the request becomes part of it; from a chat, the result returns to that chat.
     const parentId = run.kind === "assignment" ? run.assignmentId : null;
-    const conversationId = run.kind === "chat" ? (store.listConversations().find((chat) => chat.agentId === caller.agentId)?.id ?? null) : null;
+    const conversationId = run.kind === "chat" ? this.office.chatOf(run.id) : null;
     const assignment = store.createAssignment({
       ...spec,
       requesterId: requester.id,

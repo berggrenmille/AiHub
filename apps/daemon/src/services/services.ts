@@ -243,7 +243,7 @@ export class Services {
     }
     this.publish(record);
     this.activity(caller.agentId, caller.runId, `Proposed adding ${record.name}`);
-    this.office.postMessage(CHIEF_OF_STAFF_CONVERSATION_ID, caller.agentId, `Proposal: add ${record.name}. ${input.reason}`, caller.runId, "service", record.id);
+    this.office.postMessage(this.office.cardChat(caller.runId), caller.agentId, `Proposal: add ${record.name}. ${input.reason}`, caller.runId, "service", record.id);
     return publicService(record);
   }
 

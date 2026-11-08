@@ -6,7 +6,7 @@ import { ConflictError, InvalidRequestError, NotFoundError } from "../errors.ts"
 import type { Office } from "../office.ts";
 import { checkProposedSource, connectionFor, previewProposedSource, verifyConnection } from "../sources/collect.ts";
 import { STAFF_READER_PREFIX } from "../sources/folder.ts";
-import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "./chief-of-staff.ts";
+import { CHIEF_OF_STAFF_ID } from "./chief-of-staff.ts";
 import { SUPERVISOR_CHARTER } from "./supervisor.ts";
 import { describeWeb } from "./web.ts";
 import { callsOn, unsafeKey } from "../services/catalog.ts";
@@ -46,7 +46,7 @@ export function proposeSupervisor(office: Office, caller: Caller, payload: Recru
 /** The card for a recruitment proposal, in the Chief of Staff's chat. */
 export function postRecruitCard(office: Office, proposal: Proposal, runId: string | null) {
   const { profile, reason } = proposal.payload;
-  office.postMessage(CHIEF_OF_STAFF_CONVERSATION_ID, proposal.proposedBy, `Proposal: hire ${profile.name} as ${profile.title}. ${reason}`, runId, "proposal", proposal.id);
+  office.postMessage(office.cardChat(runId), proposal.proposedBy, `Proposal: hire ${profile.name} as ${profile.title}. ${reason}`, runId, "proposal", proposal.id);
 }
 
 /** The id of the reader staff wrote that a proposed source uses, if it uses one. */
@@ -209,7 +209,7 @@ export async function approveProposal(office: Office, id: string, options: { sou
     });
   }
   office.postMessage(
-    CHIEF_OF_STAFF_CONVERSATION_ID,
+    office.chatOfCard("proposal", id),
     CHIEF_OF_STAFF_ID,
     `${profile.name} joined as ${profile.title} and reports in the next morning briefing.${access}${searches}${calls}${notGiven}${runsOn}`,
     null,
