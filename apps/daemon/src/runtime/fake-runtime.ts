@@ -26,6 +26,7 @@ export const echo: Responder = async (input, options) => {
  */
 export const demo: Responder = async (input, options) => {
   if (/^Today is \S+\. The numbers cover the \d+ days/.test(input)) return review(input, options);
+  if (/^A meeting .* called: /.test(input)) return meetingTurn(input, options);
   // A briefing section: file a plain report from the collected records, so the office gets items.
   // A chat can quote source data too, such as a preview, so only a JSON block counts.
   const records = parseRecords(/BEGIN SOURCE DATA\n([\s\S]*?)\nEND SOURCE DATA/.exec(input)?.[1]);
@@ -57,7 +58,14 @@ export const demo: Responder = async (input, options) => {
   const delegated = await delegate(input, options);
   let text = delegated ?? `This is the fake runtime, so nobody is thinking. You said: “${input}”`;
   const lastLine = input.trim().split("\n").at(-1) ?? "";
-  if (delegated === null && /\bdashboard\b/i.test(lastLine)) {
+  // "Call a meeting about …": the Chief of Staff calls one with every supervisor. Nobody else can.
+  const called =
+    delegated === null && /\bmeeting\b/i.test(lastLine)
+      ? await options.onToolCall({ name: "aihub_call_meeting", arguments: { agenda: lastLine.replace(/^.*?\bmeeting\b\s*(about|on)?\s*/i, "") || lastLine } })
+      : null;
+  if (called?.ok) {
+    text = "I've called a meeting with everyone. Its conclusion comes to you as a card.";
+  } else if (delegated === null && /\bdashboard\b/i.test(lastLine)) {
     // Views, without Codex: "make me a dashboard", or "show me a chart".
     const outcome = await options.onToolCall({ name: "aihub_save_dashboard", arguments: { title: "Open items", program: DASHBOARD_EXAMPLE } });
     text = `Here is a dashboard of the office's items. ${outcome.text}`;
@@ -98,6 +106,46 @@ async function review(input: string, options: RunTurnOptions): Promise<TurnResul
   });
   const text = outcome.ok ? `I suggest narrowing what ${name} reports, so fewer findings need dismissing.` : "NOTHING TO SUGGEST";
   return { status: "completed", text, error: null, usage };
+}
+
+/**
+ * A meeting turn. A supervisor with open items speaks about the first one and passes otherwise. The
+ * chair gives the first person in the room another round, then concludes with a task for them.
+ */
+async function meetingTurn(input: string, options: RunTurnOptions): Promise<TurnResult> {
+  const usage = { inputTokens: 1100, cachedInputTokens: 600, outputTokens: 40 };
+  const reply = async (text: string): Promise<TurnResult> => {
+    for (const piece of text.match(/.{1,6}/gs) ?? []) {
+      options.onEvent?.({ type: "delta", text: piece });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    }
+    return { status: "completed", text, error: null, usage };
+  };
+  const speaker = /It's your turn, ([^.]+)\./.exec(input)?.[1];
+  if (speaker) {
+    const items = /BEGIN OPEN ITEMS DATA\n([\s\S]*?)\nEND OPEN ITEMS DATA/.exec(input)?.[1];
+    const first = items ? (JSON.parse(items) as Array<{ title: string }>)[0] : undefined;
+    if (!first) {
+      await options.onToolCall({ name: "aihub_pass", arguments: {} });
+      return { status: "completed", text: "", error: null, usage };
+    }
+    return reply(`From my desk: “${first.title}” is the one to settle first. The fake runtime has no opinion beyond that.`);
+  }
+  const room = (/In the room: the operator, [^,]+, (.+)\.\n/.exec(input)?.[1] ?? "").split(", ").map((entry) => entry.replace(/ \(.*\)$/, ""));
+  const first = room[0];
+  if (first && /Round 1 of at most \d+ just ended/.test(input)) {
+    const asked = await options.onToolCall({ name: "aihub_next_round", arguments: { speakers: [first] } });
+    if (asked.ok) return reply(`${first}, what would you do about it?`);
+  }
+  const concluded = await options.onToolCall({
+    name: "aihub_conclude_meeting",
+    arguments: {
+      summary: "The fake runtime heard the room and sums it up in a line.",
+      decisions: ["Keep the week as planned, and look again on Friday."],
+      tasks: first ? [{ to: first, title: "Check what was raised", deliverable: "Go through what came up in the meeting and report back what needs the operator." }] : [],
+    },
+  });
+  return reply(concluded.ok ? "Thanks, everyone. The conclusion goes to the operator." : "Thanks, everyone.");
 }
 
 const HELPER_NAMES = ["Pip", "Juno", "Otto", "Wren"];

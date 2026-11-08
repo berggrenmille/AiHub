@@ -185,9 +185,9 @@ export function ChatPanel(props: ChatPanelProps) {
   const hintId = `chat-hint-${conversation.id}`;
   const page = variant === "page";
   // The chief's chat is titled after the role, which the subtitle already says.
-  const subtitle = [agent.title, conversation.topic ? null : conversation.title].filter((part, index, parts) => part && part !== agent.name && parts.indexOf(part) === index).join(" · ");
+  const subtitle = [agent.title, conversation.kind === "topic" ? null : conversation.title].filter((part, index, parts) => part && part !== agent.name && parts.indexOf(part) === index).join(" · ");
   const Root = page ? "section" : "aside";
-  const empty = conversation.topic
+  const empty = conversation.kind === "topic"
     ? `A new topic with ${agent.name}, in a thread of its own. What you say first names it.`
     : present
       ? `No messages yet. Ask ${agent.name} anything.`
@@ -196,7 +196,7 @@ export function ChatPanel(props: ChatPanelProps) {
   return (
     <Root
       className={`${page ? "chat-page" : "drawer chat-drawer"}${back && !page ? " chat-elsewhere" : ""}`}
-      aria-label={`Chat with ${agent.name}${conversation.topic ? `: ${conversation.title}` : ""}`}
+      aria-label={`Chat with ${agent.name}${conversation.kind === "topic" ? `: ${conversation.title}` : ""}`}
       style={{ "--chat-accent": look.accent } as CSSProperties}
     >
       {back && !page && (
@@ -420,7 +420,7 @@ function PageTitle({ agent, conversation, onRename }: { agent: Agent; conversati
       ) : (
         <h2 className="topic-title">
           <span>{chatName(conversation)}</span>
-          {conversation.topic && (
+          {conversation.kind === "topic" && (
             <button
               type="button"
               className="icon-button small"

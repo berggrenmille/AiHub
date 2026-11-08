@@ -54,7 +54,7 @@ export function App() {
 
   const roster = useMemo(() => rosterOrder(state.agents), [state.agents]);
   const chief = state.agents.find((agent) => agent.role === "chief_of_staff") ?? null;
-  const chiefChat = chief ? (state.conversations.find((conversation) => conversation.agentId === chief.id && !conversation.topic) ?? null) : null;
+  const chiefChat = chief ? (state.conversations.find((conversation) => conversation.agentId === chief.id && conversation.kind === "general") ?? null) : null;
   const chat = shownConversation(state.conversations, chief?.id ?? null, chatId);
   const lastSeen = useLastSeen(state.agents);
   const partner = chat ? chatPartner(chat, state.agents, lastSeen) : null;
@@ -88,7 +88,11 @@ export function App() {
     [commands],
   );
   const toastContext = useMemo<ToastContext>(
-    () => ({ runKind: (runId) => state.runs[runId]?.kind, cardsInView: visibleChat !== null && visibleChat.agentId === chief?.id }),
+    () => ({
+      runKind: (runId) => state.runs[runId]?.kind,
+      cardsInView: visibleChat !== null && visibleChat.kind !== "meeting" && visibleChat.agentId === chief?.id,
+      meetingInView: visibleChat?.kind === "meeting",
+    }),
     [state.runs, visibleChat, chief?.id],
   );
   const openAccess = useCallback((agentId: string | null) => {
@@ -136,7 +140,7 @@ export function App() {
   const openChatWith = useCallback(
     async (agentId: string) => {
       const conversation =
-        state.conversations.find((candidate) => candidate.agentId === agentId && !candidate.topic) ?? (await commands.openChat(agentId));
+        state.conversations.find((candidate) => candidate.agentId === agentId && candidate.kind === "general") ?? (await commands.openChat(agentId));
       showChat(conversation.id);
       return conversation;
     },
@@ -269,7 +273,7 @@ export function App() {
   // Staff who have left keep their chats, readable, under their names as last known.
   const departed = [...new Set(state.conversations.map((conversation) => conversation.agentId))]
     .filter((agentId) => !state.agents.some((agent) => agent.id === agentId))
-    .map((agentId) => chatPartner(state.conversations.find((conversation) => conversation.agentId === agentId && !conversation.topic) ?? state.conversations.find((conversation) => conversation.agentId === agentId)!, state.agents, lastSeen).agent);
+    .map((agentId) => chatPartner(state.conversations.find((conversation) => conversation.agentId === agentId && conversation.kind === "general") ?? state.conversations.find((conversation) => conversation.agentId === agentId)!, state.agents, lastSeen).agent);
 
   return (
     <div className={`app${drawer ? " with-drawer" : ""}`}>

@@ -25,8 +25,8 @@ function agent(id: string, overrides: Partial<Agent> = {}): Agent {
   };
 }
 
-const chiefChat: Conversation = { id: "chief-of-staff", agentId: "chief", title: "Chief of Staff", topic: false, createdAt: "2026-11-01T08:00:00.000Z" };
-const inesChat: Conversation = { id: "chat-ines", agentId: "ines", title: "Ines", topic: false, createdAt: "2026-11-01T08:00:00.000Z" };
+const chiefChat: Conversation = { id: "chief-of-staff", agentId: "chief", title: "Chief of Staff", kind: "general", createdAt: "2026-11-01T08:00:00.000Z" };
+const inesChat: Conversation = { id: "chat-ines", agentId: "ines", title: "Ines", kind: "general", createdAt: "2026-11-01T08:00:00.000Z" };
 
 describe("chat drawer", () => {
   it("shows the chat the operator opened, else the Chief of Staff's", () => {
@@ -36,7 +36,7 @@ describe("chat drawer", () => {
     assert.equal(shownConversation(conversations, "chief", "chat-gone"), chiefChat);
     assert.equal(shownConversation([inesChat], "chief", null), null);
     assert.equal(shownConversation(conversations, null, null), null);
-    const topic: Conversation = { ...chiefChat, id: "topic-1", title: "Travel", topic: true, createdAt: "2026-10-01T08:00:00.000Z" };
+    const topic: Conversation = { ...chiefChat, id: "topic-1", title: "Travel", kind: "topic", createdAt: "2026-10-01T08:00:00.000Z" };
     assert.equal(shownConversation([topic, ...conversations], "chief", null), chiefChat, "the general chat, not a topic");
   });
 
@@ -45,7 +45,7 @@ describe("chat drawer", () => {
     assert.deepEqual(chatPartner(inesChat, [ines], new Map()), { agent: ines, present: true });
 
     const working = agent("ada", { name: "Ada", role: "worker", state: "working" });
-    const adaChat: Conversation = { id: "chat-ada", agentId: "ada", title: "Ada", topic: false, createdAt: "2026-11-01T08:00:00.000Z" };
+    const adaChat: Conversation = { id: "chat-ada", agentId: "ada", title: "Ada", kind: "general", createdAt: "2026-11-01T08:00:00.000Z" };
     const left = chatPartner(adaChat, [ines], new Map([["ada", working]]));
     assert.equal(left.present, false);
     assert.equal(left.agent.name, "Ada");
@@ -65,7 +65,7 @@ describe("chat drawer", () => {
 });
 
 describe("Topics", () => {
-  const topic = (id: string, title: string, createdAt: string): Conversation => ({ id, agentId: "chief", title, topic: true, createdAt });
+  const topic = (id: string, title: string, createdAt: string): Conversation => ({ id, agentId: "chief", title, kind: "topic", createdAt });
   const message = (id: number, conversationId: string, author: ChatMessage["author"], createdAt = "2026-11-08T09:00:00.000Z"): ChatMessage => ({
     id,
     conversationId,

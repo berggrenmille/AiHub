@@ -1,4 +1,4 @@
-import { RUN_KINDS, type AgentRole, type Assignment, type ModelOption, type PolicyVersion, type Proposal, type RecruitProposal, type RunKind, type RunProfile, type StaffChange, type StaffReader } from "@aihub/shared";
+import { RUN_KINDS, type AgentRole, type Assignment, type Meeting, type ModelOption, type PolicyVersion, type Proposal, type RecruitProposal, type RunKind, type RunProfile, type StaffChange, type StaffReader } from "@aihub/shared";
 import type { StaffChangeRequest } from "../staff/staff-changes.ts";
 import type { ReaderFile } from "../sources/reader.ts";
 import { z } from "zod";
@@ -44,6 +44,14 @@ export interface ViewService {
   tookInPersonal(runId: string): void;
 }
 
+/** Meetings (DESIGN.md › Meetings): the Chief of Staff calls and chairs them, and supervisors speak or pass. */
+export interface MeetingService {
+  callFromChat(caller: Caller, input: { agenda: string; participants?: string[] }): Meeting;
+  pass(caller: Caller): string;
+  nextRound(caller: Caller, input: { speakers: string[] }): string;
+  conclude(caller: Caller, input: { summary: string; decisions: string[]; tasks: Array<{ to: string; title: string; deliverable: string }> }): string;
+}
+
 /** What tools may ask the office to do. The office checks its rules, records, and publishes each change. */
 export interface OfficeServices {
   /** The staff's notes, when the office keeps a vault. */
@@ -63,6 +71,7 @@ export interface OfficeServices {
   sourceContext: (() => SourceContext) | null;
   /** Services that reach outside accounts, and the calls staff may make on them. */
   services: Services | null;
+  meetings: MeetingService | null;
 }
 
 export interface ToolContext extends OfficeServices {
@@ -157,6 +166,7 @@ export class Gateway {
         views: this.services.views ?? null,
         sourceContext: this.services.sourceContext ?? null,
         services: this.services.services ?? null,
+        meetings: this.services.meetings ?? null,
       };
       const text = await tool.run(input.data, { caller, agent, store: this.store, ...services });
       this.record(caller, "tool_call", `Used ${call.name}`, { tool: call.name, arguments: input.data });

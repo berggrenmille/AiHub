@@ -8,6 +8,8 @@ export interface ToastContext {
   runKind(runId: string): RunKind | undefined;
   /** A Chief of Staff's chat is on screen, where approval cards land, so a new card is already in view. */
   cardsInView: boolean;
+  /** A meeting is on screen, where its conclusion lands. */
+  meetingInView: boolean;
 }
 
 export function toastWorthy(entry: ActivityEntry, context: ToastContext): boolean {
@@ -21,6 +23,9 @@ export function toastWorthy(entry: ActivityEntry, context: ToastContext): boolea
     case "policy":
     case "service":
       return entry.summary.startsWith("Proposed") && !context.cardsInView;
+    // A meeting's conclusion waits for the operator.
+    case "meeting":
+      return entry.summary.startsWith("Proposed") && !context.meetingInView;
     // The check before the briefing, when it found something wrong.
     case "health":
       return entry.summary.startsWith("Health check:");

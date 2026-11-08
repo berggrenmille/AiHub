@@ -413,4 +413,37 @@ export const MIGRATIONS: string[] = [
   `
   ALTER TABLE conversations ADD COLUMN topic INTEGER NOT NULL DEFAULT 0;
   `,
+
+  // v17: meetings. A conversation is a general chat, a topic, or a meeting, and a meeting keeps its
+  // rounds and the outcomes its chair proposed.
+  `
+  ALTER TABLE conversations ADD COLUMN kind TEXT NOT NULL DEFAULT 'general' CHECK (kind IN ('general', 'topic', 'meeting'));
+  UPDATE conversations SET kind = 'topic' WHERE topic = 1;
+  ALTER TABLE conversations DROP COLUMN topic;
+  CREATE TABLE meetings (
+    id TEXT PRIMARY KEY REFERENCES conversations (id),
+    agenda TEXT NOT NULL,
+    called_by TEXT NOT NULL CHECK (called_by IN ('operator', 'chief_of_staff', 'routine')),
+    chair_id TEXT NOT NULL REFERENCES agents (id),
+    participants TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('running', 'waiting', 'closed')),
+    round INTEGER NOT NULL,
+    queue TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    ended_at TEXT
+  );
+  CREATE INDEX meetings_by_state ON meetings (state, created_at);
+  CREATE TABLE meeting_outcomes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    meeting_id TEXT NOT NULL REFERENCES meetings (id),
+    summary TEXT NOT NULL,
+    decisions TEXT NOT NULL,
+    tasks TEXT NOT NULL,
+    from_source_data INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL CHECK (status IN ('proposed', 'approved', 'declined', 'superseded')),
+    created_at TEXT NOT NULL,
+    decided_at TEXT
+  );
+  CREATE INDEX meeting_outcomes_by_meeting ON meeting_outcomes (meeting_id, id);
+  `,
 ];

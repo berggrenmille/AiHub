@@ -10,7 +10,14 @@ import {
   type AgentRole,
   type ChatMessage,
   type Conversation,
+  type ConversationKind,
   type Item,
+  type Meeting,
+  type MeetingCaller,
+  type MeetingOutcome,
+  type MeetingOutcomeStatus,
+  type MeetingState,
+  type MeetingTask,
   type ItemState,
   type MessageKind,
   type Proposal,
@@ -285,11 +292,11 @@ export class Store {
 
   // Conversations -----------------------------------------------------------
 
-  /** Records a conversation unless it exists, and returns it as stored. */
-  ensureConversation(conversation: { id: string; agentId: string; title: string; topic?: boolean }): Conversation {
+  /** Records a conversation unless it exists, and returns it as stored. A general chat when no kind is given. */
+  ensureConversation(conversation: { id: string; agentId: string; title: string; kind?: ConversationKind }): Conversation {
     this.db
-      .prepare("INSERT INTO conversations (id, agent_id, title, topic, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING")
-      .run(conversation.id, conversation.agentId, conversation.title, conversation.topic ? 1 : 0, this.timestamp());
+      .prepare("INSERT INTO conversations (id, agent_id, title, kind, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING")
+      .run(conversation.id, conversation.agentId, conversation.title, conversation.kind ?? "general", this.timestamp());
     return this.conversation(conversation.id)!;
   }
 
@@ -318,6 +325,83 @@ export class Store {
   cardConversation(kind: MessageKind, refId: string): string | null {
     const row = this.db.prepare("SELECT conversation_id FROM messages WHERE kind = ? AND ref_id = ? ORDER BY id LIMIT 1").get(kind, refId) as Row | undefined;
     return row ? String(row.conversation_id) : null;
+  }
+
+  // Meetings ----------------------------------------------------------------
+
+  /** Records a meeting for a conversation already recorded, with its first round queued. */
+  createMeeting(input: { id: string; agenda: string; calledBy: MeetingCaller; chairId: string; participantIds: string[]; queue: string[] }): Meeting {
+    this.db
+      .prepare("INSERT INTO meetings (id, agenda, called_by, chair_id, participants, state, round, queue, created_at) VALUES (?, ?, ?, ?, ?, 'running', 1, ?, ?)")
+      .run(input.id, input.agenda, input.calledBy, input.chairId, JSON.stringify(input.participantIds), JSON.stringify(input.queue), this.timestamp());
+    return this.getMeeting(input.id)!;
+  }
+
+  getMeeting(id: string): Meeting | null {
+    const row = this.db.prepare(`${MEETING_SELECT} WHERE m.id = ?`).get(id) as Row | undefined;
+    return row ? this.toMeeting(row) : null;
+  }
+
+  /** Meetings under way or waiting, then the most recent closed ones, newest first. */
+  listMeetings(closedLimit = 20): Meeting[] {
+    const open = this.db.prepare(`${MEETING_SELECT} WHERE m.state <> 'closed'`).all() as Row[];
+    const closed = this.db.prepare(`${MEETING_SELECT} WHERE m.state = 'closed' ORDER BY m.created_at DESC LIMIT ?`).all(closedLimit) as Row[];
+    return [...open, ...closed].map((row) => this.toMeeting(row)).sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+  }
+
+  meetingsIn(state: MeetingState): Meeting[] {
+    const rows = this.db.prepare(`${MEETING_SELECT} WHERE m.state = ? ORDER BY m.created_at`).all(state) as Row[];
+    return rows.map((row) => this.toMeeting(row));
+  }
+
+  /** Moves a meeting on. Closing it records when it ended. */
+  updateMeeting(id: string, patch: { state?: MeetingState; round?: number; queue?: string[] }): Meeting {
+    this.db
+      .prepare(
+        `UPDATE meetings SET state = COALESCE(?, state), round = COALESCE(?, round), queue = COALESCE(?, queue),
+           ended_at = CASE WHEN COALESCE(?, state) = 'closed' THEN COALESCE(ended_at, ?) ELSE ended_at END
+         WHERE id = ?`,
+      )
+      .run(patch.state ?? null, patch.round ?? null, patch.queue ? JSON.stringify(patch.queue) : null, patch.state ?? null, this.timestamp(), id);
+    return this.getMeeting(id)!;
+  }
+
+  addMeetingOutcome(meetingId: string, outcome: { summary: string; decisions: string[]; tasks: MeetingTask[]; fromSourceData: boolean }): MeetingOutcome {
+    const result = this.db
+      .prepare("INSERT INTO meeting_outcomes (meeting_id, summary, decisions, tasks, from_source_data, status, created_at) VALUES (?, ?, ?, ?, ?, 'proposed', ?)")
+      .run(meetingId, outcome.summary, JSON.stringify(outcome.decisions), JSON.stringify(outcome.tasks), outcome.fromSourceData ? 1 : 0, this.timestamp());
+    return this.getMeetingOutcome(Number(result.lastInsertRowid))!;
+  }
+
+  getMeetingOutcome(id: number): (MeetingOutcome & { meetingId: string }) | null {
+    const row = this.db.prepare("SELECT * FROM meeting_outcomes WHERE id = ?").get(id) as Row | undefined;
+    return row ? { ...toMeetingOutcome(row), meetingId: String(row.meeting_id) } : null;
+  }
+
+  /** Decides an outcome still waiting for the operator, with its tasks as they became assignments. Null if it wasn't waiting. */
+  decideMeetingOutcome(id: number, status: Exclude<MeetingOutcomeStatus, "proposed">, tasks?: MeetingTask[]): MeetingOutcome | null {
+    const result = this.db
+      .prepare("UPDATE meeting_outcomes SET status = ?, tasks = COALESCE(?, tasks), decided_at = ? WHERE id = ? AND status = 'proposed'")
+      .run(status, tasks ? JSON.stringify(tasks) : null, this.timestamp(), id);
+    return result.changes ? this.getMeetingOutcome(id) : null;
+  }
+
+  private toMeeting(row: Row): Meeting {
+    const outcomes = this.db.prepare("SELECT * FROM meeting_outcomes WHERE meeting_id = ? ORDER BY id").all(String(row.id)) as Row[];
+    return {
+      id: String(row.id),
+      title: String(row.title),
+      agenda: String(row.agenda),
+      calledBy: row.called_by as MeetingCaller,
+      chairId: String(row.chair_id),
+      participantIds: JSON.parse(String(row.participants)) as string[],
+      state: row.state as MeetingState,
+      round: Number(row.round),
+      queue: JSON.parse(String(row.queue)) as string[],
+      outcomes: outcomes.map(toMeetingOutcome),
+      createdAt: String(row.created_at),
+      endedAt: row.ended_at as string | null,
+    };
   }
 
   countMessages(conversationId: string): number {
@@ -1547,6 +1631,21 @@ function toAgentRecord(row: Row): AgentRecord {
   };
 }
 
+const MEETING_SELECT = "SELECT m.*, c.title FROM meetings m JOIN conversations c ON c.id = m.id";
+
+function toMeetingOutcome(row: Row): MeetingOutcome {
+  return {
+    id: Number(row.id),
+    summary: String(row.summary),
+    decisions: JSON.parse(String(row.decisions)) as string[],
+    tasks: JSON.parse(String(row.tasks)) as MeetingTask[],
+    fromSourceData: Number(row.from_source_data) === 1,
+    status: row.status as MeetingOutcomeStatus,
+    createdAt: String(row.created_at),
+    decidedAt: row.decided_at as string | null,
+  };
+}
+
 function publicConversation(record: ConversationRecord): Conversation {
   const { contextId: _id, contextFingerprint: _fingerprint, sourceData: _data, seenMessageId: _seen, ...conversation } = record;
   return conversation;
@@ -1557,7 +1656,7 @@ function toConversation(row: Row): ConversationRecord {
     id: String(row.id),
     agentId: String(row.agent_id),
     title: String(row.title),
-    topic: Number(row.topic) === 1,
+    kind: String(row.kind) as ConversationKind,
     createdAt: String(row.created_at),
     contextId: row.context_id as string | null,
     contextFingerprint: row.context_fingerprint as string | null,

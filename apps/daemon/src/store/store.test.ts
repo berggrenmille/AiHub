@@ -108,13 +108,13 @@ describe("Store", () => {
       id: "chief-chat",
       agentId: "chief",
       title: "Chief of Staff",
-      topic: false,
+      kind: "general",
       contextId: "thread-1",
       contextFingerprint: "abc",
       sourceData: false,
       seenMessageId: 0,
     });
-    assert.deepEqual(store.listConversations(), [{ id: "chief-chat", agentId: "chief", title: "Chief of Staff", topic: false, createdAt }]);
+    assert.deepEqual(store.listConversations(), [{ id: "chief-chat", agentId: "chief", title: "Chief of Staff", kind: "general", createdAt }]);
   });
 
   it("stores settings", () => {

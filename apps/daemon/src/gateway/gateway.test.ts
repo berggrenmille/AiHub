@@ -40,6 +40,7 @@ describe("Gateway", () => {
       ...NOTE_TOOLS,
       ...VIEW_TOOLS,
       "aihub_save_dashboard",
+      "aihub_call_meeting",
     ]);
     assert.deepEqual(gateway.specsFor({ ...chief, profile: "data" }).map((tool) => tool.name), ["aihub_ask_colleague", ...NOTE_TOOLS, ...VIEW_TOOLS, "aihub_save_dashboard"]);
     // A briefing report may carry a view, but never a dashboard.
@@ -73,6 +74,10 @@ describe("Gateway", () => {
     assert.deepEqual(names(review), ["aihub_list_models", "aihub_propose_supervisor", "aihub_propose_staff_change"]);
     const notes = await gateway.call(review, { name: "aihub_read_note", arguments: { title: "Operator" } });
     assert.equal(notes.ok, false);
+
+    // A meeting only talks: a supervisor speaks or passes, and the chair runs the rounds, with no sources or services.
+    assert.deepEqual(names(asRun("schedule", "meeting", "data")), [...NOTE_TOOLS, "aihub_pass"]);
+    assert.deepEqual(names(asRun("chief", "meeting", "conversation")), ["aihub_get_roster", "aihub_list_activity", ...NOTE_TOOLS, "aihub_next_round", "aihub_conclude_meeting"]);
   });
 
   it("describes tool input as JSON Schema", () => {

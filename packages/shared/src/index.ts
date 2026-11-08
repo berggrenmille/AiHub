@@ -223,12 +223,12 @@ export interface Usage {
  * What a run is for. chat: a conversation turn. briefing and report: the morning briefing and a
  * supervisor's section of it. question: answering a colleague. assignment: working on a task.
  * follow_up: the requester resuming once what it asked for has arrived. review: the Chief of Staff
- * reviewing the staff from AiHub's counts.
+ * reviewing the staff from AiHub's counts. meeting: a turn in a meeting, speaking or chairing.
  */
-export type RunKind = "chat" | "briefing" | "report" | "question" | "assignment" | "follow_up" | "review";
+export type RunKind = "chat" | "briefing" | "report" | "question" | "assignment" | "follow_up" | "review" | "meeting";
 
 /** Every run kind, for checks and filters. */
-export const RUN_KINDS: readonly RunKind[] = ["chat", "briefing", "report", "question", "assignment", "follow_up", "review"];
+export const RUN_KINDS: readonly RunKind[] = ["chat", "briefing", "report", "question", "assignment", "follow_up", "review", "meeting"];
 
 export interface Run {
   id: string;
@@ -253,10 +253,12 @@ export interface Run {
 }
 
 /**
- * chat: a conversation turn. briefing: a delivered briefing. proposal, policy, and staff_change: a
- * card for the record `refId`. notice: AiHub's own note. review: the Chief of Staff's staff review.
+ * chat: a conversation turn. briefing: a delivered briefing. proposal, policy, staff_change, and
+ * service: a card for the record `refId`. notice: AiHub's own note. review: the Chief of Staff's staff
+ * review. pass: a staff member passing its turn in a meeting. meeting: a meeting's outcome, for the
+ * outcome `refId`.
  */
-export type MessageKind = "chat" | "briefing" | "proposal" | "notice" | "policy" | "review" | "staff_change" | "service";
+export type MessageKind = "chat" | "briefing" | "proposal" | "notice" | "policy" | "review" | "staff_change" | "service" | "pass" | "meeting";
 
 export interface ChatMessage {
   id: number;
@@ -272,17 +274,83 @@ export interface ChatMessage {
 }
 
 /**
- * A chat between the operator and one staff member. Each staff member has a general chat, where
- * AiHub's news arrives, and the operator can start more on a topic of their own, each in a thread of
- * its own.
+ * general: a staff member's general chat, where AiHub's news arrives. topic: a chat the operator
+ * started on a topic of their own, in a thread of its own. meeting: several staff and the operator.
  */
+export type ConversationKind = "general" | "topic" | "meeting";
+
+/** A chat between the operator and one staff member, or a meeting with several. */
 export interface Conversation {
   id: string;
+  /** Who the chat is with. For a meeting, its chair. */
   agentId: string;
   title: string;
-  /** A topic the operator started, as opposed to the staff member's general chat. */
-  topic: boolean;
+  kind: ConversationKind;
   createdAt: string;
+}
+
+/**
+ * running: rounds under way. waiting: for the operator, with an outcome to approve, or stopped
+ * until the operator says something. closed: over, approved or ended.
+ */
+export type MeetingState = "running" | "waiting" | "closed";
+
+/** Who called a meeting: the operator, the Chief of Staff from chat, or the standup routine. */
+export type MeetingCaller = "operator" | "chief_of_staff" | "routine";
+
+/** A task a meeting hands a supervisor once the operator approves its outcome. */
+export interface MeetingTask {
+  ownerId: string;
+  ownerName: string;
+  title: string;
+  deliverable: string;
+  /** The assignment it became, once approved. */
+  assignmentId: string | null;
+}
+
+/** proposed: waiting for the operator. superseded: the operator spoke again before deciding. */
+export type MeetingOutcomeStatus = "proposed" | "approved" | "declined" | "superseded";
+
+/** How the chair concludes a meeting: what was said, decided, and handed out. */
+export interface MeetingOutcome {
+  id: number;
+  summary: string;
+  decisions: string[];
+  tasks: MeetingTask[];
+  /** The chair heard staff who read source data, so the outcome may carry what a source said. */
+  fromSourceData: boolean;
+  status: MeetingOutcomeStatus;
+  createdAt: string;
+  decidedAt: string | null;
+}
+
+/**
+ * Several staff discuss one topic with the operator (DESIGN.md › Meetings). The Chief of Staff
+ * chairs, AiHub runs the rounds, and the outcome waits for the operator's approval.
+ */
+export interface Meeting {
+  /** The same as its conversation's. */
+  id: string;
+  title: string;
+  agenda: string;
+  calledBy: MeetingCaller;
+  chairId: string;
+  /** Who was invited besides the chair, in the order they speak. */
+  participantIds: string[];
+  state: MeetingState;
+  round: number;
+  /** Who speaks next in this round, the chair last. */
+  queue: string[];
+  /** Oldest first. */
+  outcomes: MeetingOutcome[];
+  createdAt: string;
+  endedAt: string | null;
+}
+
+/** `POST /api/meetings`: the operator calls a meeting. Without participants, every supervisor comes. */
+export interface CallMeetingRequest {
+  agenda: string;
+  participantIds?: string[];
 }
 
 export type ActivityKind =
@@ -311,7 +379,8 @@ export type ActivityKind =
   | "review"
   | "service"
   /** The operator took access away, such as a source from a staff member. */
-  | "access";
+  | "access"
+  | "meeting";
 
 export interface ActivityEntry {
   id: number;
@@ -626,6 +695,8 @@ export interface StateSnapshot {
   services: Service[];
   /** Operations staff may call on services. */
   serviceGrants: ServiceGrant[];
+  /** Meetings under way or waiting, then the most recent closed ones, newest first. */
+  meetings: Meeting[];
   office: OfficeStats;
   runtime: RuntimeStatus | null;
   /** The last event this snapshot includes. Follow the stream with `/api/events?after=<lastEventId>`. */
@@ -659,6 +730,7 @@ export type DaemonEvent =
   | { type: "view_removed"; viewId: string }
   /** A conversation was opened, such as the operator's first chat with a supervisor. */
   | { type: "conversation"; conversation: Conversation }
+  | { type: "meeting"; meeting: Meeting }
   /** A staff member left the office, such as a worker whose task is accepted. Its records stay. */
   | { type: "agent_left"; agentId: string }
   /** The stream can't catch up from the client's last event. Reload `/api/state`, then reconnect. */

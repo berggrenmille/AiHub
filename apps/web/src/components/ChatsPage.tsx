@@ -31,7 +31,7 @@ export function ChatsPage(props: ChatsPageProps) {
   const group = (agent: Agent, present: boolean) => {
     const chats = chatsOf(agent.id, conversations, messages);
     if (!present && chats.length === 0) return null;
-    const general = chats.find((chat) => !chat.topic);
+    const general = chats.find((chat) => chat.kind === "general");
     return (
       <li key={agent.id} className="chats-person">
         <div className="chats-person-head">
@@ -57,7 +57,7 @@ export function ChatsPage(props: ChatsPageProps) {
             />
           )}
           {chats
-            .filter((chat) => chat.topic)
+            .filter((chat) => chat.kind === "topic")
             .map((chat) => (
               <ChatLink key={chat.id} name={chatName(chat)} current={chat.id === selectedId} unread={unread.get(chat.id) ?? 0} onClick={() => props.onSelect(chat.id)} />
             ))}

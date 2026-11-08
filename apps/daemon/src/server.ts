@@ -7,6 +7,7 @@ import type {
   AppsResponse,
   ChatResponse,
   HealthResponse,
+  Meeting,
   ModelsResponse,
   Note,
   NoteSummary,
@@ -71,6 +72,9 @@ const ProfileBody = z
 const NoteBody = z.object({ body: z.string().max(20_000) }).strict();
 const TopicBody = z.object({ title: z.string().max(200).optional() }).strict();
 const RenameBody = z.object({ title: z.string().trim().min(1).max(200) }).strict();
+const MeetingBody = z.object({ agenda: z.string().trim().min(1).max(4_000), participantIds: z.array(z.string().min(1).max(80)).max(32).optional() }).strict();
+const SayBody = z.object({ text: z.string().trim().min(1).max(20_000) }).strict();
+const OutcomeBody = z.object({ outcomeId: z.number().int().positive() }).strict();
 const WebBody = z.object({ sites: z.array(z.string().max(200)).max(50), live: z.boolean().optional() }).strict();
 const RoutineBody = z.object({ weekends: z.boolean() }).strict();
 const PolicyBody = z.object({ body: z.string().max(20_000) }).strict();
@@ -179,6 +183,48 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     try {
       const response: OpenChatResponse = { conversation: office.renameTopic(request.params.id, body.data.title) };
       return response;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  // Meetings (DESIGN.md › Meetings): the operator calls one, speaks in it, approves its conclusion, or ends it.
+  app.post("/api/meetings", async (request, reply) => {
+    const body = bodyOf(MeetingBody, request.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
+    try {
+      const meeting: Meeting = office.meetings.call({ ...body.data, calledBy: "operator" });
+      return reply.code(201).send(meeting);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/meetings/:id/messages", async (request, reply) => {
+    const body = bodyOf(SayBody, request.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
+    try {
+      return reply.code(201).send({ message: office.meetings.say(request.params.id, body.data.text) });
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/meetings/:id/approve", async (request, reply) => {
+    const body = bodyOf(OutcomeBody, request.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
+    try {
+      const meeting: Meeting = office.meetings.approve(request.params.id, body.data.outcomeId);
+      return meeting;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/meetings/:id/end", async (request, reply) => {
+    try {
+      const meeting: Meeting = office.meetings.end(request.params.id);
+      return meeting;
     } catch (error) {
       return sendError(reply, error);
     }

@@ -11,6 +11,7 @@ import {
   type Conversation,
   type DaemonEvent,
   type Item,
+  type Meeting,
   type NoteSummary,
   type OfficeStats,
   type PolicyVersion,
@@ -83,6 +84,8 @@ export interface OfficeState {
   services: Service[];
   /** Operations staff may call on services. */
   serviceGrants: ServiceGrant[];
+  /** Newest first. */
+  meetings: Meeting[];
 }
 
 export type OfficeAction =
@@ -123,6 +126,7 @@ export const initialOfficeState: OfficeState = {
   views: {},
   services: [],
   serviceGrants: [],
+  meetings: [],
 };
 
 export function isActive(run: Run): boolean {
@@ -147,6 +151,10 @@ export function officeReducer(state: OfficeState, action: OfficeAction): OfficeS
       if (state.connection === action.status && state.error === action.error) return state;
       return { ...state, connection: action.status, error: action.error };
   }
+}
+
+function newestMeetingFirst(a: Meeting, b: Meeting): number {
+  return b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id);
 }
 
 /** A snapshot replaces everything it covers. Streamed text isn't in it, so keep only replies still in progress. */
@@ -188,6 +196,7 @@ function applySnapshot(state: OfficeState, snapshot: StateSnapshot): OfficeState
     views: Object.fromEntries((snapshot.views ?? []).map((view) => [view.id, view])),
     services: [...(snapshot.services ?? [])].sort(newestFirst),
     serviceGrants: snapshot.serviceGrants ?? [],
+    meetings: [...(snapshot.meetings ?? [])].sort(newestMeetingFirst),
   };
 }
 
@@ -283,6 +292,8 @@ function applyEvent(state: OfficeState, event: DaemonEvent): OfficeState {
       return { ...state, services: upsert(state.services, event.service, (service) => service.id).sort(newestFirst) };
     case "service_grants":
       return { ...state, serviceGrants: event.grants };
+    case "meeting":
+      return { ...state, meetings: upsert(state.meetings, event.meeting, (meeting) => meeting.id).sort(newestMeetingFirst) };
     case "view_removed":
       if (!state.views[event.viewId]) return state;
       return { ...state, views: without(state.views, event.viewId) };

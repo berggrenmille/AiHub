@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, it } from "node:test";
-import type { ChatResponse, DaemonEvent, OpenChatResponse, StateSnapshot } from "@aihub/shared";
+import type { ChatResponse, DaemonEvent, Meeting, OpenChatResponse, StateSnapshot } from "@aihub/shared";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { FakeRuntime } from "./runtime/fake-runtime.ts";
 import { Office } from "./office.ts";
@@ -178,12 +178,38 @@ describe("HTTP server", () => {
     const started = await app.inject({ method: "POST", url: `/api/agents/${CHIEF_OF_STAFF_ID}/topics`, headers: PAGE, payload: {} });
     assert.equal(started.statusCode, 201);
     const { conversation } = started.json<OpenChatResponse>();
-    assert.deepEqual([conversation.title, conversation.topic], ["New topic", true]);
+    assert.deepEqual([conversation.title, conversation.kind], ["New topic", "topic"]);
     const rename = (id: string, title: string) => app!.inject({ method: "PATCH", url: `/api/conversations/${id}`, headers: PAGE, payload: { title } });
     assert.equal((await rename(conversation.id, "Travel")).json<OpenChatResponse>().conversation.title, "Travel");
     assert.equal((await rename(CHAT, "Travel")).statusCode, 409);
     assert.equal((await rename("nobody", "Travel")).statusCode, 404);
     assert.equal((await app.inject({ method: "POST", url: "/api/agents/nobody/topics", headers: PAGE, payload: {} })).statusCode, 404);
+  });
+
+  it("calls a meeting, takes what the operator says in it, and ends it", async () => {
+    let office: Office;
+    ({ app, office } = await server());
+    const post = (url: string, payload?: Record<string, unknown>) => app!.inject({ method: "POST", url, headers: PAGE, ...(payload && { payload }) });
+    assert.equal((await post("/api/meetings", { agenda: "Anyone?" })).statusCode, 409, "no supervisors yet");
+    office.store.upsertAgent({ id: "elin", name: "Elin", role: "supervisor", managerId: CHIEF_OF_STAFF_ID, profile: "data", charter: "Keeps a calendar." });
+    assert.equal((await post("/api/meetings", { agenda: "" })).statusCode, 400);
+
+    const called = await post("/api/meetings", { agenda: "Plan the week", participantIds: ["elin"] });
+    assert.equal(called.statusCode, 201);
+    const meeting = called.json<Meeting>();
+    assert.deepEqual([meeting.title, meeting.calledBy, meeting.participantIds], ["Plan the week", "operator", ["elin"]]);
+    assert.equal((await post(`/api/meetings/${meeting.id}/messages`, { text: "Keep it short." })).statusCode, 201);
+    // What the operator says in a meeting goes to the room, not to one staff member's chat.
+    assert.equal((await post("/api/chat", { conversationId: meeting.id, text: "Hi" })).statusCode, 400);
+    assert.equal((await post(`/api/meetings/${meeting.id}/approve`, { outcomeId: 99 })).statusCode, 404);
+    await office.queue.idle();
+    await office.meetings.idle();
+
+    const ended = await post(`/api/meetings/${meeting.id}/end`);
+    assert.equal(ended.json<Meeting>().state, "closed");
+    assert.equal((await post(`/api/meetings/${meeting.id}/end`)).statusCode, 409);
+    assert.equal((await post("/api/meetings/nobody/messages", { text: "Hi" })).statusCode, 404);
+    assert.ok(office.snapshot().meetings.some((candidate) => candidate.id === meeting.id));
   });
 
   it("streams events that follow the state snapshot", async () => {

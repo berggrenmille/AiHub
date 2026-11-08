@@ -1,4 +1,4 @@
-import type { Agent, AgentRole, Assignment, AssignmentKind, Run } from "@aihub/shared";
+import type { Agent, AgentRole, Assignment, AssignmentKind, MeetingTask, Run } from "@aihub/shared";
 import type { Caller, DelegationService } from "../gateway/gateway.ts";
 import {
   DAILY_TURN_LIMIT,
@@ -129,6 +129,16 @@ export class Delegation implements DelegationService {
     return this.open(caller, run, worker, { kind: "task", ...input.task, responsibilityId: null });
   }
 
+  /**
+   * A task from a meeting's conclusion, once the operator approves it. The chair is the requester,
+   * and the result comes back to the meeting.
+   */
+  assignFromMeeting(meetingId: string, chairId: string, task: MeetingTask): Assignment {
+    const owner = this.office.store.getAgent(task.ownerId);
+    if (!owner) throw new Error(`${task.ownerName} has left the office.`);
+    return this.record(chairId, null, owner, { kind: "task", title: task.title, brief: task.deliverable, runBudget: TASK_RUNS }, { parentId: null, conversationId: meetingId });
+  }
+
   /** A supervisor accepts a worker's work, or sends it back once with feedback. */
   review(caller: Caller, input: { worker: string; verdict: "accept" | "revise"; feedback?: string }): Assignment {
     const { store } = this.office;
@@ -209,11 +219,21 @@ export class Delegation implements DelegationService {
     owner: Agent,
     spec: { kind: AssignmentKind; title: string; brief: string; runBudget: number; responsibilityId?: string | null },
   ): Assignment {
-    const { store, notebook } = this.office;
-    const requester = store.getAgentRecord(caller.agentId)!;
     // From a task, the request becomes part of it; from a chat, the result returns to that chat.
     const parentId = run.kind === "assignment" ? run.assignmentId : null;
     const conversationId = run.kind === "chat" ? this.office.chatOf(run.id) : null;
+    return this.record(caller.agentId, caller.runId, owner, spec, { parentId, conversationId });
+  }
+
+  private record(
+    requesterId: string,
+    runId: string | null,
+    owner: Agent,
+    spec: { kind: AssignmentKind; title: string; brief: string; runBudget: number; responsibilityId?: string | null },
+    { parentId, conversationId }: { parentId: string | null; conversationId: string | null },
+  ): Assignment {
+    const { store, notebook } = this.office;
+    const requester = store.getAgentRecord(requesterId)!;
     const assignment = store.createAssignment({
       ...spec,
       requesterId: requester.id,
@@ -225,8 +245,8 @@ export class Delegation implements DelegationService {
     if (parentId) this.publish(store.updateAssignment(parentId, { status: "waiting" }));
     this.publish(assignment);
     const summary = spec.kind === "question" ? `${requester.name} asked ${owner.name}: "${spec.title}"` : `${requester.name} assigned "${spec.title}" to ${owner.name}`;
-    this.activity(requester.id, caller.runId, summary);
-    notebook.journal(requester.id, spec.kind === "question" ? `Asked [[${owner.name}]]: "${spec.title}"` : `Assigned "${spec.title}" to [[${owner.name}]].`, caller.runId);
+    this.activity(requester.id, runId, summary);
+    notebook.journal(requester.id, spec.kind === "question" ? `Asked [[${owner.name}]]: "${spec.title}"` : `Assigned "${spec.title}" to [[${owner.name}]].`, runId ?? undefined);
     this.work(assignment.id);
     return assignment;
   }

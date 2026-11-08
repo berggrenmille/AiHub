@@ -9,6 +9,7 @@ import { catalogText, modelChoiceProblem } from "../staff/models.ts";
 import { MAX_SITES, normalizeSites } from "../staff/web.ts";
 import { POLICY_LIMIT } from "../staff/policy.ts";
 import { VIEW_PROGRAM_LIMIT } from "@aihub/views";
+import { MEETING_DECISIONS, MEETING_TASKS } from "../limits.ts";
 import { defineTool, type GatewayTool } from "./gateway.ts";
 
 // Read-only office tools for Milestone 1. Each tool names who may call it; the gateway enforces that.
@@ -841,6 +842,88 @@ export const saveDashboardTool = defineTool({
   },
 });
 
+// Meetings (DESIGN.md › Meetings). The Chief of Staff calls one from chat and chairs it. In a meeting
+// turn a supervisor speaks or passes, and the chair asks for another round or concludes. A meeting
+// only talks: its turns get none of the tools that read sources or call services.
+const staffName = z.string().trim().min(1).max(40);
+
+export const callMeetingTool = defineTool({
+  name: "aihub_call_meeting",
+  description:
+    "Call a meeting when a question needs several supervisors' views, or when the operator asks for one. Those invited speak in turn, then you chair: ask for another round or conclude with decisions and tasks, which the operator approves. It starts after this turn, so end the turn after calling it.",
+  input: z
+    .object({
+      agenda: z.string().trim().min(1).max(2_000).describe("What the meeting is to settle, with what the room needs to know. Its first line names the meeting."),
+      participants: z.array(staffName).max(16).optional().describe("Supervisors to invite, by name. Leave it out to invite every supervisor."),
+    })
+    .strict(),
+  roles: ["chief_of_staff"],
+  profiles: ["conversation"],
+  kinds: ["chat"],
+  run: (input, { caller, meetings }) => {
+    if (!meetings) throw new Error("Meetings aren't available in this office");
+    const meeting = meetings.callFromChat(caller, input);
+    return `Called the meeting "${meeting.title}". It starts after this turn, and the operator can follow it on the Chats page. Tell the operator in a sentence and end the turn: its conclusion comes to them as a card.`;
+  },
+});
+
+export const passTool = defineTool({
+  name: "aihub_pass",
+  description: "Pass your turn in a meeting when you have nothing to add.",
+  input: z.object({}).strict(),
+  roles: ["supervisor"],
+  profiles: ["conversation", "data"],
+  kinds: ["meeting"],
+  run: (_input, { caller, meetings }) => {
+    if (!meetings) throw new Error("Meetings aren't available in this office");
+    return meetings.pass(caller);
+  },
+});
+
+export const nextRoundTool = defineTool({
+  name: "aihub_next_round",
+  description: "As the chair, ask for another round of the meeting, naming only those who should speak. Then say to the room what you want from them.",
+  input: z.object({ speakers: z.array(staffName).min(1).max(16).describe("Who speaks next, by name, in order.") }).strict(),
+  roles: ["chief_of_staff"],
+  profiles: ["conversation"],
+  kinds: ["meeting"],
+  run: (input, { caller, meetings }) => {
+    if (!meetings) throw new Error("Meetings aren't available in this office");
+    return meetings.nextRound(caller, input);
+  },
+});
+
+export const concludeMeetingTool = defineTool({
+  name: "aihub_conclude_meeting",
+  description:
+    "As the chair, conclude the meeting: a summary, the decisions made, and tasks for supervisors in the room. It goes to the operator as a card, and no task starts until they approve.",
+  input: z
+    .object({
+      summary: z.string().trim().min(1).max(1_500).describe("What the meeting found, in a few sentences."),
+      decisions: z.array(z.string().trim().min(1).max(300)).max(MEETING_DECISIONS).describe("Each decision, in a sentence. Empty if there were none."),
+      tasks: z
+        .array(
+          z
+            .object({
+              to: staffName.describe("The supervisor's name. They must be in the room."),
+              title: z.string().trim().min(1).max(80).describe("A short name for the task."),
+              deliverable: z.string().trim().min(1).max(1_500).describe("What to produce, for what purpose, and any limits."),
+            })
+            .strict(),
+        )
+        .max(MEETING_TASKS)
+        .describe("Tasks for supervisors in the room. Empty if there are none."),
+    })
+    .strict(),
+  roles: ["chief_of_staff"],
+  profiles: ["conversation"],
+  kinds: ["meeting"],
+  run: (input, { caller, meetings }) => {
+    if (!meetings) throw new Error("Meetings aren't available in this office");
+    return meetings.conclude(caller, input);
+  },
+});
+
 export const OFFICE_TOOLS: GatewayTool[] = [
   getRoster,
   listActivity,
@@ -866,4 +949,8 @@ export const OFFICE_TOOLS: GatewayTool[] = [
   viewGuideTool,
   showViewTool,
   saveDashboardTool,
+  callMeetingTool,
+  passTool,
+  nextRoundTool,
+  concludeMeetingTool,
 ];

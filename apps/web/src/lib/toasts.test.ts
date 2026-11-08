@@ -8,7 +8,7 @@ function entry(kind: ActivityKind, summary: string, runId: string | null = null)
 }
 
 const runs: Record<string, RunKind> = { brief: "briefing", talk: "chat" };
-const away = { runKind: (id: string) => runs[id], cardsInView: false };
+const away = { runKind: (id: string) => runs[id], cardsInView: false, meetingInView: false };
 const looking = { ...away, cardsInView: true };
 
 describe("Toasts", () => {
@@ -20,6 +20,7 @@ describe("Toasts", () => {
     assert.equal(toastWorthy(entry("policy", "Proposed a change to the office policy"), away), true);
     assert.equal(toastWorthy(entry("health", "Health check: 1 problem before the briefing"), away), true);
     assert.equal(toastWorthy(entry("run_finished", "Morning briefing: done", "brief"), away), true);
+    assert.equal(toastWorthy(entry("meeting", 'Proposed the conclusion of the meeting "Plan the week"'), away), true);
 
     assert.equal(toastWorthy(entry("run_finished", "Reply in chat: done", "talk"), away), false);
     assert.equal(toastWorthy(entry("run_finished", "Answer: done", "gone"), away), false, "a run the app doesn't know");
@@ -28,11 +29,14 @@ describe("Toasts", () => {
     assert.equal(toastWorthy(entry("policy", "The operator approved the new office policy"), away), false);
     assert.equal(toastWorthy(entry("health", "Health check passed"), away), false);
     assert.equal(toastWorthy(entry("item", 'Left out "A PR": it cites no collected record'), away), false);
+    assert.equal(toastWorthy(entry("meeting", 'The operator called a meeting: "Plan the week"'), away), false);
   });
 
   it("leaves out a new card when a chat it lands in is on screen", () => {
     assert.equal(toastWorthy(entry("proposal", "Proposed hiring Ines"), looking), false);
     assert.equal(toastWorthy(entry("service", "Proposed adding GitHub"), looking), false);
     assert.equal(toastWorthy(entry("run_failed", "Reply in chat: failed"), looking), true);
+    const inMeeting = { ...away, meetingInView: true };
+    assert.equal(toastWorthy(entry("meeting", 'Proposed the conclusion of the meeting "Plan the week"'), inMeeting), false);
   });
 });

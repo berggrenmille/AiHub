@@ -65,6 +65,7 @@ const ACTIVITY_TONES: Record<ActivityKind, Tone> = {
   review: "done",
   service: "working",
   access: "idle",
+  meeting: "waiting",
 };
 
 export function activityTone(kind: ActivityKind): Tone {
@@ -180,4 +181,5 @@ export const RUN_KIND_LABELS: Record<RunKind, string> = {
   assignment: "Task",
   follow_up: "Follow-up",
   review: "Staff review",
+  meeting: "Meeting",
 };

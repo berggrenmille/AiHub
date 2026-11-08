@@ -7,7 +7,7 @@ import type { Agent, ChatMessage, Conversation } from "@aihub/shared";
 export function shownConversation(conversations: Conversation[], chiefId: string | null, openId: string | null): Conversation | null {
   const opened = openId ? conversations.find((conversation) => conversation.id === openId) : undefined;
   if (opened) return opened;
-  return chiefId ? (conversations.find((conversation) => conversation.agentId === chiefId && !conversation.topic) ?? null) : null;
+  return chiefId ? (conversations.find((conversation) => conversation.agentId === chiefId && conversation.kind === "general") ?? null) : null;
 }
 
 /**
@@ -55,7 +55,7 @@ export function chatScope(agent: Agent): string | null {
 
 /** What a chat is called in a list of someone's chats: a topic's name, or General. */
 export function chatName(conversation: Conversation): string {
-  return conversation.topic ? conversation.title : "General";
+  return conversation.kind === "general" ? "General" : conversation.title;
 }
 
 /** When a chat last moved: its newest message, else when it started. ISO times sort as text. */
@@ -66,9 +66,9 @@ export function lastActivity(conversation: Conversation, messages: readonly Chat
 /** One staff member's chats: the general one first, then topics, the most recently active first. */
 export function chatsOf(agentId: string, conversations: Conversation[], messages: Record<string, ChatMessage[]>): Conversation[] {
   const theirs = conversations.filter((conversation) => conversation.agentId === agentId);
-  const general = theirs.filter((conversation) => !conversation.topic);
+  const general = theirs.filter((conversation) => conversation.kind === "general");
   const topics = theirs
-    .filter((conversation) => conversation.topic)
+    .filter((conversation) => conversation.kind === "topic")
     .sort((a, b) => lastActivity(b, messages[b.id]).localeCompare(lastActivity(a, messages[a.id])) || b.id.localeCompare(a.id));
   return [...general, ...topics];
 }

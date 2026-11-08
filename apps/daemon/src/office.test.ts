@@ -128,6 +128,7 @@ describe("Office", () => {
       "aihub_propose_service",
       ...NOTE_TOOLS,
       ...VIEW_TOOLS,
+      "aihub_call_meeting",
     ]);
   });
 
@@ -231,7 +232,7 @@ describe("Chat with any staff member", () => {
     const { office, events } = withSupervisor();
     assert.equal(office.openChat(CHIEF_OF_STAFF_ID).id, CHAT);
     const chat = office.openChat("schedule");
-    assert.deepEqual([chat.id, chat.agentId, chat.title, chat.topic], ["chat-schedule", "schedule", "Elin", false]);
+    assert.deepEqual([chat.id, chat.agentId, chat.title, chat.kind], ["chat-schedule", "schedule", "Elin", "general"]);
     assert.deepEqual(office.openChat("schedule"), chat, "the same chat again");
     assert.equal(events.filter((event) => event.type === "conversation").length, 1);
     assert.throws(() => office.openChat("nobody"), /No agent nobody/);
@@ -301,7 +302,7 @@ describe("Chat with any staff member", () => {
     const { office, store, runtime, events } = withSupervisor();
     await say(office, "Good morning");
     const topic = office.startTopic(CHIEF_OF_STAFF_ID);
-    assert.deepEqual([topic.agentId, topic.title, topic.topic], [CHIEF_OF_STAFF_ID, "New topic", true]);
+    assert.deepEqual([topic.agentId, topic.title, topic.kind], [CHIEF_OF_STAFF_ID, "New topic", "topic"]);
     assert.ok(events.some((event) => event.type === "conversation" && event.conversation.id === topic.id));
     assert.equal(office.openChat(CHIEF_OF_STAFF_ID).id, CHAT, "the general chat stays the one AiHub's news goes to");
 

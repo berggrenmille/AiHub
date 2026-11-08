@@ -43,6 +43,7 @@ import { proposePolicy } from "./staff/policy.ts";
 import { StaffReview } from "./staff/review.ts";
 import { proposeStaffChange } from "./staff/staff-changes.ts";
 import { Services } from "./services/services.ts";
+import { Meetings } from "./staff/meetings.ts";
 import type { SourceContext } from "./sources/source.ts";
 import type { Scheduler } from "./scheduler.ts";
 import { NO_PLATFORM, type Platform } from "./platform.ts";
@@ -71,6 +72,12 @@ export interface Task {
   assignmentId?: string | null;
   /** Whether the run reads the agent's notes first. True when left out. */
   memory?: boolean;
+  /** The operator is following it, such as a meeting turn, so it goes ahead of background work. */
+  lane?: "interactive" | "background";
+  /** The conversation its reply streams into as it is written, such as a meeting's. */
+  conversationId?: string;
+  /** Whether a staff member with web search may search in this run. True when left out. */
+  web?: boolean;
 }
 
 /** What a chat turn answers: the operator's message, or news AiHub brings to the conversation. */
@@ -165,6 +172,7 @@ export class Office {
   readonly views: Views;
   readonly staffReview: StaffReview;
   readonly services: Services;
+  readonly meetings: Meetings;
 
   constructor(options: OfficeOptions) {
     this.store = options.store;
@@ -180,6 +188,7 @@ export class Office {
     this.views = new Views(this);
     this.staffReview = new StaffReview(this);
     this.services = new Services(this, options.runtime.connectors ?? null);
+    this.meetings = new Meetings(this);
     this.gateway = new Gateway(this.store, options.tools ?? OFFICE_TOOLS, (entry) => this.bus.publish({ type: "activity", entry }), {
       notebook: this.notebook,
       proposeSupervisor: (caller, proposal) => proposeSupervisor(this, caller, proposal),
@@ -191,6 +200,7 @@ export class Office {
       views: this.views,
       sourceContext: () => this.sourceContext(),
       services: this.services,
+      meetings: this.meetings,
     });
   }
 
@@ -225,6 +235,7 @@ export class Office {
       });
     }
     this.delegation.resume();
+    this.meetings.resume();
   }
 
   /** Writes every staff member's profile note from its record. */
@@ -320,6 +331,7 @@ export class Office {
       views: this.store.listViews(messages.map((message) => message.id)),
       services: this.services.list(),
       serviceGrants: this.services.grants(),
+      meetings: this.store.listMeetings(),
       office: this.officeStats(),
       runtime: this.runtimeStatus,
       lastEventId: this.bus.lastEventId,
@@ -383,7 +395,7 @@ export class Office {
   openChat(agentId: string): Conversation {
     const agent = this.store.getAgentRecord(agentId);
     if (!agent) throw new NotFoundError(`No agent ${agentId}`);
-    const existing = this.store.listConversations().find((conversation) => conversation.agentId === agentId && !conversation.topic);
+    const existing = this.store.listConversations().find((conversation) => conversation.agentId === agentId && conversation.kind === "general");
     if (existing) return existing;
     if (agent.status !== "active") throw new ConflictError(`${agent.name} has left the office.`);
     const conversation = this.store.ensureConversation({ id: `chat-${agentId}`, agentId, title: agent.name });
@@ -400,16 +412,16 @@ export class Office {
     const agent = this.store.getAgentRecord(agentId);
     if (!agent) throw new NotFoundError(`No agent ${agentId}`);
     if (agent.status !== "active") throw new ConflictError(`${agent.name} has left the office.`);
-    const conversation = this.store.ensureConversation({ id: `topic-${crypto.randomUUID()}`, agentId, title: topicTitle(title) ?? NEW_TOPIC, topic: true });
+    const conversation = this.store.ensureConversation({ id: `topic-${crypto.randomUUID()}`, agentId, title: topicTitle(title) ?? NEW_TOPIC, kind: "topic" });
     this.bus.publish({ type: "conversation", conversation });
     return conversation;
   }
 
-  /** The operator renames a topic. A general chat keeps the staff member's name. */
+  /** The operator renames a topic or a meeting. A general chat keeps the staff member's name. */
   renameTopic(conversationId: string, title: string): Conversation {
     const existing = this.store.getConversation(conversationId);
     if (!existing) throw new NotFoundError(`No conversation ${conversationId}`);
-    if (!existing.topic) throw new ConflictError("A general chat keeps its name. Start a topic to name one.");
+    if (existing.kind === "general") throw new ConflictError("A general chat keeps its name. Start a topic to name one.");
     const named = topicTitle(title);
     if (!named) throw new InvalidRequestError("A topic needs a name.");
     const conversation = this.store.renameConversation(conversationId, named)!;
@@ -441,10 +453,11 @@ export class Office {
   chat(conversationId: string, text: string): ChatResponse {
     const conversation = this.store.getConversation(conversationId);
     if (!conversation) throw new NotFoundError(`No conversation ${conversationId}`);
+    if (conversation.kind === "meeting") throw new InvalidRequestError("Speak in a meeting through the meeting, so the room hears it.");
     const member = this.store.getAgentRecord(conversation.agentId);
     if (member?.status !== "active") throw new ConflictError(`${member?.name ?? "This staff member"} has left the office, so the chat is closed.`);
     // A topic started without a name takes it from what the operator says first.
-    if (conversation.topic && conversation.title === NEW_TOPIC && this.store.countMessages(conversationId) === 0) {
+    if (conversation.kind === "topic" && conversation.title === NEW_TOPIC && this.store.countMessages(conversationId) === 0) {
       const named = this.store.renameConversation(conversationId, topicTitle(text) ?? NEW_TOPIC)!;
       this.bus.publish({ type: "conversation", conversation: named });
     }
@@ -572,7 +585,7 @@ export class Office {
       ? this.store.getRun(task.runId)!
       : this.openRun(agent.id, task.kind, task.title, task.responsibilityId, task.assignmentId);
     return new Promise((resolve, reject) =>
-      this.queue.enqueue("background", () => this.executeTask(run.id, task).then(resolve, reject)),
+      this.queue.enqueue(task.lane ?? "background", () => this.executeTask(run.id, task).then(resolve, reject)),
     );
   }
 
@@ -700,7 +713,7 @@ export class Office {
       // A worker has no responsibility of its own: it works under its supervisor's, the run's.
       const responsibility =
         this.store.activeResponsibilityOf(agent.id) ?? (task.responsibilityId ? this.store.getResponsibility(task.responsibilityId) : null);
-      const web = this.store.webGrantOf(agent.id);
+      const web = task.web === false ? null : this.store.webGrantOf(agent.id);
       const contextId = await this.runtime.startContext({
         profile: agent.profile,
         instructions: `${instructionsFor(agent, { responsibility, sources: this.sourceNamesOf(agent.id), web, policy: this.store.currentPolicy()?.body, operations: this.operationsOf(agent.id) })}
@@ -717,6 +730,7 @@ ${task.instructions}`,
         timeoutMs: task.timeoutMs ?? this.turnTimeoutMs,
         onToolCall: (call) => this.gateway.call(caller, call),
         onEvent: (event) => {
+          if (event.type === "delta" && task.conversationId) this.bus.publish({ type: "delta", runId, conversationId: task.conversationId, text: event.text });
           if (event.type === "blocked") this.activity(agent.id, runId, "blocked", `Blocked an attempt to ${event.what}`);
           if (event.type === "web") {
             caller.sourceData = true;
@@ -797,10 +811,11 @@ ${task.instructions}`,
     if (history.length === 0) return { contextId, input: withMemory(prompt.text), sourceData: false, seenMessageId };
 
     this.activity(conversation.agentId, runId, "context_rebuilt", `Restored the chat from ${history.length} saved messages`);
-    const agentName = this.store.getAgentRecord(conversation.agentId)?.name ?? "Agent";
+    // A meeting's messages come from several staff, so each is named by its own author.
+    const nameOf = (agentId: string | null) => (agentId ? this.store.getAgentRecord(agentId)?.name : null) ?? "Agent";
     const transcript = history
       .map((earlier) => {
-        const who = earlier.author === "operator" ? "Operator" : agentName;
+        const who = earlier.author === "operator" ? "Operator" : nameOf(earlier.agentId);
         const body = clip(earlier.body, 2000);
         return fromSourceData.has(earlier.id) ? `${who}, written from source data:\nBEGIN SOURCE DATA\n${body}\nEND SOURCE DATA` : `${who}: ${body}`;
       })
@@ -863,8 +878,8 @@ function errorText(error: unknown): string {
 /** What a topic is called until the operator's first message names it. */
 const NEW_TOPIC = "New topic";
 
-/** A topic's name from what the operator typed: one line, at most 60 characters. Null if blank. */
-function topicTitle(text: string | undefined): string | null {
+/** A topic's or meeting's name from what the operator typed: one line, at most 60 characters. Null if blank. */
+export function topicTitle(text: string | undefined): string | null {
   const line = (text ?? "").replace(/\s+/g, " ").trim();
   if (!line) return null;
   return line.length > 60 ? `${line.slice(0, 59).trimEnd()}…` : line;
