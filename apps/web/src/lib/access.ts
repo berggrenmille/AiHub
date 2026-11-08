@@ -31,6 +31,15 @@ export function describeOperation(operation: Pick<ServiceOperation, "label" | "o
   return OPERATION_LABELS[operation.label];
 }
 
+/**
+ * A service's operations in the order the operator reads them: those that only read first, then
+ * those that may reach others, change things, or say nothing, each by name. A code host lists ninety.
+ */
+export function sortedOperations<T extends Pick<ServiceOperation, "name" | "label" | "openWorld">>(operations: readonly T[]): T[] {
+  const rank = (operation: T) => (operation.label === "reads" ? (operation.openWorld ? 1 : 0) : operation.label === "changes" ? 2 : 3);
+  return [...operations].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+}
+
 /** Approved and not removed: AiHub may call it once it is signed in. */
 export function inUse(service: Service): boolean {
   return service.status === "connected" || service.status === "signed_out" || service.status === "failed";

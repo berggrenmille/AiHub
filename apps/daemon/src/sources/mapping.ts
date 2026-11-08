@@ -4,7 +4,9 @@ import type { FieldValue } from "./reader.ts";
 
 // A mapping turns a service's output into records (DESIGN.md › Connectors and capabilities). It is
 // data, not code: where the list is, and which fields give each record its key, version, title, time,
-// and link. The Chief of Staff writes it from the tool's declared output, and the card's preview checks it.
+// and link. The Chief of Staff writes it from the tool's declared output. AiHub reads the service once
+// when she proposes it, so a mapping that doesn't fit goes back to her with the output's shape, and the
+// card's preview reads it again for the operator.
 
 export class MappingProblem extends Error {}
 
@@ -102,14 +104,47 @@ function fieldsOf(entry: Record<string, unknown>, used: Set<string | undefined>)
   return fields;
 }
 
-/** What the output looks like, so a wrong mapping can be fixed: its top-level keys, or that it is a list. */
+/**
+ * What the output looks like, so a wrong mapping can be fixed without seeing the data: field names
+ * and kinds of value, nested a few levels, and never a value. A name that doesn't look like a field,
+ * such as an address used as a key, is only counted, so no data reaches whoever reads this.
+ */
 export function describeShape(value: unknown): string {
-  if (Array.isArray(value)) return `It is a list of ${value.length}.`;
-  if (typeof value === "object" && value !== null) {
-    const keys = Object.keys(value).slice(0, 12);
-    return keys.length ? `Its fields: ${keys.join(", ")}.` : "It is an empty object.";
+  const shape = shapeOf(value, 0);
+  return `Its shape, without values: ${shape.length > SHAPE.length ? `${shape.slice(0, SHAPE.length)}…` : shape}.`;
+}
+
+const SHAPE = { depth: 4, fields: 20, sampled: 20, length: 1_500 } as const;
+const FIELD_NAME = /^[A-Za-z_$][\w$-]{0,39}$/;
+
+function shapeOf(value: unknown, depth: number): string {
+  if (Array.isArray(value)) {
+    if (!value.length) return "an empty list";
+    const entry = sampleOf(value);
+    return entry === undefined ? `a list of ${value.length}` : `a list of ${value.length}, each ${shapeOf(entry, depth)}`;
   }
-  return `It is ${value === null ? "null" : typeof value}.`;
+  if (typeof value === "object" && value !== null) {
+    const entries = Object.entries(value);
+    if (!entries.length) return "{}";
+    if (depth >= SHAPE.depth) return `{ ${entries.length} field${entries.length === 1 ? "" : "s"} }`;
+    const shown = entries.filter(([name]) => FIELD_NAME.test(name)).slice(0, SHAPE.fields);
+    const more = entries.length - shown.length;
+    const fields = shown.map(([name, inner]) => `${name}: ${shapeOf(inner, depth + 1)}`);
+    return `{ ${[...fields, ...(more ? [`${more} more`] : [])].join(", ")} }`;
+  }
+  if (value === null || value === undefined) return "null";
+  return typeof value === "string" ? "text" : typeof value;
+}
+
+/** One entry standing for a list: its objects' fields together, each with the first value that isn't null. */
+function sampleOf(list: unknown[]): unknown {
+  const objects = list.slice(0, SHAPE.sampled).filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null && !Array.isArray(entry));
+  if (!objects.length) return list.find((entry) => entry !== null && entry !== undefined);
+  const merged: Record<string, unknown> = {};
+  for (const object of objects) {
+    for (const [name, value] of Object.entries(object)) if (merged[name] === undefined || merged[name] === null) merged[name] = value;
+  }
+  return merged;
 }
 
 function cut(text: string, max: number): string {

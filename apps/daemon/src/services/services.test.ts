@@ -149,6 +149,22 @@ describe("Services", () => {
     assert.equal(drive.connectUrl, "https://chatgpt.com/apps/fake-drive");
   });
 
+  it("reads a proposed service source once, so a mapping that doesn't fit goes back with the output's shape and no values", async () => {
+    const { store, office, tool } = setUp();
+    await connectMail(office, tool);
+    const wrong = await tool("aihub_propose_supervisor", { ...INES, source: { ...INES.source, mapping: { list: "items", key: "id", title: "title" } } });
+    assert.equal(wrong.ok, false);
+    assert.match(
+      wrong.text,
+      /AiHub read Inbox to check it: The output has no list at "items"\. Its shape, without values: \{ messages: a list of 4, each \{ id: text, from: text, subject: text, received_at: text, snippet: text, url: text \} \}\. Fix the mapping/,
+    );
+    assert.doesNotMatch(wrong.text, /Dinner|invoice/, "no record reaches the Chief of Staff");
+    assert.equal(store.listProposals().length, 0, "nor the operator");
+
+    const right = await tool("aihub_propose_supervisor", INES);
+    assert.match(right.text, /^Proposal recorded\. AiHub read Inbox once to check it: 4 records in the latest read\. The operator sees/);
+  });
+
   it("marks what breaks the data boundary on a hiring card, and grants an unticked optional one never", async () => {
     const { store, office, tool } = setUp();
     const service = await connectMail(office, tool);

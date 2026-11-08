@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Service } from "@aihub/shared";
 import { errorText } from "../api.ts";
 import { formatDateTime } from "../format.ts";
-import { describeOperation, inUse, missingTicks, SERVICE_KIND_LABELS, SERVICE_STATUS_LABELS } from "../lib/access.ts";
+import { describeOperation, inUse, missingTicks, SERVICE_KIND_LABELS, SERVICE_STATUS_LABELS, sortedOperations } from "../lib/access.ts";
 import { Icon } from "./Icon.tsx";
 import { UnsafeGrants } from "./UnsafeGrants.tsx";
 
@@ -156,7 +156,7 @@ export function OperationList({ service }: { service: Service }) {
         {operations.length} operation{operations.length === 1 ? "" : "s"}, {reads} of them only read
       </summary>
       <ul>
-        {operations.map((operation) => (
+        {sortedOperations(operations).map((operation) => (
           <li key={operation.name}>
             <code>{operation.name}</code>{" "}
             <span className={`pill tiny label-${operation.label}${operation.openWorld ? " open-world" : ""}`}>{describeOperation(operation)}</span>

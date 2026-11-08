@@ -348,6 +348,15 @@ export const proposeSupervisorTool = defineTool({
     const web = input.web ? { sites: normalizeSites(input.web.sites), ...(input.web.live && { live: true }) } : null;
     const problem = modelChoiceProblem(await models(), { model: input.model.id, effort: input.model.effort });
     if (problem) throw new Error(`${problem} See aihub_list_models.`);
+    // A mapping written without a declared output is a guess, so it is checked before the operator sees it.
+    let read = "";
+    if (source?.kind === "service" && services) {
+      try {
+        read = ` AiHub read ${source.label} once to check it: ${await services.checkSource(source)}.`;
+      } catch (error) {
+        throw new Error(`AiHub read ${source.label} to check it: ${error instanceof Error ? error.message : String(error)} Fix the mapping, or the operation and its arguments, and propose again.`);
+      }
+    }
     proposeSupervisor(caller, {
       profile: input.profile,
       responsibility: { ...duty, expiresAt },
@@ -363,7 +372,7 @@ export const proposeSupervisorTool = defineTool({
     const ticks = count
       ? ` ${count === 1 ? "One grant breaks" : `${count} grants break`} the data boundary, so the operator ticks ${count === 1 ? "it" : "each"} on its own: ${access.unsafe.map((grant) => grant.what).join("; ")}. Say so plainly.`
       : "";
-    return `Proposal recorded. The operator sees an approval card in this chat${where}.${ticks} Tell them in a sentence what you proposed and why.`;
+    return `Proposal recorded.${read} The operator sees an approval card in this chat${where}.${ticks} Tell them in a sentence what you proposed and why.`;
   },
 });
 

@@ -128,7 +128,13 @@ export function approvalGate(source: ProposedSource | null, readers: StaffReader
   // A source on a service reads an account: the operator sees what it reads, and from which account, first.
   if (source?.kind === "service") {
     if (preview.status === "done") return { ready: true, reason: null, tone: "done" };
-    if (preview.status === "failed") return { ready: false, reason: "The preview couldn't read the service. Check it in the Access panel, then preview again.", tone: "info" };
+    if (preview.status === "failed") {
+      return {
+        ready: false,
+        reason: "The preview couldn't read the service. If it is signed out, sign in from Access and preview again. Otherwise decline with what went wrong, so the Chief of Staff can propose again.",
+        tone: "info",
+      };
+    }
     return { ready: false, reason: "Preview first: AiHub reads the account now, so you see what the supervisor would get.", tone: "info" };
   }
   const info = source?.kind === "folder" ? readerOf(source.reader, readers) : null;

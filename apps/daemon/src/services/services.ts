@@ -3,6 +3,7 @@ import { ConflictError, InvalidRequestError, NotFoundError } from "../errors.ts"
 import type { Caller } from "../gateway/gateway.ts";
 import type { Office } from "../office.ts";
 import type { ConnectorRuntime, ServiceCallResult } from "../runtime/types.ts";
+import { checkProposedSource } from "../sources/collect.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "../staff/chief-of-staff.ts";
 import type { ServiceConfig, ServiceRecord, ServiceTool } from "../store/store.ts";
 import {
@@ -271,6 +272,15 @@ export class Services {
     }
     if (request.liveWeb) unsafe.push(liveWebRisk(staffName));
     return { source, operations, unsafe };
+  }
+
+  /**
+   * Reads a proposed service source once, as the briefing would, before it reaches the operator. Many
+   * operations declare no output, so the Chief of Staff writes the mapping blind; one that doesn't fit
+   * comes back to her with the output's shape, field names only.
+   */
+  async checkSource(source: ProposedSource): Promise<string> {
+    return checkProposedSource(source, "", this.office.candidateSourceContext());
   }
 
   private operationOn(serviceName: string, operation: string): { service: ServiceRecord; tool: ServiceTool } {

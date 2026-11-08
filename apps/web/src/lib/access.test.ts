@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Agent, Service, ServiceGrant, SourceConnection, UnsafeGrant } from "@aihub/shared";
-import { describeOperation, grantsOn, holdersOf, inUse, listedServices, missingTicks, serviceOf, unsafeRows } from "./access.ts";
+import { describeOperation, grantsOn, holdersOf, inUse, listedServices, missingTicks, serviceOf, sortedOperations, unsafeRows } from "./access.ts";
 
 function agent(id: string, overrides: Partial<Agent> = {}): Agent {
   return {
@@ -57,6 +57,18 @@ describe("access", () => {
     assert.equal(describeOperation({ label: "reads", openWorld: true }), "Reads, may reach others");
     assert.equal(describeOperation({ label: "changes", openWorld: true }), "Changes things");
     assert.equal(describeOperation({ label: "unlabeled", openWorld: true }), "Unlabeled, counts as changing things");
+    const operations = [
+      { name: "update_issue", label: "changes", openWorld: true },
+      { name: "mystery", label: "unlabeled", openWorld: false },
+      { name: "search_issues", label: "reads", openWorld: false },
+      { name: "fetch", label: "reads", openWorld: true },
+      { name: "fetch_issue", label: "reads", openWorld: false },
+    ] as const;
+    assert.deepEqual(
+      sortedOperations(operations).map((operation) => operation.name),
+      ["fetch_issue", "search_issues", "fetch", "update_issue", "mystery"],
+      "reads first, then what may reach others, changes, or says nothing, each by name",
+    );
   });
 
   it("lists services waiting or in use, the unsafe ones first", () => {
