@@ -16,7 +16,7 @@ const REPLY_INTRO = [
 
 const DASHBOARD_INTRO = [
   "# Dashboards",
-  "A dashboard is a saved view the operator opens from the Dashboards panel whenever they like. You write it as a short program in OpenUI Lang, described below, and hand it in with aihub_save_dashboard. AiHub checks it and tells you what to fix if anything is wrong.",
+  "A dashboard is a saved view the operator opens from the Dashboards tab whenever they like. You write it as a short program in OpenUI Lang, described below, and hand it in with aihub_save_dashboard. AiHub checks it and tells you what to fix if anything is wrong.",
   "A dashboard fetches fresh data from AiHub every time it opens, with Query() and the data tools listed below. They only read. You never see what they return, so write the program from their output schemas, and keep it working when a list is empty.",
 ].join("\n\n");
 

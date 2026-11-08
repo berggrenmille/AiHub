@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from "react";
-import type { Agent, ChatMessage, Conversation, ModelOption, PolicyVersion, Proposal, Run, SourcePreview, StaffReader } from "@aihub/shared";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import type { Agent, ChatMessage, Conversation, Item, ModelOption, PolicyVersion, Proposal, Run, SourcePreview, StaffReader, View } from "@aihub/shared";
 import { errorText } from "../api.ts";
 import { lookFor } from "../lib/avatar.ts";
 import { formatClock, formatDateTime, formatLongDate, STATE_LABELS, toneOf } from "../format.ts";
@@ -11,6 +11,7 @@ import { ProposalCard } from "./ProposalCard.tsx";
 import { PolicyCard } from "./PolicyCard.tsx";
 import { baseOf } from "../lib/policy.ts";
 import { StateBadge } from "./StateBadge.tsx";
+import { ViewFrame, type ViewActions } from "../views/LazyViewFrame.tsx";
 
 /** The daemon rejects longer messages. */
 const MAX_LENGTH = 20_000;
@@ -45,6 +46,16 @@ interface ChatDrawerProps {
   onOpenProfile(): void;
   resolveLink(target: string): WikilinkTarget;
   onOpenLink(target: string): void;
+  /** Views staff showed under messages, by message ID. */
+  views: Map<number, View[]>;
+  /** For views' buttons that resolve or dismiss an item. */
+  items: Item[];
+  viewActions: Pick<ViewActions, "resolve" | "dismiss">;
+  nameOf(agentId: string): string;
+  /** A message a dashboard's button put in this chat's box. A new key puts it there again. */
+  prefill: { text: string; key: number } | null;
+  /** The prefill is in the box, so reopening the chat doesn't put it there again. */
+  onPrefilled(): void;
 }
 
 export function ChatDrawer(props: ChatDrawerProps) {
@@ -58,6 +69,39 @@ export function ChatDrawer(props: ChatDrawerProps) {
   const look = lookFor(agent.avatar);
 
   useEffect(() => inputRef.current?.focus(), []);
+
+  // A view's button puts its message in the box for the operator to edit or send; it never sends.
+  const ask = useCallback((text: string) => {
+    setDraft(text);
+    following.current = true;
+    inputRef.current?.focus();
+  }, []);
+  const prefillKey = props.prefill?.key;
+  const prefillText = props.prefill?.text;
+  const { onPrefilled } = props;
+  useEffect(() => {
+    if (prefillKey === undefined || prefillText === undefined) return;
+    ask(prefillText);
+    onPrefilled();
+  }, [prefillKey, prefillText, ask, onPrefilled]);
+
+  const { viewActions, items, nameOf } = props;
+  const actions = useMemo<ViewActions>(() => ({ ...viewActions, ask: present ? ask : undefined }), [viewActions, present, ask]);
+  // A view under a reply carries its own heading. One in the briefing says whose section it is.
+  const renderView = useCallback(
+    (view: View, byline: string | null) => (
+      <section key={view.id} className="message-view" aria-label={view.title}>
+        {byline && (
+          <p className="message-view-head">
+            <span className="message-view-title">{view.title}</span>
+            <span> · {byline}</span>
+          </p>
+        )}
+        <ViewFrame view={view} items={items} actions={actions} />
+      </section>
+    ),
+    [items, actions],
+  );
 
   useLayoutEffect(() => {
     const scroller = scrollRef.current;
@@ -170,6 +214,9 @@ export function ChatDrawer(props: ChatDrawerProps) {
               onDeclinePolicy={props.onDeclinePolicy}
               resolveLink={props.resolveLink}
               onOpenLink={props.onOpenLink}
+              views={props.views.get(message.id) ?? NO_VIEWS}
+              renderView={renderView}
+              nameOf={nameOf}
             />
           ))}
         </ol>
@@ -243,7 +290,12 @@ interface MessageViewProps {
   onDeclinePolicy(policyId: number): Promise<void>;
   resolveLink(target: string): WikilinkTarget;
   onOpenLink(target: string): void;
+  views: View[];
+  renderView(view: View, byline: string | null): ReactNode;
+  nameOf(agentId: string): string;
 }
+
+const NO_VIEWS: View[] = [];
 
 function MessageView(props: MessageViewProps) {
   const { message, agentName, run, proposal, policy, readers, onPreview, onApprove, onDecline, resolveLink, onOpenLink } = props;
@@ -309,6 +361,9 @@ function MessageView(props: MessageViewProps) {
             </p>
           </header>
           <Markdown source={message.body} className="paper-body" resolveLink={resolveLink} onOpenLink={onOpenLink} />
+          {props.views.length > 0 && (
+            <div className="paper-views">{props.views.map((view) => props.renderView(view, `from ${props.nameOf(view.agentId)}`))}</div>
+          )}
         </article>
       </li>
     );
@@ -325,6 +380,7 @@ function MessageView(props: MessageViewProps) {
           <Markdown source={message.body} resolveLink={resolveLink} onOpenLink={onOpenLink} />
         </div>
       )}
+      {!fromOperator && props.views.length > 0 && <div className="message-views">{props.views.map((view) => props.renderView(view, null))}</div>}
       <p className="message-meta">
         {time}
         {fromOperator && run && <RunStatus run={run} />}

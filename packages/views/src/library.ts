@@ -229,6 +229,9 @@ export const Tabs = defineComponent({
 
 export const VIEW_COMPONENTS = [...leaves, Col, Series, ListItem, TimelineEvent, Stack, Card, Tab, Tabs];
 
+/** The props a component's renderer gets, such as `PropsOf<typeof Table>`. */
+export type PropsOf<C extends { props: z.ZodType }> = z.infer<C["props"]>;
+
 /** The component every view starts from: `root = Stack([...])`. */
 export const VIEW_ROOT = "Stack";
 
@@ -259,6 +262,9 @@ export const VIEW_FUNCTIONS = [Time];
 /** The library as the daemon uses it: for checking programs and writing the guide. Nothing renders here. */
 export const viewLibrary = createLibrary({ components: VIEW_COMPONENTS, actions: VIEW_ACTIONS, functions: VIEW_FUNCTIONS, root: VIEW_ROOT, id: "aihub" });
 
+/** AiHub's time zone, wherever the browser is (DESIGN.md › Scheduling and reporting). */
+export const VIEW_TIME_ZONE = "Europe/Stockholm";
+
 export function formatTime(at: string, style: "date" | "time" | "datetime" | "ago", now = Date.now()): string {
   const date = new Date(at);
   if (Number.isNaN(date.getTime())) return at;
@@ -274,5 +280,5 @@ export function formatTime(at: string, style: "date" | "time" | "datetime" | "ag
       : style === "time"
         ? { hour: "2-digit", minute: "2-digit" }
         : { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" };
-  return date.toLocaleString("en-GB", options);
+  return date.toLocaleString("en-GB", { ...options, timeZone: VIEW_TIME_ZONE });
 }

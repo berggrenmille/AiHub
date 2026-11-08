@@ -11,6 +11,7 @@ import {
   openChat,
   previewProposal,
   putNote,
+  removeView,
   resolveItem,
   runRoutine,
   sendChat,
@@ -18,6 +19,7 @@ import {
   setWebGrant,
   updateAgent,
   updateRoutine,
+  viewData,
   writePolicy,
 } from "./api.ts";
 import { initialOfficeState, officeReducer } from "./state.ts";
@@ -44,6 +46,9 @@ export interface OfficeCommands {
   resolve(itemId: number, note?: string): Promise<void>;
   runRoutine(routineId: string): Promise<void>;
   saveNote(path: string, body: string): Promise<void>;
+  /** Runs a dashboard's data tool. */
+  viewData(tool: string, args: Record<string, unknown>): Promise<unknown>;
+  removeDashboard(viewId: string): Promise<void>;
 }
 
 /** The office state, kept current from the daemon, and the operator's commands. */
@@ -101,6 +106,11 @@ export function useOffice() {
         await runRoutine(routineId);
       },
       saveNote: async (path, body) => apply({ type: "note", note: await putNote(path, { body }) }),
+      viewData: (tool, args) => viewData({ tool, args }),
+      removeDashboard: async (viewId) => {
+        await removeView(viewId);
+        apply({ type: "view_removed", viewId });
+      },
     };
   }, [send]);
 

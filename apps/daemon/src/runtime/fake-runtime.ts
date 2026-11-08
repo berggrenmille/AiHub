@@ -1,3 +1,4 @@
+import { DASHBOARD_EXAMPLE, REPLY_EXAMPLE } from "@aihub/views";
 import {
   ContextUnavailableError,
   type AgentRuntime,
@@ -24,9 +25,9 @@ export const echo: Responder = async (input, options) => {
  */
 export const demo: Responder = async (input, options) => {
   // A briefing section: file a plain report from the collected records, so the office gets items.
-  const data = /BEGIN SOURCE DATA\n([\s\S]*?)\nEND SOURCE DATA/.exec(input)?.[1];
-  if (data) {
-    const records = JSON.parse(data) as Array<{ id: string; title: string; change?: string; when?: string; overlapsWith?: string[] }>;
+  // A chat can quote source data too, such as a preview, so only a JSON block counts.
+  const records = parseRecords(/BEGIN SOURCE DATA\n([\s\S]*?)\nEND SOURCE DATA/.exec(input)?.[1]);
+  if (records) {
     // A calendar's overlaps, or for a folder the first few records that are new or changed.
     const overlaps = records
       .filter((record) => record.overlapsWith?.length)
@@ -41,12 +42,26 @@ export const demo: Responder = async (input, options) => {
       .slice(0, 3)
       .map((record) => ({ title: `${record.change === "added" ? "New" : "Changed"}: ${record.title}`, detail: "The fake runtime flags the first few new or changed records.", urgency: "fyi", sourceRef: record.id }));
     const items = [...overlaps, ...changed];
+    if (items.length > 0) {
+      // A view on the section, so the briefing shows one without Codex.
+      const entries = items.map((item) => `ListItem(${JSON.stringify(item.title)}, ${JSON.stringify(item.detail)}, null, "warn")`);
+      const program = `root = Stack([Heading("Worth a look", 2), List([${entries.join(", ")}])])`;
+      await options.onToolCall({ name: "aihub_show_view", arguments: { title: "Worth a look", program } });
+    }
     const outcome = await options.onToolCall({ name: "aihub_submit_report", arguments: { summary: `${records.length} records, ${items.length} worth a look.`, items } });
     return { status: "completed", text: outcome.text, error: null, usage: { inputTokens: 900, cachedInputTokens: 0, outputTokens: 30 } };
   }
   const delegated = await delegate(input, options);
   let text = delegated ?? `This is the fake runtime, so nobody is thinking. You said: “${input}”`;
-  if (delegated === null && /tool/i.test(input)) {
+  const lastLine = input.trim().split("\n").at(-1) ?? "";
+  if (delegated === null && /\bdashboard\b/i.test(lastLine)) {
+    // Views, without Codex: "make me a dashboard", or "show me a chart".
+    const outcome = await options.onToolCall({ name: "aihub_save_dashboard", arguments: { title: "Open items", program: DASHBOARD_EXAMPLE } });
+    text = `Here is a dashboard of the office's items. ${outcome.text}`;
+  } else if (delegated === null && /\b(chart|view)\b/i.test(lastLine)) {
+    const outcome = await options.onToolCall({ name: "aihub_show_view", arguments: { title: "Electricity today", program: REPLY_EXAMPLE } });
+    text = `Electricity is cheapest early in the morning. ${outcome.text}`;
+  } else if (delegated === null && /tool/i.test(input)) {
     const outcome = await options.onToolCall({ name: "aihub_get_roster", arguments: {} });
     text += `
 
@@ -78,6 +93,18 @@ const LINE_READER = String.raw`function read(file) {
 }`;
 
 const SAMPLE_EXPORT = "# Exported 2026-11-07\n2026-11-02  ICA Maxi  -412,50\n2026-11-03  Salary  25 000,00\n2026-11-04  Vattenfall  -1 180,00\n";
+
+type SourceRecord = { id: string; title: string; change?: string; when?: string; overlapsWith?: string[] };
+
+function parseRecords(data: string | undefined): SourceRecord[] | null {
+  if (!data) return null;
+  try {
+    const parsed: unknown = JSON.parse(data);
+    return Array.isArray(parsed) ? (parsed as SourceRecord[]) : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Delegation for the fake office, so the UI shows it without Codex. In chat, "ask Elin when …" asks

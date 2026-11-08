@@ -19,6 +19,7 @@ import type {
   StateSnapshot,
   UpdateAgentRequest,
   UpdateRoutineRequest,
+  ViewDataRequest,
   WebGrant,
   WriteNoteRequest,
 } from "@aihub/shared";
@@ -50,6 +51,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const failure = await failureOf(response);
     throw new ApiError(failure.unsupported ? UNSUPPORTED_MESSAGE : failure.text, response.status, failure.unsupported);
   }
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
@@ -180,6 +182,16 @@ export function updateRoutine(routineId: string, body: UpdateRoutineRequest): Pr
 /** Starts a routine now. Its run arrives on the event stream. */
 export function runRoutine(routineId: string): Promise<RunRoutineResponse> {
   return request<RunRoutineResponse>(`/api/routines/${encodeURIComponent(routineId)}/run`, json("POST", {}));
+}
+
+/** Runs one of a dashboard's read-only data tools. Arguments that don't fit the tool answer 400. */
+export function viewData(body: ViewDataRequest): Promise<unknown> {
+  return request<unknown>("/api/views/data", json("POST", body));
+}
+
+/** Removes a dashboard. A view under a message answers 409: it stays with the message. */
+export function removeView(viewId: string): Promise<void> {
+  return request<void>(`/api/views/${encodeURIComponent(viewId)}`, { method: "DELETE" });
 }
 
 export interface OfficeConnectionHandlers {

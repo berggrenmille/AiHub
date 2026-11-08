@@ -155,7 +155,7 @@ describe("Dashboards", () => {
 
     await chat(office, CHAT, "Make me a dashboard of open items");
     assert.match(saved[0]!, /^# Dashboards[\s\S]*office_items\(/);
-    assert.match(saved[1]!, /^Saved "Open items"\. The operator opens it from the Dashboards panel/);
+    assert.match(saved[1]!, /^Saved "Open items"\. The operator opens it from the Dashboards tab/);
     const [dashboard] = store.dashboards();
     assert.deepEqual([dashboard!.kind, dashboard!.agentId, dashboard!.outside, dashboard!.messageId], ["dashboard", CHIEF_OF_STAFF_ID, "ask", null]);
     assert.ok(store.recentActivity(10).some((entry) => entry.summary === 'Vera made the dashboard "Open items"'));

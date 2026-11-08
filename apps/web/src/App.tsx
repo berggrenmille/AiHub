@@ -3,6 +3,7 @@ import type { Agent } from "@aihub/shared";
 import { ActivityLog, ActivityTicker, Toasts } from "./components/Activity.tsx";
 import { AssignmentsDrawer } from "./components/Assignments.tsx";
 import { ChatDrawer } from "./components/ChatDrawer.tsx";
+import { Dashboards } from "./components/Dashboards.tsx";
 import { Hud, type View } from "./components/Hud.tsx";
 import { Inbox } from "./components/Inbox.tsx";
 import { NotesView } from "./components/NotesView.tsx";
@@ -15,6 +16,7 @@ import { chatPartner, chatScope, shownConversation } from "./lib/chat.ts";
 import { openCount } from "./lib/inbox.ts";
 import { resolveWikilink } from "./lib/notes.ts";
 import { pendingPolicy } from "./lib/policy.ts";
+import { dashboardsOf, viewsByMessage } from "./lib/views.ts";
 import { rosterOrder } from "./state.ts";
 import { useOffice } from "./useOffice.ts";
 
@@ -37,6 +39,8 @@ export function App() {
   const [notePath, setNotePath] = useState<string | null>(null);
   const [notesTab, setNotesTab] = useState<"note" | "graph">("note");
   const [inboxFocus, setInboxFocus] = useState<string | null>(null);
+  // A message a dashboard's button puts in a chat box, for the operator to edit or send.
+  const [prefill, setPrefill] = useState<{ conversationId: string; text: string; key: number } | null>(null);
   const [theme, setTheme] = useTheme();
 
   const roster = useMemo(() => rosterOrder(state.agents), [state.agents]);
@@ -54,6 +58,10 @@ export function App() {
   const inbox = useMemo(() => openCount(state.items), [state.items]);
   const openAssignments = useMemo(() => openAssignmentCount(state.assignments), [state.assignments]);
   const profile = state.agents.find((agent) => agent.id === profileId) ?? null;
+  const messageViews = useMemo(() => viewsByMessage(state.views), [state.views]);
+  const dashboards = useMemo(() => dashboardsOf(state.views), [state.views]);
+  const viewActions = useMemo(() => ({ resolve: commands.resolve, dismiss: commands.dismiss }), [commands]);
+  const clearPrefill = useCallback(() => setPrefill(null), []);
 
   // Workers who have left still have names: their assignments keep them.
   const agentName = useCallback(
@@ -80,8 +88,22 @@ export function App() {
       setChatId(conversation.id);
       setProfileId(null);
       setDrawer("chat");
+      return conversation;
     },
     [state.conversations, commands],
+  );
+
+  /** Opens a chat with a message in the box, unsent: the author's, or the Chief of Staff's once the author has left. */
+  const askStaff = useCallback(
+    (agentId: string, text: string) => {
+      const target = state.agents.some((agent) => agent.id === agentId) ? agentId : chief?.id;
+      if (!target) return;
+      openChatWith(target).then(
+        (conversation) => setPrefill((current) => ({ conversationId: conversation.id, text, key: (current?.key ?? 0) + 1 })),
+        () => undefined,
+      );
+    },
+    [state.agents, chief?.id, openChatWith],
   );
 
   // Wikilinks in chat resolve as the staff member would: its folder, then Office, then anyone's.
@@ -198,6 +220,19 @@ export function App() {
               onSelectAgent={setProfileId}
             />
           )}
+          {view === "dashboards" && (
+            <Dashboards
+              dashboards={dashboards}
+              items={state.items}
+              now={now}
+              nameOf={agentName}
+              onAsk={askStaff}
+              onResolve={commands.resolve}
+              onDismiss={commands.dismiss}
+              onData={commands.viewData}
+              onRemove={commands.removeDashboard}
+            />
+          )}
           {view === "notes" && (
             <NotesView
               notes={state.notes}
@@ -240,6 +275,12 @@ export function App() {
               onOpenProfile={() => setProfileId(partner.agent.id)}
               resolveLink={resolveChatLink}
               onOpenLink={openChatLink}
+              views={messageViews}
+              items={state.items}
+              viewActions={viewActions}
+              nameOf={agentName}
+              prefill={prefill && prefill.conversationId === chat.id ? prefill : null}
+              onPrefilled={clearPrefill}
             />
           ) : (
             <aside className="drawer chat-drawer" aria-label="Chat">
@@ -273,7 +314,7 @@ export function App() {
           now={now}
           onClose={() => setProfileId(null)}
           onSelectAgent={setProfileId}
-          onOpenChat={() => openChatWith(profile.id)}
+          onOpenChat={() => openChatWith(profile.id).then(() => undefined)}
           onOpenNote={openNote}
           onUpdate={(changes) => commands.updateAgent(profile.id, changes)}
           onSetWeb={(web) => commands.setWeb(profile.id, web)}

@@ -535,7 +535,7 @@ export interface PolicyVersion {
 
 /**
  * Where a view shows (DESIGN.md › Views): under a staff member's chat reply, in their section of the
- * briefing, or as a dashboard the operator opens from the Dashboards panel.
+ * briefing, or as a dashboard the operator opens from the Dashboards tab.
  */
 export type ViewKind = "reply" | "section" | "dashboard";
 

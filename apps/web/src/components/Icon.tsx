@@ -31,7 +31,10 @@ export type IconName =
   | "user"
   | "question"
   | "task"
-  | "hourglass";
+  | "hourglass"
+  | "dashboard"
+  | "refresh"
+  | "trash";
 
 const PATHS: Record<IconName, string> = {
   office: "M3 21V8l9-5 9 5v13M3 21h18M9 21v-6h6v6M7 10h2M15 10h2",
@@ -65,6 +68,9 @@ const PATHS: Record<IconName, string> = {
   question: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.4 9.6a2.7 2.7 0 1 1 3.8 2.5c-.7.3-1.2 1-1.2 1.8v.6M12 17.4v.01",
   task: "M9 3.5h6v3H9zM9 5H6.5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H15M8.5 13.5l2.5 2.5 4.5-5",
   hourglass: "M6.5 3h11M6.5 21h11M8 3v2.5c0 2.6 4 3.9 4 6.5s-4 3.9-4 6.5V21M16 3v2.5c0 2.6-4 3.9-4 6.5s4 3.9 4 6.5V21",
+  dashboard: "M4 4h7v9H4zM13 4h7v5h-7zM13 11h7v9h-7zM4 15h7v5H4z",
+  refresh: "M20 11a8 8 0 0 0-14.6-4.5M4 4v4h4M4 13a8 8 0 0 0 14.6 4.5M20 20v-4h-4",
+  trash: "M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3",
 };
 
 export function Icon({ name, size = 18, className }: { name: IconName; size?: number; className?: string }) {

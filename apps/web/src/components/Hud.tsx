@@ -4,7 +4,7 @@ import { CONNECTION_STATUS_LABELS } from "../format.ts";
 import type { ConnectionStatus } from "../state.ts";
 import { Icon } from "./Icon.tsx";
 
-export type View = "office" | "inbox" | "notes";
+export type View = "office" | "inbox" | "notes" | "dashboards";
 
 interface HudProps {
   view: View;
@@ -60,6 +60,7 @@ export function Hud(props: HudProps) {
           countLabel={`${inbox.open} open${inbox.urgent ? `, ${inbox.urgent} urgent` : ""}`}
         />
         <TabButton current={view === "notes"} onClick={() => onView("notes")} icon="notes" label="Notes" />
+        <TabButton current={view === "dashboards"} onClick={() => onView("dashboards")} icon="dashboard" label="Dashboards" />
       </nav>
 
       <div className="hud-stats">
@@ -151,7 +152,7 @@ export function Hud(props: HudProps) {
   );
 }
 
-function TabButton(props: { current: boolean; onClick(): void; icon: "office" | "inbox" | "notes"; label: string; count?: number; countLabel?: string; tone?: "urgent" }) {
+function TabButton(props: { current: boolean; onClick(): void; icon: "office" | "inbox" | "notes" | "dashboard"; label: string; count?: number; countLabel?: string; tone?: "urgent" }) {
   return (
     <button type="button" className="hud-tab" aria-current={props.current ? "page" : undefined} onClick={props.onClick}>
       <Icon name={props.icon} />

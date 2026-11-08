@@ -572,7 +572,7 @@ export const showViewTool = defineTool({
 export const saveDashboardTool = defineTool({
   name: "aihub_save_dashboard",
   description:
-    "Save a dashboard when the operator asks for one: a view they open from the Dashboards panel, which fetches fresh office data every time it opens. Saving again under the same title changes it. Read aihub_view_guide for a dashboard first.",
+    "Save a dashboard when the operator asks for one: a view they open from the Dashboards tab, which fetches fresh office data every time it opens. Saving again under the same title changes it. Read aihub_view_guide for a dashboard first.",
   input: ViewInput,
   roles: ["chief_of_staff", "supervisor"],
   profiles: ["conversation", "data"],

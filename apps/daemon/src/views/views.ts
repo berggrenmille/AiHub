@@ -85,7 +85,7 @@ export class Views implements ViewService {
     bus.publish({ type: "view", view });
     this.activity(agent.id, caller.runId, "view", `${agent.name} ${existing ? "updated" : "made"} the dashboard "${view.title}"`);
     this.office.notebook.journal(agent.id, `${existing ? "Updated" : "Made"} the dashboard "${view.title}" for the operator.`, caller.runId);
-    return `Saved "${view.title}". The operator opens it from the Dashboards panel; tell them in a sentence what it shows. To change it later, save it again under the same title.${notes}`;
+    return `Saved "${view.title}". The operator opens it from the Dashboards tab; tell them in a sentence what it shows. To change it later, save it again under the same title.${notes}`;
   }
 
   /** Shows the views the runs handed in under a message just posted, such as a reply or the briefing. */
