@@ -46,13 +46,13 @@ npm run codex -- login
 
 ## The morning briefing
 
-Ask the Chief of Staff in chat to look after something, such as your work calendar. She proposes a supervisor on a card in the chat; approve it and pick the `.ics` export it should read. On weekdays at 07:00 Stockholm time the supervisors check their sources and the Chief of Staff posts one briefing in her chat. To have it on weekends too, tick Weekends too under the briefing on the Chief of Staff's profile card. Items land in the Inbox, where you resolve or dismiss them. An hour earlier a health check posts a notice if Codex is signed out, a source can't be read, or usage is nearly spent. Run now on the Chief of Staff's profile card briefs you on request. The daemon has to be running at 07:00; a briefing it missed runs when it starts later that day.
+Ask the Chief of Staff in chat to look after something, such as your work calendar. She proposes a supervisor on a card in the chat; approve it and pick the `.ics` export it should read. On weekdays at 07:00 Stockholm time the supervisors check their sources and the Chief of Staff posts one briefing in her chat. To have it on weekends too, tick Weekends too under the briefing on the Chief of Staff's profile card. Findings that need you to do or decide something, such as a meeting clash, land in the Inbox, where you resolve or dismiss them. What is only worth knowing, such as a moved meeting, is in the briefing and doesn't wait in the Inbox. An hour earlier a health check posts a notice if Codex is signed out, a source can't be read, or usage is nearly spent. Run now on the Chief of Staff's profile card briefs you on request. The daemon has to be running at 07:00; a briefing it missed runs when it starts later that day.
 
 ### Web search
 
 Some staff look things up instead of reading a file, such as a supervisor who summarizes the news. Give a staff member web search on their profile card, optionally limited to some sites, or approve it on the Chief of Staff's proposal card. It is Codex's cached web search: it answers from OpenAI's search index and opens no live pages, so no site sees what your staff look up. What it finds is treated like source data, and every search shows in the activity log.
 
-A supervisor with web search and no source researches what is new since the last briefing and gives each story's address. The same story isn't new twice, and stories drop off after two days instead of staying in the Inbox. Live browsing stays off; DESIGN.md › Authority and data boundaries says why.
+A supervisor with web search and no source researches what is new since the last briefing and gives each story's address. The same story isn't new twice. Stories are only for reading, so they never go in the Inbox, and dashboards can list them for two days. Live browsing stays off; DESIGN.md › Authority and data boundaries says why.
 
 ## In the background
 

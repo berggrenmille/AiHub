@@ -361,14 +361,23 @@ export class Scheduler {
   }
 }
 
+/** How many of the new items need the operator, said only when it isn't all of them. */
+function needing(count: number, of: number): string {
+  if (count === of) return "";
+  return count === 0 ? ", nothing needs you" : `, ${count} need${count === 1 ? "s" : ""} you`;
+}
+
 /** What a delivered briefing holds, in counts only. */
 function deliveredText(sections: SectionOutcome[] | undefined): string {
   if (!sections) return "Open the office to read it.";
   const items = sections.flatMap((section) => ("newItems" in section ? section.newItems : []));
   const urgent = items.filter((item) => item.urgency === "urgent").length;
+  const needsYou = items.filter((item) => item.needsOperator).length;
   const gaps = sections.filter((section) => section.status === "missing" || section.status === "unavailable").length;
   const parts = [
-    items.length ? `${items.length} new item${items.length === 1 ? "" : "s"}${urgent ? `, ${urgent} urgent` : ""}.` : "Nothing new.",
+    items.length
+      ? `${items.length} new item${items.length === 1 ? "" : "s"}${needing(needsYou, items.length)}${urgent ? `, ${urgent} urgent` : ""}.`
+      : "Nothing new.",
     gaps ? `${gaps} section${gaps === 1 ? "" : "s"} couldn't report.` : "",
   ];
   return parts.filter(Boolean).join(" ");

@@ -45,14 +45,14 @@ export function seedDemoOffice(office: Office) {
   store.grant("personal-inbox", mailbox.id, ["read"]);
 
   const schedule = responsibilities.get("work-schedule")!;
-  const item = (key: string, title: string, detail: string, urgency: "urgent" | "today" | "this_week" | "fyi") =>
-    store.upsertItem({ responsibilityId: schedule, sourceKey: key, sourceVersion: "v1", title, detail, urgency, expiresAt: null }).item;
+  const item = (key: string, title: string, detail: string, urgency: "urgent" | "today" | "this_week" | "fyi", needsOperator = true) =>
+    store.upsertItem({ responsibilityId: schedule, sourceKey: key, sourceVersion: "v1", title, detail, urgency, needsOperator, expiresAt: null }).item;
   const reported = [
     item("evt-4471", "Q4 planning moved to 10:00", "It now overlaps the project review at 10:30. Anna Lindqvist moved it.", "today"),
     item("evt-4519", "1:1 with Erik on Friday", "Erik wants to discuss the on-call rota.", "this_week"),
   ];
   store.markReported(reported.map((reportedItem) => reportedItem.id));
-  item("evt-4390", "Vendor demo cancelled", "Tuesday 13:00 is free again.", "fyi");
+  item("evt-4390", "Vendor demo cancelled", "Tuesday 13:00 is free again.", "fyi", false);
   const portfolio = responsibilities.get("portfolio")!;
   store.upsertItem({
     responsibilityId: portfolio,

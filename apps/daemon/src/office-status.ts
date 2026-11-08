@@ -33,7 +33,8 @@ export function officeStatus(office: Office, now = new Date()): OfficeStatus {
     attention = true;
   }
 
-  const open = store.listItems().filter((item) => item.state === "new" || item.state === "open");
+  // Only what needs the operator waits in the Inbox.
+  const open = store.listItems().filter((item) => item.needsOperator && (item.state === "new" || item.state === "open"));
   const urgent = open.filter((item) => item.urgency === "urgent").length;
   if (open.length) {
     needs.push(`${open.length} item${open.length === 1 ? "" : "s"} in your inbox${urgent ? `, ${urgent} urgent` : ""}`);

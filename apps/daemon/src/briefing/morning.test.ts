@@ -29,20 +29,21 @@ async function respond(input: string, options: RunTurnOptions): Promise<TurnResu
     const records = JSON.parse(data) as Array<{ id: string; change: string; title: string; when: string }>;
     const items = records
       .filter((record) => record.change !== "upcoming" && record.title !== "Standup")
-      .map((record) => ({ title: `${record.title} (${record.change})`, detail: record.when, urgency: "today", sourceRef: record.id }));
-    items.push({ title: "Made up", detail: "", urgency: "fyi", sourceRef: "nothing-collected" });
+      .map((record) => ({ title: `${record.title} (${record.change})`, detail: record.when, urgency: "today", needsOperator: true, sourceRef: record.id }));
+    items.push({ title: "Made up", detail: "", urgency: "fyi", needsOperator: false, sourceRef: "nothing-collected" });
     const filed = await options.onToolCall({ name: "aihub_submit_report", arguments: { summary: `${records.length} changes.`, items } });
     return { status: "completed", text: filed.text, error: null, usage };
   }
   return { status: "completed", text: `BRIEFING\n${input}`, error: null, usage };
 }
 
-async function setUp() {
+/** An office with Elin watching the sample calendar. With a clock, the store's time follows `clock.now`. */
+async function setUp(clock?: { now: Date }) {
   const dir = mkdtempSync(join(tmpdir(), "aihub-morning-"));
   dirs.push(dir);
   const calendar = join(dir, "work.ics");
   copyFileSync(SAMPLE, calendar);
-  const store = new Store(":memory:");
+  const store = new Store(":memory:", clock ? () => clock.now : undefined);
   const runtime = new FakeRuntime();
   runtime.respond = respond;
   const platform = new RecordingPlatform();
@@ -89,6 +90,41 @@ describe("Morning briefing", () => {
     assert.equal(store.recentMessages(1, CHIEF_OF_STAFF_CONVERSATION_ID)[0]?.body, second.text);
   });
 
+  it("tells what is only worth knowing once: it isn't carried over, and lapses without a word", async () => {
+    const clock = { now: MONDAY };
+    const { office, store, runtime, responsibility } = await setUp(clock);
+    // Elin flags the 1:1 for preparing, and the offsite as worth knowing.
+    runtime.respond = async (input, options) => {
+      if (!input.includes("BEGIN SOURCE DATA")) return { status: "completed", text: `BRIEFING
+${input}`, error: null, usage };
+      const records = JSON.parse(input.slice(input.indexOf("BEGIN SOURCE DATA") + 18, input.indexOf("END SOURCE DATA"))) as Array<{ id: string; change: string; title: string }>;
+      const items = records
+        .filter((record) => record.change === "new" && (record.title === "1:1 with Erik" || record.title === "Company offsite"))
+        .map((record) => ({ title: record.title, detail: "", urgency: "this_week", needsOperator: record.title === "1:1 with Erik", sourceRef: record.id }));
+      const filed = await options.onToolCall({ name: "aihub_submit_report", arguments: { summary: "Two things.", items } });
+      return { status: "completed", text: filed.text, error: null, usage };
+    };
+
+    const first = await runMorningBriefing(office, { now: MONDAY });
+    assert.match(first.text, /"title": "Company offsite",[^}]*"needsOperator": false/);
+    const open = store.itemsOf(responsibility.id, ["open"]);
+    assert.deepEqual(open.map((item) => [item.title, item.needsOperator]).sort(), [["1:1 with Erik", true], ["Company offsite", false]]);
+    const offsite = open.find((item) => item.title === "Company offsite")!;
+
+    // The next morning only the 1:1 is still open.
+    clock.now = new Date(MONDAY.getTime() + 86_400_000);
+    const tuesday = await runMorningBriefing(office, { now: clock.now });
+    assert.deepEqual(tuesday.sections[0]!.carried.map((item) => item.title), ["1:1 with Erik"]);
+
+    // Two days on the offsite item lapses, which isn't news.
+    clock.now = new Date(MONDAY.getTime() + 2 * 86_400_000);
+    const wednesday = await runMorningBriefing(office, { now: clock.now });
+    assert.equal(store.getItem(offsite.id)!.state, "resolved");
+    assert.deepEqual(wednesday.sections[0]!.resolved, []);
+    assert.doesNotMatch(wednesday.text, /Company offsite/);
+    assert.deepEqual(store.itemsOf(responsibility.id, ["open"]).map((item) => item.title), ["1:1 with Erik"]);
+  });
+
   it("keeps a dismissed item out until its event changes", async () => {
     const { office, store, responsibility, calendar } = await setUp();
     await runMorningBriefing(office, { now: MONDAY });
@@ -127,7 +163,7 @@ describe("Morning briefing", () => {
         name: "aihub_submit_report",
         arguments: {
           summary: "The review is off.",
-          items: [{ title: "Project review cancelled", detail: "", urgency: "fyi", sourceRef: review.sourceKey }],
+          items: [{ title: "Project review cancelled", detail: "", urgency: "fyi", needsOperator: true, sourceRef: review.sourceKey }],
           noLongerApplies: [
             { sourceRef: planning.sourceKey, reason: "Project review was cancelled." },
             { sourceRef: review.sourceKey, reason: "Reported again in this report." },
@@ -318,7 +354,8 @@ describe("Morning briefing from web research", () => {
     runtime.respond = async (input, options) => {
       if (!input.startsWith("It is now")) return { status: "completed", text: `BRIEFING\n${input}`, error: null, usage };
       options.onEvent?.({ type: "web", query: "world news today", url: null });
-      const items = filing.map((story) => ({ ...story, detail: "Published this morning.", urgency: "fyi" }));
+      // Even a story the researcher says needs the operator is only worth knowing.
+      const items = filing.map((story) => ({ ...story, detail: "Published this morning.", urgency: "fyi", needsOperator: true }));
       const filed = await options.onToolCall({ name: "aihub_submit_report", arguments: { summary: `${items.length} stories.`, items } });
       return { status: "completed", text: filed.text, error: null, usage };
     };
@@ -340,6 +377,7 @@ describe("Morning briefing from web research", () => {
     assert.match(context!.options.instructions, /You can search the web\. Search answers from an index/);
     assert.match(context!.inputs[0]!, /^It is now Monday, 9 November 2026 at 06:00 \(Europe\/Stockholm\)\.\nThis is your first briefing/);
     assert.deepEqual(store.itemsOf(responsibility.id, ["open"]).map((item) => item.sourceKey).sort(), [STORIES.rates.sourceRef, STORIES.summit.sourceRef]);
+    assert.ok(store.itemsOf(responsibility.id, ["open"]).every((item) => !item.needsOperator), "news is only worth knowing, whatever the researcher says");
     const summaries = store.recentActivity(50).map((entry) => entry.summary);
     assert.ok(summaries.includes('Left out "Rumour": it cites no web address'));
     assert.ok(summaries.includes('Nora searched the web for "world news today"'));

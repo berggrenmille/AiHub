@@ -318,6 +318,7 @@ function item(overrides: Partial<Item> = {}): Item {
     title: "Planning moved",
     detail: "Now at 10:00.",
     urgency: "today",
+    needsOperator: true,
     state: "new",
     firstSeenAt: "2026-11-07T16:00:00.000Z",
     lastReportedAt: null,

@@ -58,6 +58,7 @@ function item(id: number, overrides: Partial<Item> = {}): Item {
     title: `Item ${id}`,
     detail: "",
     urgency: "fyi",
+    needsOperator: true,
     state: "open",
     firstSeenAt: "2026-11-07T16:00:00.000Z",
     lastReportedAt: null,
@@ -251,6 +252,15 @@ describe("inbox", () => {
     const counts = openItemCounts(items);
     assert.deepEqual(counts.get("schedule"), { count: 3, fresh: 1, top: "today" });
     assert.deepEqual(counts.get("portfolio"), { count: 1, fresh: 1, top: "urgent" });
+  });
+
+  it("leaves out items that are only worth knowing, open or closed", () => {
+    const news = [item(7, { needsOperator: false, urgency: "urgent", responsibilityId: "news", state: "new" }), item(8, { needsOperator: false, responsibilityId: "news", state: "resolved" })];
+    const all = [...items, ...news];
+    assert.deepEqual(groupOpenItems(all, []).map((g) => g.responsibilityId), ["portfolio", "schedule"]);
+    assert.deepEqual(closedItems(all).map((i) => i.id), [6, 5]);
+    assert.deepEqual(openCount(all), { open: 4, fresh: 2, urgent: 1 });
+    assert.equal(openItemCounts(all).has("news"), false);
   });
 });
 

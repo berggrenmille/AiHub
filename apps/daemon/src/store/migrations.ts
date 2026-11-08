@@ -322,4 +322,11 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX views_by_message ON views (message_id);
   CREATE INDEX views_by_run ON views (run_id);
   `,
+
+  // v12: whether an item needs the operator. Only those go in the Inbox; the rest are worth knowing.
+  // Stories found on the web, keyed by their address, never need the operator.
+  `
+  ALTER TABLE items ADD COLUMN needs_operator INTEGER NOT NULL DEFAULT 1;
+  UPDATE items SET needs_operator = 0 WHERE source_key LIKE 'http://%' OR source_key LIKE 'https://%';
+  `,
 ];

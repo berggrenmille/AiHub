@@ -15,7 +15,7 @@ const usage = { inputTokens: 100, cachedInputTokens: 0, outputTokens: 10 };
 async function respond(input: string, options: RunTurnOptions): Promise<TurnResult> {
   if (input.includes("BEGIN SOURCE DATA")) {
     const source = /^Source: (.*)$/m.exec(input)![1]!;
-    const report = { summary: `Checked ${source}.`, items: [{ title: "Something", detail: "Detail", urgency: "today", sourceRef: "x-1" }] };
+    const report = { summary: `Checked ${source}.`, items: [{ title: "Something", detail: "Detail", urgency: "today", needsOperator: true, sourceRef: "x-1" }] };
     const filed = await options.onToolCall({ name: "aihub_submit_report", arguments: report });
     return { status: "completed", text: filed.text, error: null, usage };
   }

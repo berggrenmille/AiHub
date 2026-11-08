@@ -420,3 +420,27 @@ The guide costs about 2,800 tokens for a reply and 5,000 for a dashboard, only i
 - A dashboard doesn't update as the office changes while it is open; Refresh reads again.
 - A button's message for the assistant sends only its visible text. OpenUI's hidden context for the model is dropped, so the operator sees everything that is sent.
 - Numbers in key numbers and table cells show as the staff member wrote them; only charts format them.
+
+## The Inbox holds what needs the operator (2026-11-08)
+
+The operator found Nora's news stories in the Inbox with Resolve and Dismiss, and asked what there was to resolve. Every finding had become an item that waited there, which fits a meeting clash but not a story to read. The operator chose to keep the Inbox for findings that need them to do or decide something.
+
+1. **Each finding says whether it needs the operator.** `aihub_submit_report` requires `needsOperator` on every item, and the report instructions say when it is true. Items keep it (migration v12, which marks stories keyed by a web address as only worth knowing). A web researcher's findings are always only worth knowing, whatever it says.
+2. **Only items that need the operator wait in the Inbox.** The Inbox, its badge, the desks' counts on the office floor, and the tray menu count only those. The rest are told once in the briefing: they aren't carried over as still open, and they lapse after two days, or sooner when their source record stops mattering, without a mention in the next briefing.
+3. **The briefing puts what needs the operator first.** The Chief of Staff sees `needsOperator` on each new item. The notification says how many of the new items need the operator when it isn't all of them, such as "3 new items, 1 needs you."
+4. **Dashboards can tell them apart.** `office_items` returns `needsOperator` and filters on it, and the guide's dashboard example lists only what the Inbox holds.
+
+### How it was shown
+
+- Tests: `morning.test.ts` ("tells what is only worth knowing once": not carried over, and lapsing quietly; and that news is only worth knowing), `lib/office.test.ts` (the Inbox, its counts, and the desks leave such items out), and the existing briefing, gateway, and scheduler tests with the new field.
+- The migration on a copy of the installed office: Nora's three open stories left the Inbox, and nothing else changed.
+- In the fake office, whose supervisor flags clashes as needing the operator and other changes as worth knowing: the Inbox and the desks showed the clashes and the demo's open items, not "Vendor demo cancelled", and the composed briefing carried `needsOperator` on each item.
+- Against real Codex, in a copy of the Milestone 4 proof office with three calendar changes: Nora marked the new call that clashes with standup and the budget sign-off that needs the Q4 numbers as needing the operator, and the 1:1 with Erik moving to 15:00 as only worth knowing. The briefing led with the clash as a decision, and the Inbox gained the two. Her report took 24,085 input tokens (12,032 cached) and 365 output, about what a calendar report took before.
+
+### Known gaps
+
+- Items from before the change keep needing the operator, except stories keyed by a web address. The operator resolves or dismisses the rest once.
+- A finding counts as worth knowing or not when it is first reported. A supervisor who later thinks otherwise about an unchanged record can't change it; a new version of the record can.
+- A web researcher's finding never needs the operator, even one that is a recommendation, such as running the dishwasher before prices rise.
+- A finding only worth knowing shows in its briefing and on dashboards, and nowhere else. The Inbox has no list of them.
+- A lapsed item counts toward its supervisor's experience like a resolved one, as research items did before.

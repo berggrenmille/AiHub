@@ -42,7 +42,7 @@ export const DASHBOARD_EXAMPLE =`root = Stack([title, filters, stats, table])
 $state = "open"
 title = Heading("Open items", 1)
 filters = Select($state, ["new", "open", "resolved"], "State")
-items = Query("office_items", {states: [$state]}, {rows: []})
+items = Query("office_items", {states: [$state], needsOperator: true}, {rows: []})
 stats = Stack([Stat("Items", @Count(items.rows)), Stat("Urgent", @Count(@Filter(items.rows, "urgency", "==", "urgent")), null, "bad")], "row")
 table = Table([Col("Item", items.rows.title), Col("Staff", items.rows.staff), Col("First seen", @Each(items.rows, "row", @Time(row.firstSeenAt, "ago")))])`;
 

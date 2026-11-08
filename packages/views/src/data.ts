@@ -18,6 +18,10 @@ const ItemsInput = z
       .optional()
       .describe('Which states to include. ["new", "open"] when left out.'),
     days: days(365, "Only items first seen in the last this many days."),
+    needsOperator: z
+      .boolean()
+      .optional()
+      .describe("true: only items the operator has to act on, as the Inbox shows. false: only items worth knowing, such as news. Both when left out."),
     limit: z.number().int().min(1).max(500).optional().describe("Most rows, newest first. 100 when left out."),
   })
   .strict();
@@ -65,13 +69,15 @@ function rows(fields: Record<string, unknown>): Record<string, unknown> {
 
 export const DATA_TOOLS = {
   office_items: {
-    description: "What the staff found and reported: items with their urgency and state, newest first.",
+    description:
+      "What the staff found and reported, newest first: items the operator has to act on, which wait in the Inbox until resolved or dismissed, and items only worth knowing, such as news, which lapse after a couple of days.",
     input: ItemsInput,
     output: rows({
       id: number,
       title: text,
       detail: text,
       urgency: { type: "string", enum: ["urgent", "today", "this_week", "fyi"] },
+      needsOperator: { type: "boolean", description: "The operator has to act on it; it shows in the Inbox." },
       state: { type: "string", enum: ["new", "open", "resolved", "dismissed"] },
       staff: text,
       responsibility: text,

@@ -66,6 +66,11 @@ export const ReportInput = z
             title: z.string().trim().min(1).max(200),
             detail: z.string().max(1000).describe("What happened and what it means for the operator."),
             urgency: z.enum(["urgent", "today", "this_week", "fyi"]).describe("urgent: needs action within hours."),
+            needsOperator: z
+              .boolean()
+              .describe(
+                "true if the operator has to do or decide something about it, such as fix a clash, prepare for a meeting, or check a charge: it goes in their Inbox until they resolve it. false if it is only worth knowing, such as a moved or cancelled meeting: the briefing tells them, and it doesn't wait in the Inbox.",
+              ),
             sourceRef: z.string().max(500).describe("The id of the source record this item comes from, or for an item found on the web, the page's address."),
           })
           .strict(),

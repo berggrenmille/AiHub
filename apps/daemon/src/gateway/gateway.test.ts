@@ -122,7 +122,7 @@ describe("Gateway", () => {
 
   it("stores one report per run", async () => {
     const { gateway, supervisor, store } = office();
-    const report = { summary: "Planning moved to 10:00.", items: [{ title: "Clash", detail: "Overlaps the review.", urgency: "today", sourceRef: "evt-1" }] };
+    const report = { summary: "Planning moved to 10:00.", items: [{ title: "Clash", detail: "Overlaps the review.", urgency: "today", needsOperator: true, sourceRef: "evt-1" }] };
 
     assert.deepEqual(await gateway.call(supervisor, { name: "aihub_submit_report", arguments: report }), { ok: true, text: "Report filed." });
     const again = await gateway.call(supervisor, { name: "aihub_submit_report", arguments: report });

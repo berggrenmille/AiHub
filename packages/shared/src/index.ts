@@ -351,6 +351,12 @@ export interface Item {
   title: string;
   detail: string;
   urgency: Urgency;
+  /**
+   * The operator has to do or decide something, such as fix a clash or check a charge. Only these go
+   * in the Inbox. The rest, such as a moved meeting or a news story, are worth knowing: the briefing
+   * tells the operator, and they lapse after a couple of days.
+   */
+  needsOperator: boolean;
   state: ItemState;
   firstSeenAt: string;
   lastReportedAt: string | null;

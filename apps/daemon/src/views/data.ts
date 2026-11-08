@@ -51,6 +51,7 @@ class OfficeData {
       responsibilityIds: owner ? [...responsibilities.values()].filter((duty) => duty.ownerId === owner).map((duty) => duty.id) : undefined,
       states: input.states ?? ["new", "open"],
       since: input.days ? this.daysAgo(input.days) : undefined,
+      needsOperator: input.needsOperator,
       limit: input.limit ?? 100,
     });
     return {
@@ -61,6 +62,7 @@ class OfficeData {
           title: item.title,
           detail: item.detail,
           urgency: item.urgency,
+          needsOperator: item.needsOperator,
           state: item.state,
           staff: duty ? this.nameOf(duty.ownerId) : "",
           responsibility: duty?.title ?? "",

@@ -767,28 +767,31 @@ export class Store {
     title: string;
     detail: string;
     urgency: Urgency;
+    /** Whether the operator has to do or decide something. True when left out. */
+    needsOperator?: boolean;
     expiresAt: string | null;
   }): { item: Item; change: "new" | "changed" | "unchanged" } {
     const at = this.timestamp();
+    const needs = input.needsOperator === false ? 0 : 1;
     const existing = this.db
       .prepare("SELECT * FROM items WHERE responsibility_id = ? AND source_key = ?")
       .get(input.responsibilityId, input.sourceKey) as Row | undefined;
     if (!existing) {
       const { lastInsertRowid } = this.db
         .prepare(
-          `INSERT INTO items (responsibility_id, source_key, source_version, title, detail, urgency, state, first_seen_at, expires_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, ?)`,
+          `INSERT INTO items (responsibility_id, source_key, source_version, title, detail, urgency, needs_operator, state, first_seen_at, expires_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?)`,
         )
-        .run(input.responsibilityId, input.sourceKey, input.sourceVersion, input.title, input.detail, input.urgency, at, input.expiresAt, at);
+        .run(input.responsibilityId, input.sourceKey, input.sourceVersion, input.title, input.detail, input.urgency, needs, at, input.expiresAt, at);
       return { item: this.getItem(Number(lastInsertRowid))!, change: "new" };
     }
     if (existing.source_version === input.sourceVersion) return { item: toItem(existing), change: "unchanged" };
     this.db
       .prepare(
-        `UPDATE items SET source_version = ?, title = ?, detail = ?, urgency = ?, state = 'new', resolution = NULL,
+        `UPDATE items SET source_version = ?, title = ?, detail = ?, urgency = ?, needs_operator = ?, state = 'new', resolution = NULL,
            expires_at = ?, updated_at = ? WHERE id = ?`,
       )
-      .run(input.sourceVersion, input.title, input.detail, input.urgency, input.expiresAt, at, Number(existing.id));
+      .run(input.sourceVersion, input.title, input.detail, input.urgency, needs, input.expiresAt, at, Number(existing.id));
     return { item: this.getItem(Number(existing.id))!, change: "changed" };
   }
 
@@ -1091,7 +1094,7 @@ export class Store {
   // Office data for dashboards ------------------------------------------------
 
   /** Items, newest first, optionally of some responsibilities, in some states, or first seen since a time. */
-  queryItems(filter: { responsibilityIds?: string[]; states: ItemState[]; since?: string; limit: number }): Item[] {
+  queryItems(filter: { responsibilityIds?: string[]; states: ItemState[]; since?: string; needsOperator?: boolean; limit: number }): Item[] {
     const where = [`state IN (${filter.states.map(() => "?").join(", ")})`];
     const values: SQLInputValue[] = [...filter.states];
     if (filter.responsibilityIds) {
@@ -1102,6 +1105,10 @@ export class Store {
     if (filter.since) {
       where.push("first_seen_at >= ?");
       values.push(filter.since);
+    }
+    if (filter.needsOperator !== undefined) {
+      where.push("needs_operator = ?");
+      values.push(filter.needsOperator ? 1 : 0);
     }
     const rows = this.db.prepare(`SELECT * FROM items WHERE ${where.join(" AND ")} ORDER BY first_seen_at DESC, id DESC LIMIT ?`).all(...values, filter.limit) as Row[];
     return rows.map(toItem);
@@ -1381,6 +1388,7 @@ function toItem(row: Row): Item {
     title: String(row.title),
     detail: String(row.detail),
     urgency: row.urgency as Urgency,
+    needsOperator: Number(row.needs_operator) === 1,
     state: row.state as ItemState,
     firstSeenAt: String(row.first_seen_at),
     lastReportedAt: row.last_reported_at as string | null,

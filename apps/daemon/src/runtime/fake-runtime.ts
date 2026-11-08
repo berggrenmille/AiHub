@@ -35,12 +35,13 @@ export const demo: Responder = async (input, options) => {
         title: `${record.title} overlaps ${record.overlapsWith![0]!.split(",")[0]}`,
         detail: `${record.when ?? ""}. The fake runtime flags every overlap.`,
         urgency: "this_week",
+        needsOperator: true,
         sourceRef: record.id,
       }));
     const changed = records
       .filter((record) => record.change === "added" || record.change === "changed")
       .slice(0, 3)
-      .map((record) => ({ title: `${record.change === "added" ? "New" : "Changed"}: ${record.title}`, detail: "The fake runtime flags the first few new or changed records.", urgency: "fyi", sourceRef: record.id }));
+      .map((record) => ({ title: `${record.change === "added" ? "New" : "Changed"}: ${record.title}`, detail: "The fake runtime flags the first few new or changed records.", urgency: "fyi", needsOperator: false, sourceRef: record.id }));
     const items = [...overlaps, ...changed];
     if (items.length > 0) {
       // A view on the section, so the briefing shows one without Codex.
