@@ -27,6 +27,12 @@ import {
 
 /** How long the list of ChatGPT apps is kept before it is read again. */
 const APPS_TTL_MS = 10 * 60_000;
+/**
+ * Calls one briefing run may make. The collector hands a supervisor what is new; a code host's search
+ * gives little more than titles, so the supervisor may look closer, a few calls at most.
+ */
+export const BRIEFING_CALLS = 8;
+
 /** Approved and not removed: AiHub may call it once it is signed in. */
 const IN_USE: readonly ServiceStatus[] = ["signed_out", "connected", "failed"];
 /** Most characters of a service's answer a staff member gets back. */
@@ -58,6 +64,8 @@ export interface AccessRequest {
 export class Services {
   private appCache: { at: number; apps: KnownApp[] } | null = null;
   private appLoading: Promise<KnownApp[]> | null = null;
+  /** Calls each briefing run has made, by run. */
+  private readonly briefingCalls = new Map<string, number>();
 
   constructor(
     private readonly office: Office,
@@ -441,6 +449,14 @@ export class Services {
     const record = this.find(input.service);
     const grant = record ? store.serviceGrantFor(caller.agentId, record.id, input.operation) : null;
     if (!record || !grant) throw new Error(`You may not call ${input.operation} on ${input.service}. Yours: ${yours}. Only the operator grants more.`);
+    // The briefing runs while the operator is away: it only reads, and only a few times.
+    if (store.getRun(caller.runId)?.kind === "report") {
+      if (grant.unsafe) throw new Error(`${input.operation} on ${record.name} is an unsafe grant, so it runs only when the operator is there, in chat or a task, never at the briefing.`);
+      const made = this.briefingCalls.get(caller.runId) ?? 0;
+      if (made >= BRIEFING_CALLS) throw new Error(`A briefing run makes at most ${BRIEFING_CALLS} calls, to look closer at what is new. Report with what you have.`);
+      this.briefingCalls.set(caller.runId, made + 1);
+      if (this.briefingCalls.size > 100) this.briefingCalls.delete(this.briefingCalls.keys().next().value!);
+    }
     const agent = store.getAgentRecord(caller.agentId);
     let result: ServiceCallResult;
     try {

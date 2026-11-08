@@ -13,6 +13,7 @@ import { approveProposal } from "../staff/proposals.ts";
 import { approveStaffChange } from "../staff/staff-changes.ts";
 import { Store } from "../store/store.ts";
 import { unsafeKey } from "./catalog.ts";
+import { BRIEFING_CALLS } from "./services.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -209,6 +210,23 @@ describe("Services", () => {
     const again = await tool("aihub_use_service", { service: "Work mail", operation: "send_message", arguments: { to: "anna@example.test", subject: "Again", body: "Hi" } }, caller);
     assert.equal(again.ok, false);
     assert.equal(mail.sent.length, 1);
+  });
+
+  it("lets a briefing run look closer with operations that read, a few calls at most, and never an unsafe one", async () => {
+    const { store, office, tool } = setUp();
+    const service = await connectMail(office, tool);
+    const { ines } = await hireInes(office, tool, [unsafeKey.operation(service.id, "send_message")]);
+    const run = store.createRun({ agentId: ines.id, kind: "report", title: "Report for the briefing: Inbox" });
+    const briefing = { agentId: ines.id, runId: run.id, profile: "data" as const };
+    const search = () => tool("aihub_use_service", { service: "Work mail", operation: "search_messages", arguments: { query: "dinner" } }, briefing);
+
+    for (let call = 1; call <= BRIEFING_CALLS; call++) assert.equal((await search()).ok, true, `call ${call}`);
+    const more = await search();
+    assert.equal(more.ok, false);
+    assert.match(more.text, new RegExp(`at most ${BRIEFING_CALLS} calls, to look closer at what is new\\. Report with what you have\\.`));
+    const sent = await tool("aihub_use_service", { service: "Work mail", operation: "send_message", arguments: { to: "anna@example.test", subject: "Hi", body: "Hi" } }, briefing);
+    assert.match(sent.text, /send_message on Work mail is an unsafe grant, so it runs only when the operator is there, in chat or a task, never at the briefing\./);
+    assert.ok(!store.recentActivity(30).some((entry) => entry.summary.startsWith("Unsafe: Ines called")), "nothing was sent");
   });
 
   it("adds an operation later with a staff change, where the unsafe one needs its own tick too", async () => {
