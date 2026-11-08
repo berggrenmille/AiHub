@@ -14,6 +14,7 @@ import type {
   ModelsResponse,
   Note,
   NoteSummary,
+  OfficeStats,
   OpenChatResponse,
   PolicyVersion,
   Proposal,
@@ -263,6 +264,11 @@ export async function runStaffReview(): Promise<void> {
 /** Has a scheduled routine run on weekends too, or on weekdays only. */
 export function updateRoutine(routineId: string, body: UpdateRoutineRequest): Promise<Routine> {
   return request<Routine>(`/api/routines/${encodeURIComponent(routineId)}`, json("PATCH", body));
+}
+
+/** Sets the day's turn budget for the whole office. */
+export function setTurnLimit(dailyTurnLimit: number): Promise<OfficeStats> {
+  return request<OfficeStats>("/api/settings/turn-limit", json("PUT", { dailyTurnLimit }));
 }
 
 /** Starts a routine now. Its run arrives on the event stream. */

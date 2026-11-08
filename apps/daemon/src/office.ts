@@ -29,7 +29,7 @@ import { OFFICE_TOOLS } from "./gateway/tools.ts";
 import { RunQueue } from "./queue.ts";
 import { ContextUnavailableError, type AgentRuntime, type ContextOptions, type ModelSetting, type TurnBlocker, type TurnResult } from "./runtime/types.ts";
 import { describeModel, modelChoiceProblem, resolveModel } from "./staff/models.ts";
-import { DAILY_TURN_LIMIT, SUPERVISOR_LIMIT } from "./limits.ts";
+import { DAILY_TURN_LIMIT, DAILY_TURN_RANGE, SUPERVISOR_LIMIT } from "./limits.ts";
 import { Notebook } from "./notes/notebook.ts";
 import { briefingText, sectionForChat } from "./briefing/briefing.ts";
 import { CHIEF_OF_STAFF, CHIEF_OF_STAFF_CONVERSATION_ID } from "./staff/chief-of-staff.ts";
@@ -104,6 +104,8 @@ interface ThreadInput {
 
 /** At most this many posted messages are brought into a turn at once. */
 const POSTED_LIMIT = 5;
+/** Where the operator's turn budget for the day is kept. */
+const TURN_LIMIT_SETTING = "daily_turn_limit";
 /** How long the runtime's list of models is kept before it is read again. */
 const MODEL_CATALOG_TTL_MS = 60 * 60_000;
 
@@ -371,12 +373,34 @@ export class Office {
     }
     return {
       turnsToday: this.store.usageSince(zonedInstant(today, "00:00", TIMEZONE)).turns,
-      dailyTurnLimit: DAILY_TURN_LIMIT,
+      dailyTurnLimit: this.dailyTurnLimit(),
       activeSupervisors: this.store.countActive("supervisor"),
       supervisorLimit: SUPERVISOR_LIMIT,
       briefingStreak,
       staffReviewAt: this.staffReview.lastReviewAt,
     };
+  }
+
+  /** The day's turn budget: the operator's number, or the default. */
+  dailyTurnLimit(): number {
+    const set = Number(this.store.getSetting(TURN_LIMIT_SETTING));
+    return Number.isInteger(set) && set >= DAILY_TURN_RANGE.min && set <= DAILY_TURN_RANGE.max ? set : DAILY_TURN_LIMIT;
+  }
+
+  /** Whether today's turns are used up, so background work, questions, and meetings wait. */
+  turnsUsedUp(): boolean {
+    return this.store.usageSince(zonedInstant(localDate(new Date(), TIMEZONE), "00:00", TIMEZONE)).turns >= this.dailyTurnLimit();
+  }
+
+  /** The operator sets the day's turn budget. It counts from midnight, so raising it lets waiting work go on today. */
+  setDailyTurnLimit(limit: number): OfficeStats {
+    if (!Number.isInteger(limit) || limit < DAILY_TURN_RANGE.min || limit > DAILY_TURN_RANGE.max) {
+      throw new InvalidRequestError(`The day's turn budget is a whole number from ${DAILY_TURN_RANGE.min} to ${DAILY_TURN_RANGE.max}.`);
+    }
+    this.store.setSetting(TURN_LIMIT_SETTING, String(limit));
+    const stats = this.officeStats();
+    this.bus.publish({ type: "office", office: stats });
+    return stats;
   }
 
   /** The operator dismisses or resolves an item. Its supervisor's journal remembers it. */

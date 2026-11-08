@@ -2,7 +2,6 @@ import type { Routine, RoutineTrigger } from "@aihub/shared";
 import { runBriefing, type SectionOutcome } from "./briefing/briefing.ts";
 import { collectSections } from "./briefing/morning.ts";
 import { ConflictError, InvalidRequestError, NotFoundError } from "./errors.ts";
-import { DAILY_TURN_LIMIT } from "./limits.ts";
 import type { Blocked, Office } from "./office.ts";
 import type { Notification } from "./platform.ts";
 import type { TurnBlocker } from "./runtime/types.ts";
@@ -389,7 +388,7 @@ export class Scheduler {
     } else if (usage && usage.usedPercent >= USAGE_WARNING_PERCENT) {
       problems.push(`The Codex plan's usage window is ${usage.usedPercent}% used, so the briefing may not finish.`);
     }
-    if (this.office.officeStats().turnsToday >= DAILY_TURN_LIMIT) problems.push("Today's turn budget is already used up.");
+    if (this.office.turnsUsedUp()) problems.push("Today's turn budget is already used up.");
     store.updateOccurrence(`${routine.id}:${today}:health`, { status: "delivered", detail: problems.join("\n") || null });
 
     const summary = problems.length ? `Health check: ${problems.length} problem${problems.length === 1 ? "" : "s"} before the briefing` : "Health check passed";

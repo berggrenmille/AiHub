@@ -348,6 +348,8 @@ export function App() {
         onTogglePolicy={() => togglePanel("policy")}
         theme={theme}
         onTheme={setTheme}
+        turnLimit={state.office?.dailyTurnLimit ?? null}
+        onTurnLimit={commands.setTurnLimit}
       />
       <div className="app-column">
         <TopBar
@@ -387,6 +389,7 @@ export function App() {
                   goTo("today");
                   setTodayFocus(responsibilityId ?? null);
                 }}
+                onOpenMeeting={showChat}
               />
             )}
             {page === "today" && (

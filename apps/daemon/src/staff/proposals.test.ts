@@ -62,7 +62,7 @@ describe("Recruitment", () => {
     assert.match((await propose({ ...RUT, profile: { ...RUT.profile, name: "rut" } })).text, /A proposal waiting for the operator is already called rut/);
     const over = await propose({ ...RUT, profile: { ...RUT.profile, name: "Sixten" } });
     assert.equal(over.ok, false);
-    assert.match(over.text, /cap of 8 supervisors, counting pending proposals/);
+    assert.match(over.text, new RegExp(`cap of ${SUPERVISOR_LIMIT} supervisors, counting pending proposals`));
   });
 
   it("hires on approval: supervisor, responsibility, routine, and verified access, in one go", async () => {

@@ -335,6 +335,9 @@ export interface MeetingOutcome {
 /** Rounds a meeting may have: every speaker once in the first, then those the chair names. */
 export const MEETING_ROUNDS = 3;
 
+/** The range the operator may set the day's turn budget in. The UI checks it too, so it lives here. */
+export const DAILY_TURN_RANGE = { min: 10, max: 2000 } as const;
+
 /**
  * Several staff discuss one topic with the operator (DESIGN.md › Meetings). The Chief of Staff
  * chairs, AiHub runs the rounds, and the outcome waits for the operator's approval.

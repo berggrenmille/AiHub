@@ -1,7 +1,6 @@
 import type { Agent, AgentRole, Assignment, AssignmentKind, MeetingTask, Run } from "@aihub/shared";
 import type { Caller, DelegationService } from "../gateway/gateway.ts";
 import {
-  DAILY_TURN_LIMIT,
   OPEN_QUESTIONS_LIMIT,
   OPEN_TASKS_LIMIT,
   QUESTION_RUNS,
@@ -368,7 +367,7 @@ export class Delegation implements DelegationService {
   private reportInChat(assignment: Stored) {
     const conversationId = assignment.conversationId!;
     const what = assignment.kind === "question" ? "answer your question" : `finish "${assignment.title}"`;
-    if (assignment.status === "failed" || this.office.officeStats().turnsToday >= DAILY_TURN_LIMIT) {
+    if (assignment.status === "failed" || this.office.turnsUsedUp()) {
       const body =
         assignment.status === "failed"
           ? `${assignment.ownerName} couldn't ${what}: ${assignment.result}`
@@ -467,14 +466,14 @@ export class Delegation implements DelegationService {
   }
 
   private checkBudget() {
-    if (this.office.officeStats().turnsToday >= DAILY_TURN_LIMIT) throw new Error("Today's turn budget is used up, so nobody can take this on until tomorrow.");
+    if (this.office.turnsUsedUp()) throw new Error("Today's turn budget is used up, so nobody can take this on until tomorrow.");
   }
 
   /** Why the next run on an assignment can't start, if it can't. */
   private refusal(assignment: Stored, resumed = false): string | null {
     const { store } = this.office;
     if (!resumed && assignment.runsUsed >= assignment.runBudget) return `It used all ${assignment.runBudget} of its runs.`;
-    if (this.office.officeStats().turnsToday >= DAILY_TURN_LIMIT) return "Today's turn budget is used up.";
+    if (this.office.turnsUsedUp()) return "Today's turn budget is used up.";
     if (assignment.responsibilityId && !store.isResponsibilityActive(assignment.responsibilityId)) return "The responsibility it works under has ended.";
     if (store.getAgentRecord(assignment.ownerId)?.status !== "active") return `${assignment.ownerName} has left the office.`;
     return null;

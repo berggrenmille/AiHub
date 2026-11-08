@@ -1,7 +1,7 @@
 import type { Agent, ChatMessage, Meeting, MeetingCaller, MeetingOutcome, MeetingTask } from "@aihub/shared";
 import { ConflictError, InvalidRequestError, NotFoundError } from "../errors.ts";
 import type { Caller } from "../gateway/gateway.ts";
-import { DAILY_TURN_LIMIT, MEETING_DECISIONS, MEETING_ROUNDS, MEETING_TASKS } from "../limits.ts";
+import { MEETING_DECISIONS, MEETING_ROUNDS, MEETING_TASKS } from "../limits.ts";
 import { topicTitle, type Office, type TaskOutcome } from "../office.ts";
 import type { AgentRecord } from "../store/store.ts";
 import { CHIEF_OF_STAFF } from "./chief-of-staff.ts";
@@ -129,7 +129,7 @@ export class Meetings {
       if (owner?.status !== "active") throw new ConflictError(`${task.ownerName} has left the office. Say so in the meeting, and ${chair.name} concludes again.`);
       if (!store.activeResponsibilityOf(owner.id)) throw new ConflictError(`${owner.name} has no responsibility to work under. Say so in the meeting, and ${chair.name} concludes again.`);
     }
-    if (outcome.tasks.length && this.office.officeStats().turnsToday >= DAILY_TURN_LIMIT) {
+    if (outcome.tasks.length && this.office.turnsUsedUp()) {
       throw new ConflictError("Today's turn budget is used up, so the tasks couldn't start. Approve tomorrow.");
     }
     const tasks = outcome.tasks.map((task) => ({ ...task, assignmentId: this.office.delegation.assignFromMeeting(meetingId, chair.id, task).id }));
@@ -230,7 +230,7 @@ export class Meetings {
     if (meeting?.state !== "running") return;
     const next = meeting.queue[0];
     if (!next) return this.publish(store.updateMeeting(meetingId, { state: "waiting" }));
-    if (this.office.officeStats().turnsToday >= DAILY_TURN_LIMIT) {
+    if (this.office.turnsUsedUp()) {
       this.publish(store.updateMeeting(meetingId, { state: "waiting" }));
       this.notice(meetingId, "Today's turn budget is used up, so the meeting stops here. Say something in it tomorrow to carry on.");
       return;

@@ -1,6 +1,6 @@
 // Where everyone sits on the office floor (DESIGN.md › The office experience): the Chief of Staff in
-// a permanent office, a team pod per supervisor, workers at their supervisor's pod, a lounge, and
-// the door. Positions are in floor units; the floor scales to fit the screen.
+// a permanent office, a team pod per supervisor, workers at their supervisor's pod, a meeting room
+// under the hall, a lounge, and the door. Positions are in floor units; the floor scales to fit the screen.
 
 import type { Agent } from "@aihub/shared";
 
@@ -39,6 +39,8 @@ export interface OfficeLayout {
   chiefRoom: Rect;
   lounge: Rect;
   hall: Rect;
+  /** Under the hall, with one long table: those in a meeting sit along it. */
+  meetingRoom: Rect;
   door: { x: number; y: number };
   pods: Pod[];
   seats: Seat[];
@@ -58,8 +60,10 @@ const GAP = 18;
 const MARGIN = 20;
 const POD_TOP = 34;
 const WORKER_ROW = STATION.small.h + 26;
-const MAX_POD_SLOTS = 12;
 const WORKERS_PER_ROW = 2;
+const MEETING_H = 156;
+/** How far the meeting table's top edge is from the top of the room. */
+const TABLE_TOP = 104;
 
 const byHire = (a: Agent, b: Agent) => a.hiredAt.localeCompare(b.hiredAt) || a.id.localeCompare(b.id);
 
@@ -76,20 +80,31 @@ export function layoutOffice(agents: Agent[], supervisorLimit: number): OfficeLa
     else hotDesk.push(worker);
   }
 
-  const slots = Math.max(supervisors.length, Math.min(Math.max(supervisorLimit, 1), MAX_POD_SLOTS));
-  const columns = slots > 6 ? 4 : 3;
+  // Pods for everyone and at least one to spare, in whole rows of four and at least two rows, up to
+  // the cap: a small office isn't a hall of empty pods, and a full one is four by four.
+  const limit = Math.max(supervisorLimit, 1);
+  const columns = limit > 6 ? 4 : 3;
+  const wanted = Math.max(Math.ceil((supervisors.length + 1) / columns), 2) * columns;
+  const slots = Math.max(supervisors.length, Math.min(limit, wanted));
   const rows = Math.ceil(slots / columns);
   const hall: Rect = { x: LEFT_WING + GAP, y: WALL + MARGIN, w: FLOOR_WIDTH - LEFT_WING - GAP - MARGIN, h: 0 };
   const podW = Math.floor((hall.w - GAP * (columns - 1)) / columns);
-  const workerRows = Math.max(1, ...supervisors.map((supervisor) => Math.ceil((team.get(supervisor.id)?.length ?? 0) / WORKERS_PER_ROW)));
-  const podH = POD_TOP + STATION.medium.h + 8 + workerRows * WORKER_ROW;
-  hall.h = rows * podH + (rows - 1) * GAP;
+  // Each row is as tall as its pods' workers need. Up to two rows, every pod shows a row of spare
+  // desks; past that, a row without workers is just the supervisors' desks, so sixteen pods still fit.
+  const rowWorkerRows = Array.from({ length: rows }, (_, row) => {
+    const inRow = supervisors.slice(row * columns, (row + 1) * columns);
+    return Math.max(rows > 2 ? 0 : 1, ...inRow.map((supervisor) => Math.ceil((team.get(supervisor.id)?.length ?? 0) / WORKERS_PER_ROW)));
+  });
+  const rowHeights = rowWorkerRows.map((workerRows) => POD_TOP + STATION.medium.h + (workerRows ? 8 + workerRows * WORKER_ROW : 14));
+  const rowTops = rowHeights.map((_, row) => hall.y + rowHeights.slice(0, row).reduce((sum, h) => sum + h + GAP, 0));
+  hall.h = rowHeights.reduce((sum, h) => sum + h, 0) + (rows - 1) * GAP;
+  const meetingRoom: Rect = { x: hall.x, y: hall.y + hall.h + GAP, w: hall.w, h: MEETING_H };
 
   const chiefRoom: Rect = { x: MARGIN, y: WALL + MARGIN, w: LEFT_WING - MARGIN, h: 330 };
   const loungeTop = chiefRoom.y + chiefRoom.h + GAP;
   const hotDeskRows = Math.ceil(hotDesk.length / 2);
   const loungeH = Math.max(280, hotDeskRows * WORKER_ROW + 220);
-  const height = Math.max(hall.y + hall.h + MARGIN + 30, loungeTop + loungeH + MARGIN);
+  const height = Math.max(meetingRoom.y + meetingRoom.h + MARGIN, loungeTop + loungeH + MARGIN);
   const lounge: Rect = { x: MARGIN, y: loungeTop, w: LEFT_WING - MARGIN, h: height - loungeTop - MARGIN };
   const door = { x: MARGIN + 40, y: height - MARGIN };
 
@@ -114,16 +129,16 @@ export function layoutOffice(agents: Agent[], supervisorLimit: number): OfficeLa
       id: supervisor ? `pod-${supervisor.id}` : `vacant-${slot}`,
       supervisorId: supervisor?.id ?? null,
       x: hall.x + column * (podW + GAP),
-      y: hall.y + row * (podH + GAP),
+      y: rowTops[row]!,
       w: podW,
-      h: podH,
+      h: rowHeights[row]!,
       spareDesks: [],
     };
     pods.push(pod);
     if (!supervisor) continue;
     seats.push({ agentId: supervisor.id, x: pod.x + (pod.w - STATION.medium.w) / 2, y: pod.y + POD_TOP, size: "medium", podId: pod.id });
     const members = team.get(supervisor.id) ?? [];
-    const desks = Math.max(WORKERS_PER_ROW, Math.ceil(members.length / WORKERS_PER_ROW) * WORKERS_PER_ROW);
+    const desks = rowWorkerRows[row]! * WORKERS_PER_ROW;
     const deskGap = Math.max(4, Math.min(24, pod.w - WORKERS_PER_ROW * STATION.small.w - 8));
     const rowW = WORKERS_PER_ROW * STATION.small.w + (WORKERS_PER_ROW - 1) * deskGap;
     for (let desk = 0; desk < desks; desk++) {
@@ -146,5 +161,38 @@ export function layoutOffice(agents: Agent[], supervisorLimit: number): OfficeLa
     });
   });
 
-  return { width: FLOOR_WIDTH, height, wall: WALL, chiefRoom, lounge, hall, door, pods, seats };
+  return { width: FLOOR_WIDTH, height, wall: WALL, chiefRoom, lounge, hall, meetingRoom, door, pods, seats };
+}
+
+/** A place at the meeting table: the top-left of a 100 × 100 frame around the seated figure, and its scale. */
+export interface MeetingSeat {
+  agentId: string;
+  x: number;
+  y: number;
+  scale: number;
+}
+
+/** The meeting table's top edge and its ends, in floor units. */
+export function meetingTable(room: Rect): { y: number; left: number; right: number } {
+  return { y: room.y + TABLE_TOP, left: room.x + 150, right: room.x + room.w - 70 };
+}
+
+/**
+ * Where those in a meeting sit along the table, the chair in the middle and the others to either
+ * side in the order they speak. Seats close up as more come, so the whole office fits at one table.
+ */
+export function meetingSeats(room: Rect, chairId: string, participantIds: string[]): MeetingSeat[] {
+  const half = Math.ceil(participantIds.length / 2);
+  const order = [...participantIds.slice(0, half), chairId, ...participantIds.slice(half)];
+  const table = meetingTable(room);
+  const spacing = Math.min(96, (table.right - table.left) / order.length);
+  const scale = Math.min(0.92, spacing / 60);
+  const start = (table.left + table.right) / 2 - (spacing * order.length) / 2;
+  // In the 100 × 100 frame, the figure's head is centred at (50, 24) and the table edge is at y 70.
+  return order.map((agentId, index) => ({
+    agentId,
+    x: start + spacing * (index + 0.5) - 50 * scale,
+    y: table.y - 70 * scale,
+    scale,
+  }));
 }

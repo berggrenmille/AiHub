@@ -81,6 +81,7 @@ const RoutineBody = z
   .strict()
   .refine((body) => body.weekends !== undefined || body.paused !== undefined, "Say what to change: weekends or paused.");
 const PolicyBody = z.object({ body: z.string().max(20_000) }).strict();
+const TurnLimitBody = z.object({ dailyTurnLimit: z.number() }).strict();
 const ModelBody = z.object({ model: z.string().trim().min(1).max(80).nullable(), effort: z.string().trim().min(1).max(20).nullable() }).strict();
 const UnsafeTicks = z.array(z.string().max(300)).max(40).optional();
 const ApproveBody = z.object({ sourcePath: z.string().max(1_000).optional(), unsafe: UnsafeTicks }).strict();
@@ -513,6 +514,17 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     try {
       const policy: PolicyVersion = declinePolicy(office, policyId(request.params.id), body.data.reason?.trim() || null);
       return policy;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  // The day's turn budget, which the operator sets (DESIGN.md › Recruitment and delegation).
+  app.put("/api/settings/turn-limit", async (request, reply) => {
+    const body = bodyOf(TurnLimitBody, request.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
+    try {
+      return office.setDailyTurnLimit(body.data.dailyTurnLimit);
     } catch (error) {
       return sendError(reply, error);
     }

@@ -756,6 +756,47 @@ textarea {
   cursor: pointer;
 }
 
+.turn-budget {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.turn-budget label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.turn-budget-row {
+  display: flex;
+  gap: 6px;
+}
+
+.turn-budget-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.turn-budget-row input[aria-invalid="true"] {
+  border-color: var(--urgent);
+}
+
+.turn-budget-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
 .count-badge.tone-accent {
   background: var(--accent);
   color: var(--on-accent);
@@ -4604,6 +4645,151 @@ button.wikilink:hover {
   top: 24px;
   width: 12px;
   border-top: 2px solid var(--border-strong);
+}
+
+/* The meeting room: the table, those at it, and the screen on the wall */
+
+.meeting-room {
+  position: absolute;
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  z-index: 3;
+}
+
+button.meeting-room {
+  cursor: pointer;
+}
+
+button.meeting-room:hover {
+  box-shadow: 0 0 0 3px rgba(124, 156, 255, 0.35);
+}
+
+button.meeting-room:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.meeting-room > * {
+  position: absolute;
+}
+
+.meeting-screen {
+  left: 16px;
+  top: 22px;
+  width: 120px;
+  height: 76px;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 6px 9px;
+  border: 4px solid #2a303c;
+  border-radius: 6px;
+  background: #1a2130;
+  color: #dbe6ff;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.meeting-screen-state {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+}
+
+.meeting-screen.status-needs_you .meeting-screen-state {
+  color: #fbbf24;
+}
+
+.meeting-screen.status-paused .meeting-screen-state {
+  color: #a8b3c7;
+}
+
+.meeting-screen-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.meeting-screen-line {
+  font-size: 9.5px;
+  color: #a8b3c7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meeting-screen-idle {
+  font-size: 10px;
+  color: #6b7689;
+  text-align: center;
+}
+
+.meeting-chairs,
+.meeting-table {
+  overflow: visible;
+}
+
+.meeting-seat {
+  display: block;
+}
+
+.meeting-seat svg {
+  display: block;
+}
+
+.meeting-seat.has-floor svg {
+  filter: drop-shadow(0 0 6px rgba(125, 211, 252, 0.7));
+}
+
+.meeting-seat.arriving {
+  animation: walk-in 2.2s ease-out both;
+}
+
+.meeting-name {
+  display: flex;
+  justify-content: center;
+  padding: 0 2px;
+  pointer-events: none;
+}
+
+.meeting-name > span {
+  max-width: 100%;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--plate-bg);
+  color: var(--plate-fg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  font-size: 9.5px;
+  font-weight: 800;
+  line-height: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meeting-name.chair > span {
+  box-shadow: 0 0 0 1.5px var(--accent, #7c9cff);
+}
+
+.meeting-speech {
+  max-width: 260px;
+  z-index: 2;
+}
+
+.station.in-meeting .nameplate-line {
+  color: var(--plate-sub);
 }
 
 /* On the floor */

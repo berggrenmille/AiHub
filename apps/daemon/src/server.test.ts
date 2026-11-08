@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, it } from "node:test";
 import type { ChatResponse, DaemonEvent, Meeting, OpenChatResponse, StateSnapshot } from "@aihub/shared";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
+import { DAILY_TURN_LIMIT } from "./limits.ts";
 import { FakeRuntime } from "./runtime/fake-runtime.ts";
 import { Office } from "./office.ts";
 import { Scheduler } from "./scheduler.ts";
@@ -339,6 +340,25 @@ describe("HTTP server: profiles and notes", () => {
     assert.deepEqual([on.json().paused, on.json().nextRunAt], [false, "2026-11-16T08:00:00.000Z"], "Monday at 09:00");
     assert.equal((await patch({ paused: true })).statusCode, 400);
     assert.equal((await patch({})).statusCode, 400);
+  });
+
+  it("sets the day's turn budget, which lets waiting work go on as soon as it is raised", async () => {
+    let office: Office;
+    ({ app, office } = await server());
+    const put = (payload: object) => app!.inject({ method: "PUT", url: "/api/settings/turn-limit", headers: PAGE, payload });
+    assert.equal(office.officeStats().dailyTurnLimit, DAILY_TURN_LIMIT);
+    const set = await put({ dailyTurnLimit: 12 });
+    assert.equal(set.statusCode, 200);
+    assert.equal(set.json().dailyTurnLimit, 12);
+    assert.equal(office.snapshot().office.dailyTurnLimit, 12);
+    for (const bad of [5, 12.5, 5000, "12"]) assert.equal((await put({ dailyTurnLimit: bad })).statusCode, 400, `${bad}`);
+    assert.equal(office.officeStats().dailyTurnLimit, 12);
+
+    const run = office.store.createRun({ agentId: "chief-of-staff", kind: "chat", title: "Busy" });
+    for (let n = 0; n < 12; n++) office.store.addTurn(run.id, null);
+    assert.equal(office.turnsUsedUp(), true);
+    await put({ dailyTurnLimit: 20 });
+    assert.equal(office.turnsUsedUp(), false);
   });
 
   it("writes the office policy, and approves or declines proposals for it", async () => {

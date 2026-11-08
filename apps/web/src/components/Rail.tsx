@@ -1,8 +1,10 @@
+import { useEffect, useState, type FormEvent } from "react";
+import { DAILY_TURN_RANGE } from "@aihub/shared";
 import { Icon, type IconName } from "./Icon.tsx";
 import { Popover } from "./Popover.tsx";
 
 // The office's navigation, down the left edge: the pages first, then the panels that open beside
-// them, and the operator's own settings at the bottom.
+// them, and the settings at the bottom: the theme, and the day's turn budget for the whole office.
 
 export type Page = "office" | "today" | "chats" | "notes" | "dashboards";
 export type Theme = "dark" | "light";
@@ -28,6 +30,9 @@ interface RailProps {
   onTogglePolicy(): void;
   theme: Theme;
   onTheme(theme: Theme): void;
+  /** The day's turn budget, or null before the office loads. */
+  turnLimit: number | null;
+  onTurnLimit(limit: number): Promise<void>;
 }
 
 export function Rail(props: RailProps) {
@@ -103,11 +108,60 @@ export function Rail(props: RailProps) {
                   </label>
                 ))}
               </fieldset>
+              {props.turnLimit !== null && <TurnBudget limit={props.turnLimit} onSave={props.onTurnLimit} />}
             </div>
           </Popover>
         </li>
       </ul>
     </nav>
+  );
+}
+
+/** The day's turn budget: every model turn counts, and background work waits for tomorrow once it runs out. */
+function TurnBudget({ limit, onSave }: { limit: number; onSave(limit: number): Promise<void> }) {
+  const [value, setValue] = useState(String(limit));
+  const [state, setState] = useState<{ saving: boolean; error: string | null }>({ saving: false, error: null });
+  useEffect(() => setValue(String(limit)), [limit]);
+  const wanted = Number(value);
+  const valid = Number.isInteger(wanted) && wanted >= DAILY_TURN_RANGE.min && wanted <= DAILY_TURN_RANGE.max;
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!valid || wanted === limit) return;
+    setState({ saving: true, error: null });
+    try {
+      await onSave(wanted);
+      setState({ saving: false, error: null });
+    } catch (error) {
+      setState({ saving: false, error: error instanceof Error ? error.message : "Couldn't save it." });
+    }
+  };
+  return (
+    <form className="turn-budget" onSubmit={submit}>
+      <label htmlFor="turn-budget">Turns a day</label>
+      <div className="turn-budget-row">
+        <input
+          id="turn-budget"
+          type="number"
+          inputMode="numeric"
+          min={DAILY_TURN_RANGE.min}
+          max={DAILY_TURN_RANGE.max}
+          step={10}
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          aria-describedby="turn-budget-hint"
+          aria-invalid={!valid}
+        />
+        <button type="submit" className="button small" disabled={!valid || wanted === limit || state.saving}>
+          {state.saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+      <p id="turn-budget-hint" className="turn-budget-hint">
+        {state.error ??
+          (valid
+            ? "For the whole office: briefings, chats, questions, and meetings. Background work waits for tomorrow once it runs out."
+            : `A whole number from ${DAILY_TURN_RANGE.min} to ${DAILY_TURN_RANGE.max}.`)}
+      </p>
+    </form>
   );
 }
 

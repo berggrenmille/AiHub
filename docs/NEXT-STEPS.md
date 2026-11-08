@@ -9,13 +9,35 @@ After the Milestone 6 proof the operator asked for meetings, a bigger chat, a ca
 1. **Layout and notifications.** Done, below.
 2. **Meetings.** Done, below. The meeting room on the floor moves to step 4, which redraws the floor.
 3. **A Today page in place of the Inbox.** Done, below.
-4. **16 supervisors.** A floor of four by four that scales to fit, with a meeting room where those in a meeting gather, and the day's turn budget as a setting with a higher default.
+4. **16 supervisors.** Done, below.
+
+All four are built. What comes next is the operator's call once they have used them.
 
 At any point along the way:
 - Done: unsafe ticks are grouped by service and kind (`groupedGrants` in `services/catalog.ts`): one for a service's operations that reach other parties while only reading, one for those that add or change, and one for those that delete or overwrite, read from the operations' own labels. A destructive or unlabeled operation never shares a tick with one that isn't. Proposals made before keep a tick per operation.
 - Done: the daemon checks a staff member's call against the operation's input schema before calling the service (`argumentProblems` in `services/catalog.ts`). An argument missing, unknown, of the wrong type, or outside its list goes back to the staff member with the operation's input; what a schema leaves open passes, and the service has the last word.
 
 The proof used a ChatGPT app, so what the probe left open about MCP servers is still open: Windows Credential Manager as the store for sign-ins, a real MCP server's sign-in, and how long its refresh token lasts.
+
+## 16 supervisors (2026-11-08)
+
+The operator wanted room for more than eight supervisors, and somewhere on the floor for a meeting to happen.
+
+1. **The cap is sixteen.** `SUPERVISOR_LIMIT` in `limits.ts`.
+2. **The floor grows a row at a time.** Pods for everyone and at least one to spare, four to a row and at least two rows, up to four by four (`layoutOffice` in `lib/layout.ts`). Each row is as tall as its pods' workers need; past two rows, a row without workers is only the supervisors' desks, so sixteen pods still fit a screen. The floor already scaled to fit.
+3. **A meeting room under the hall.** While a meeting runs, those in it walk in from their desks and sit along one long table, the chair in the middle, closing up so all seventeen fit (`meetingSeats`). Their desks stand empty and read "In a meeting". The one with the floor glows, whoever speaks talks there with a raised hand, and the screen on the wall says what is under way, or that the conclusion waits. The room opens the meeting.
+4. **The day's turn budget is a setting.** 200 turns by default instead of 80, set in the rail's Settings from 10 to 2,000 (`PUT /api/settings/turn-limit`). It counts from midnight, so raising it lets work that waited for tomorrow go on today. Every check for a used-up budget goes through `Office.turnsUsedUp()`.
+
+### How it was shown
+
+- Tests: `lib/office.test.ts` (pods by the row, sixteen on four rows with no seat or spare desk spilling, and the table seating a few or the whole office), `server.test.ts` (the setting, its bounds, and work going on once it is raised), and the cap in `proposals.test.ts`.
+- In a browser against the fake office: a meeting called with everyone, the five supervisors and Vera at the table with their desks empty, then the room showing the conclusion waiting. With eleven extra supervisors added to the page's state for a look, sixteen pods and seventeen at the table, names on the table. The setting saved 150 and the energy bar followed.
+
+### Known gaps
+
+- A full office with workers is about 1,240 floor units tall, so on a 1080p screen it scales to about three quarters. Still readable, but small.
+- Names at a full table are cut short; the room's label names everyone.
+- Nobody walks back to their desk when a meeting ends: they are just there again.
 
 ## Today (2026-11-08)
 

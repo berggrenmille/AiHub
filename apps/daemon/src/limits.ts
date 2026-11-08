@@ -1,10 +1,14 @@
 // Caps the daemon enforces (DESIGN.md › Recruitment and delegation). Rules live in code, not in prompts.
 
 /** Active supervisors at most. A recruitment proposal beyond it says so and can't be approved. */
-export const SUPERVISOR_LIMIT = 8;
+export const SUPERVISOR_LIMIT = 16;
 
-/** Model turns per local day across the office. Background work defers when it runs out. */
-export const DAILY_TURN_LIMIT = 80;
+/**
+ * Model turns per local day across the office, unless the operator sets another number in the range.
+ * Background work defers when it runs out.
+ */
+export const DAILY_TURN_LIMIT = 200;
+export { DAILY_TURN_RANGE } from "@aihub/shared";
 
 /** Questions one staff member may have waiting for answers at once. */
 export const OPEN_QUESTIONS_LIMIT = 3;

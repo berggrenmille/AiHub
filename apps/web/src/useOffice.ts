@@ -35,6 +35,7 @@ import {
   setWebGrant,
   updateAgent,
   updateRoutine,
+  setTurnLimit,
   viewData,
   writePolicy,
 } from "./api.ts";
@@ -61,6 +62,8 @@ export interface OfficeCommands {
   setWeekends(routineId: string, weekends: boolean): Promise<void>;
   /** Turns the standup on or off. */
   setRoutineOn(routineId: string, on: boolean): Promise<void>;
+  /** Sets the day's turn budget. */
+  setTurnLimit(limit: number): Promise<void>;
   savePolicy(body: string): Promise<void>;
   approvePolicy(policyId: number): Promise<void>;
   declinePolicy(policyId: number): Promise<void>;
@@ -151,6 +154,7 @@ export function useOffice() {
       setModel: async (agentId, choice) => apply({ type: "agent", agent: await setAgentModel(agentId, choice) }),
       setWeekends: async (routineId, weekends) => apply({ type: "routine", routine: await updateRoutine(routineId, { weekends }) }),
       setRoutineOn: async (routineId, on) => apply({ type: "routine", routine: await updateRoutine(routineId, { paused: !on }) }),
+      setTurnLimit: async (limit) => apply({ type: "office", office: await setTurnLimit(limit) }),
       savePolicy: async (body) => apply({ type: "policy", policy: await writePolicy(body) }),
       approvePolicy: async (policyId) => apply({ type: "policy", policy: await approvePolicy(policyId) }),
       declinePolicy: async (policyId) => apply({ type: "policy", policy: await declinePolicy(policyId) }),

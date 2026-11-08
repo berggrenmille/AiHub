@@ -4,7 +4,8 @@ import { STATION, type OfficeLayout, type Rect } from "../../lib/layout.ts";
 import { SpareDesk } from "./Station.tsx";
 
 // The floor under everyone: walls, windows with the Stockholm sky, the Chief of Staff's glass
-// office, the lounge by the door, the hall with the team pods, and some furniture. Original art.
+// office, the lounge by the door, the hall with the team pods, the meeting room under it, and some
+// furniture. Original art. The meeting table and those at it are drawn over this, by MeetingRoom.
 
 interface FloorPlanProps {
   layout: OfficeLayout;
@@ -24,7 +25,7 @@ const SKIES: Record<Daylight["phase"], [string, string]> = {
 };
 
 export const FloorPlan = memo(function FloorPlan({ layout, daylight, podColors, chiefColor, clock }: FloorPlanProps) {
-  const { width, height, wall, chiefRoom, lounge, hall, pods } = layout;
+  const { width, height, wall, chiefRoom, lounge, hall, meetingRoom, pods } = layout;
   const [skyTop, skyBottom] = SKIES[daylight.phase];
   const windows = windowSpots(width);
   return (
@@ -114,9 +115,16 @@ export const FloorPlan = memo(function FloorPlan({ layout, daylight, podColors, 
         ),
       )}
 
-      {/* Plants along the hall */}
-      <Plant x={hall.x + hall.w - 30} y={hall.y + hall.h + 2} size={0.8} />
-      <Plant x={hall.x - 14} y={hall.y + hall.h + 2} size={0.8} />
+      {/* Meeting room */}
+      <rect x={meetingRoom.x} y={meetingRoom.y} width={meetingRoom.w} height={meetingRoom.h} rx={12} fill="url(#carpet)" />
+      <Plant x={meetingRoom.x + meetingRoom.w - 46} y={meetingRoom.y + 70} size={1} />
+      <MeetingWalls room={meetingRoom} />
+      <g className="room-sign">
+        <rect x={meetingRoom.x + 16} y={meetingRoom.y + meetingRoom.h - 30} width={112} height={20} rx={5} fill="var(--sign)" />
+        <text x={meetingRoom.x + 72} y={meetingRoom.y + meetingRoom.h - 16} textAnchor="middle" className="floor-label">
+          Meeting room
+        </text>
+      </g>
     </svg>
   );
 });
@@ -232,6 +240,21 @@ function GlassWalls({ room }: { room: Rect }) {
       <path d={`M${right} ${room.y} V${bottom}`} />
       <path d={`M${room.x} ${bottom} H${doorFrom} M${doorTo} ${bottom} H${right}`} />
       <path d={`M${doorFrom} ${bottom} A70 70 0 0 1 ${doorTo} ${bottom}`} transform={`rotate(180 ${(doorFrom + doorTo) / 2} ${bottom})`} strokeWidth={1.4} strokeDasharray="4 4" fill="none" opacity={0.6} />
+    </g>
+  );
+}
+
+/** Glass on every side, with a doorway in the wall to the hall, toward its right end. */
+function MeetingWalls({ room }: { room: Rect }) {
+  const right = room.x + room.w;
+  const bottom = room.y + room.h;
+  const doorFrom = right - 150;
+  const doorTo = right - 80;
+  return (
+    <g stroke="var(--glass)" strokeWidth={5} strokeLinecap="round" fill="none">
+      <path d={`M${room.x} ${room.y} H${doorFrom} M${doorTo} ${room.y} H${right}`} />
+      <path d={`M${room.x} ${room.y} V${bottom} M${right} ${room.y} V${bottom}`} opacity={0.7} />
+      <path d={`M${doorFrom} ${room.y} A70 70 0 0 1 ${doorTo} ${room.y}`} strokeWidth={1.4} strokeDasharray="4 4" opacity={0.6} />
     </g>
   );
 }

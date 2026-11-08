@@ -4,7 +4,7 @@ import type { Agent, Item, Run } from "@aihub/shared";
 import { forceLayout } from "./graph.ts";
 import { closedItems, openCount } from "./inbox.ts";
 import { itemsWaiting } from "./today.ts";
-import { STATION, layoutOffice } from "./layout.ts";
+import { STATION, layoutOffice, meetingSeats, meetingTable } from "./layout.ts";
 import { DONE_GLOW_MS, FAILED_MARK_MS, bubbleText, currentRun, openItemCounts, presenceOf } from "./presence.ts";
 import { doorOffset, visitOffset, WALKER, walkerAt } from "./walk.ts";
 
@@ -151,6 +151,55 @@ describe("office layout", () => {
     const layout = layoutOffice([chief, ...supervisors], 8);
     assert.equal(layout.pods.length, 14);
     assert.ok(layout.pods.every((p) => p.supervisorId !== null));
+  });
+
+  it("adds pods a row at a time, up to four by four", () => {
+    const pods = (count: number) => layoutOffice([chief, ...Array.from({ length: count }, (_, index) => agent(`s${index}`))], 16).pods.length;
+    assert.deepEqual([pods(0), pods(5), pods(7), pods(8), pods(11), pods(12), pods(16)], [8, 8, 8, 12, 12, 16, 16]);
+  });
+
+  it("fits sixteen supervisors on four rows, a row only as tall as its workers need, with the meeting room under them", () => {
+    const supervisors = Array.from({ length: 16 }, (_, index) => agent(`s${index}`, { hiredAt: `2026-11-07T16:${String(index).padStart(2, "0")}:00.000Z` }));
+    const helper = agent("w1", { role: "worker", managerId: "s5" });
+    const layout = layoutOffice([chief, ...supervisors, helper], 16);
+    assert.equal(layout.pods.length, 16);
+    assert.ok(layout.pods.every((p) => p.supervisorId !== null));
+    assert.equal(new Set(layout.pods.map((p) => p.x)).size, 4);
+    assert.equal(new Set(layout.pods.map((p) => p.y)).size, 4);
+    const heights = [...new Set(layout.pods.map((p) => p.h))];
+    assert.equal(heights.length, 2, "the row with a worker is taller than the rest");
+    assert.equal(layout.pods.find((p) => p.supervisorId === "s5")!.h, Math.max(...heights));
+
+    const rects = layout.seats.map((s) => ({ x: s.x, y: s.y, ...STATION[s.size] }));
+    for (let a = 0; a < rects.length; a++) {
+      for (let b = a + 1; b < rects.length; b++) assert.ok(!overlaps(rects[a]!, rects[b]!), `${layout.seats[a]!.agentId} overlaps ${layout.seats[b]!.agentId}`);
+    }
+    for (const pod of layout.pods) {
+      for (const desk of pod.spareDesks) assert.ok(desk.y + STATION.small.h <= pod.y + pod.h, `a spare desk spills out of ${pod.id}`);
+    }
+    assert.equal(layout.pods.find((p) => p.supervisorId === "s5")!.spareDesks.length, 1, "the worker's row has its desks");
+    assert.equal(layout.pods.find((p) => p.supervisorId === "s0")!.spareDesks.length, 0);
+    const room = layout.meetingRoom;
+    assert.ok(layout.pods.every((p) => p.y + p.h <= room.y), "the meeting room is under the hall");
+    assert.ok(room.y + room.h <= layout.height);
+    assert.ok(layout.height < 1300, `${layout.height} is too tall to fit a screen`);
+  });
+
+  it("seats a meeting along the table, the chair in the middle, closing up so the whole office fits", () => {
+    const room = layoutOffice([chief], 16).meetingRoom;
+    const table = meetingTable(room);
+    const few = meetingSeats(room, "chief", ["a", "b"]);
+    assert.deepEqual(few.map((seat) => seat.agentId), ["a", "chief", "b"]);
+
+    const everyone = Array.from({ length: 16 }, (_, index) => `s${index}`);
+    const seats = meetingSeats(room, "chief", everyone);
+    assert.equal(seats.length, 17);
+    assert.equal(seats[8]!.agentId, "chief");
+    assert.ok(seats[0]!.scale < few[0]!.scale, "a full table seats people closer and smaller");
+    const heads = seats.map((seat) => ({ x: seat.x + 50 * seat.scale, r: 16 * seat.scale }));
+    for (let index = 1; index < heads.length; index++) assert.ok(heads[index]!.x - heads[index - 1]!.x > heads[index]!.r * 2.4, "heads keep apart");
+    assert.ok(heads[0]!.x >= table.left && heads.at(-1)!.x <= table.right);
+    assert.ok(seats.every((seat) => seat.y >= room.y && seat.y + 70 * seat.scale === table.y));
   });
 });
 

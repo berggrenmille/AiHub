@@ -127,6 +127,8 @@ async function review(input: string, options: RunTurnOptions): Promise<TurnResul
 async function meetingTurn(input: string, options: RunTurnOptions): Promise<TurnResult> {
   const usage = { inputTokens: 1100, cachedInputTokens: 600, outputTokens: 40 };
   const reply = async (text: string): Promise<TurnResult> => {
+    // Each turn takes a moment, so the office has time to show everyone at the meeting table.
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
     for (const piece of text.match(/.{1,6}/gs) ?? []) {
       options.onEvent?.({ type: "delta", text: piece });
       await new Promise((resolve) => setTimeout(resolve, 30));

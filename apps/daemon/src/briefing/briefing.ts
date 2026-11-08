@@ -1,5 +1,4 @@
 import type { Briefing, BriefingItem, BriefingSectionRecord, Item, Run, View } from "@aihub/shared";
-import { DAILY_TURN_LIMIT } from "../limits.ts";
 import type { Blocked, Office } from "../office.ts";
 import type { TurnBlocker } from "../runtime/types.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "../staff/chief-of-staff.ts";
@@ -224,7 +223,7 @@ async function reportSection(office: Office, section: BriefingSection, since: st
   if (section.unavailable) return { ...base, status: "unavailable", reason: section.unavailable };
   if (section.research) return research(office, section, base, undelivered, since, now, timeoutMs);
   if (section.changes.length === 0) return { ...base, status: "nothing_new", newItems: undelivered };
-  if (office.officeStats().turnsToday >= DAILY_TURN_LIMIT) {
+  if (office.turnsUsedUp()) {
     return { ...base, status: "missing", run: null, reason: "Deferred: today's turn budget is used up." };
   }
 
@@ -282,7 +281,7 @@ async function research(
 ): Promise<SectionOutcome> {
   const { store } = office;
   const responsibilityId = section.responsibilityId ?? null;
-  if (office.officeStats().turnsToday >= DAILY_TURN_LIMIT) {
+  if (office.turnsUsedUp()) {
     return { ...base, status: "missing", run: null, reason: "Deferred: today's turn budget is used up." };
   }
   const now = at.getTime();

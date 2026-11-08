@@ -3,7 +3,8 @@ import type { Agent, Responsibility, StaffReader } from "@aihub/shared";
 import { clip, errandOf, type Errand } from "../../lib/assignments.ts";
 import { hashSeed, lookFor, type Look } from "../../lib/avatar.ts";
 import { daylightAt, stockholmTime } from "../../lib/daylight.ts";
-import { layoutOffice, STATION, type Seat } from "../../lib/layout.ts";
+import { layoutOffice, meetingSeats, STATION, type MeetingSeat, type Seat } from "../../lib/layout.ts";
+import { runningMeeting } from "../../lib/meetings.ts";
 import { bubbleText, currentRun, openItemCounts, presenceOf, speechOf, type Presence } from "../../lib/presence.ts";
 import { plainText } from "../../lib/markdown.ts";
 import { readersInHand } from "../../lib/sources.ts";
@@ -12,6 +13,7 @@ import { ROLE_LABELS, STATE_LABELS, URGENCY_LABELS } from "../../format.ts";
 import type { OfficeState } from "../../state.ts";
 import { WalkingFigure } from "./Figure.tsx";
 import { FloorPlan } from "./FloorPlan.tsx";
+import { MeetingRoom } from "./MeetingRoom.tsx";
 import { Workstation, type Cue } from "./Station.tsx";
 import { QuestionThreads, useQuestionMoments, useReducedMotion, Visitor, type Answer, type Visit } from "./Visits.tsx";
 
@@ -21,6 +23,7 @@ interface OfficeFloorProps {
   onSelectAgent(agentId: string): void;
   onOpenChat(): void;
   onOpenToday(responsibilityId?: string): void;
+  onOpenMeeting(meetingId: string): void;
 }
 
 /** How long walking in or out of the door takes, in ms. Matches the CSS animations. */
@@ -28,7 +31,7 @@ const WALK_MS = 2200;
 const MIN_SCALE = 0.55;
 const MAX_SCALE = 1.35;
 
-export function OfficeFloor({ state, now, onSelectAgent, onOpenChat, onOpenToday }: OfficeFloorProps) {
+export function OfficeFloor({ state, now, onSelectAgent, onOpenChat, onOpenToday, onOpenMeeting }: OfficeFloorProps) {
   const supervisorLimit = state.office?.supervisorLimit ?? 4;
   const layout = useMemo(() => layoutOffice(state.agents, supervisorLimit), [state.agents, supervisorLimit]);
   const looks = useLooks(state.agents);
@@ -66,6 +69,24 @@ export function OfficeFloor({ state, now, onSelectAgent, onOpenChat, onOpenToday
     }
     return colors;
   }, [state.agents, looks]);
+
+  // The meeting under way, whose people sit at the meeting table, or the latest one waiting for the operator.
+  const meeting = useMemo(() => runningMeeting(state.meetings) ?? state.meetings.find((candidate) => candidate.state === "waiting") ?? null, [state.meetings]);
+  const live = meeting?.state === "running" ? meeting : null;
+  const tableSeats = useMemo(() => {
+    if (!live) return [];
+    const here = new Set(state.agents.map((agent) => agent.id));
+    if (!here.has(live.chairId)) return [];
+    return meetingSeats(layout.meetingRoom, live.chairId, live.participantIds.filter((id) => id !== live.chairId && here.has(id)));
+  }, [live, state.agents, layout.meetingRoom]);
+  const inMeeting = useMemo(() => new Set(tableSeats.map((seat) => seat.agentId)), [tableSeats]);
+  const speaker = useMemo(() => {
+    if (!live) return null;
+    const reply = Object.values(state.streaming).find((candidate) => candidate.conversationId === live.id && inMeeting.has(state.runs[candidate.runId]?.agentId ?? ""));
+    return reply ? { agentId: state.runs[reply.runId]!.agentId, text: bubbleText(reply.text, tableSeats.length > 10 ? 100 : 140) } : null;
+  }, [live, state.streaming, state.runs, inMeeting, tableSeats.length]);
+  const gathering = useGathering(tableSeats, layout.seats, state.loaded);
+  const nameOf = (agentId: string) => state.agents.find((agent) => agent.id === agentId)?.name ?? "Someone";
 
   const still = useReducedMotion();
   const seated = useMemo(() => new Set(layout.seats.map((seat) => seat.agentId)), [layout.seats]);
@@ -119,9 +140,11 @@ export function OfficeFloor({ state, now, onSelectAgent, onOpenChat, onOpenToday
             if (!agent || !look) return null;
             const presence = presenceOf(agent, state.runs, now);
             const run = currentRun(agent.id, state.runs);
-            const speech = speechOf(agent.id, state.streaming, state.runs);
+            const meetingTitle = inMeeting.has(agent.id) ? live!.title : null;
+            // At the meeting table, they talk there, and they aren't off visiting anyone.
+            const speech = meetingTitle ? null : speechOf(agent.id, state.streaming, state.runs);
             const arrival = arriving.has(agent.id);
-            const visit = visits.find((candidate) => candidate.askerId === agent.id) ?? null;
+            const visit = meetingTitle ? null : (visits.find((candidate) => candidate.askerId === agent.id) ?? null);
             const answer = answers.find((candidate) => candidate.ownerId === agent.id) ?? null;
             return (
               <StationButton
@@ -134,6 +157,7 @@ export function OfficeFloor({ state, now, onSelectAgent, onOpenChat, onOpenToday
                 errand={errandOf(agent.id, state.runs, state.assignments)}
                 reader={authoring.get(agent.id) ?? null}
                 visit={visit}
+                meeting={meetingTitle}
                 speech={speech && !visit ? bubbleText(speech.text, seat.size === "small" ? 90 : 150) : null}
                 answer={answer}
                 lanyard={lanyards.get(agent.id)}
@@ -144,9 +168,12 @@ export function OfficeFloor({ state, now, onSelectAgent, onOpenChat, onOpenToday
             );
           })}
 
+          <MeetingRoom room={layout.meetingRoom} meeting={meeting} seats={tableSeats} looks={looks} nameOf={nameOf} speaker={speaker} arriving={gathering} onOpen={onOpenMeeting} />
+
           {still && <QuestionThreads assignments={state.assignments} seats={layout.seats} width={layout.width} height={layout.height} />}
 
           {visits.map((visit) => {
+            if (inMeeting.has(visit.askerId)) return null;
             const from = layout.seats.find((seat) => seat.agentId === visit.askerId);
             const to = layout.seats.find((seat) => seat.agentId === visit.ownerId);
             const look = looks.get(visit.askerId);
@@ -172,7 +199,7 @@ export function OfficeFloor({ state, now, onSelectAgent, onOpenChat, onOpenToday
           {chief && pendingProposals > 0 && (() => {
             const seat = layout.seats.find((candidate) => candidate.agentId === chief.id);
             // The speech bubble takes the same spot; the marker comes back when she's done talking.
-            if (!seat || speechOf(chief.id, state.streaming, state.runs)) return null;
+            if (!seat || (!inMeeting.has(chief.id) && speechOf(chief.id, state.streaming, state.runs))) return null;
             return (
               <button type="button" className="quest-marker" style={{ left: seat.x + STATION.large.w / 2, top: seat.y - 26 }} onClick={onOpenChat}>
                 <span className="quest-icon" aria-hidden="true">
@@ -200,6 +227,8 @@ interface StationButtonProps {
   reader: StaffReader | null;
   /** Over at a colleague's desk with a question. */
   visit: Visit | null;
+  /** The title of the meeting they are at, if any: their chair stays empty. */
+  meeting: string | null;
   speech: string | null;
   /** An answer they just gave a colleague. */
   answer: Answer | null;
@@ -220,8 +249,9 @@ const CUES: Record<Errand["kind"], Cue> = {
  * What the station says the person is doing: the run, or what an assignment has them doing. The
  * nameplate gets the short form; the label and tooltip get the whole line.
  */
-function statusLine(presence: Presence, task: string | null, errand: Errand | null, visit: Visit | null, reader: StaffReader | null): { plate: string; full: string } | null {
+function statusLine(presence: Presence, task: string | null, errand: Errand | null, visit: Visit | null, reader: StaffReader | null, meeting: string | null): { plate: string; full: string } | null {
   const line = (plate: string, detail?: string | null) => ({ plate, full: detail ? `${plate}: ${detail}` : plate });
+  if (meeting) return line("In a meeting", meeting);
   if (visit) return line(`Asking ${visit.ownerName}`, visit.title);
   if (!errand && reader) return line(reader.status === "drafting" ? `Writing the ${reader.name} reader` : `Handed in the ${reader.name} reader`);
   switch (errand?.kind) {
@@ -246,9 +276,9 @@ function sentence(text: string): string {
   return /[.!?…]$/.test(text) ? text : `${text}.`;
 }
 
-function StationButton({ agent, look, seat, presence, task, errand, reader, visit, speech, answer, lanyard, dark, arriving, onSelect }: StationButtonProps) {
+function StationButton({ agent, look, seat, presence, task, errand, reader, visit, meeting, speech, answer, lanyard, dark, arriving, onSelect }: StationButtonProps) {
   const size = STATION[seat.size];
-  const line = statusLine(presence, task, errand, visit, reader);
+  const line = statusLine(presence, task, errand, visit, reader, meeting);
   const status = line?.full ?? null;
   const answered = answer ? `Just answered ${answer.requesterName}. ` : "";
   const label = `${agent.name}, ${agent.title || ROLE_LABELS[agent.role]}${agent.role === "worker" ? ", temporary worker" : ""}. ${sentence(status ?? "Idle")} ${answered}Open profile.`;
@@ -268,7 +298,7 @@ function StationButton({ agent, look, seat, presence, task, errand, reader, visi
   return (
     <button
       type="button"
-      className={`station size-${seat.size} presence-${presence}${errand ? ` errand-${errand.kind}` : ""}${arriving ? " arriving" : ""}${bubble || answer ? " speaking" : ""}${visit ? " away" : ""}`}
+      className={`station size-${seat.size} presence-${presence}${errand ? ` errand-${errand.kind}` : ""}${arriving ? " arriving" : ""}${bubble || answer ? " speaking" : ""}${visit || meeting ? " away" : ""}${meeting ? " in-meeting" : ""}`}
       style={style}
       aria-label={label}
       title={`${agent.name} — ${status ?? "Idle"}`}
@@ -280,7 +310,7 @@ function StationButton({ agent, look, seat, presence, task, errand, reader, visi
         talking={bubble !== null || answer !== null}
         dark={dark}
         grand={seat.size === "large"}
-        away={visit !== null}
+        away={visit !== null || meeting !== null}
         lanyard={lanyard}
         cue={(errand ? CUES[errand.kind] : null) ?? (reader ? "toolsmith" : null)}
       />
@@ -364,6 +394,35 @@ function useComings(agents: Agent[], seats: Seat[], looks: Map<string, Look>, la
   }, [agents, seats, looks, lanyards, loaded]);
 
   return { arriving, leaving };
+}
+
+/**
+ * Who just sat down at the meeting table, with how far their desk is, so they walk in from it. Those
+ * already at the table when the office first loads are seated.
+ */
+function useGathering(tableSeats: MeetingSeat[], desks: Seat[], loaded: boolean): Map<string, { dx: number; dy: number }> {
+  const known = useRef<Set<string> | null>(null);
+  const [arriving, setArriving] = useState<Map<string, { dx: number; dy: number }>>(() => new Map());
+  useEffect(() => {
+    if (!loaded) return;
+    const current = new Set(tableSeats.map((seat) => seat.agentId));
+    const previous = known.current;
+    known.current = current;
+    if (!previous) return;
+    const came = tableSeats.filter((seat) => !previous.has(seat.agentId));
+    if (!came.length) return;
+    const offsets = new Map<string, { dx: number; dy: number }>();
+    for (const place of came) {
+      const desk = desks.find((seat) => seat.agentId === place.agentId);
+      if (!desk) continue;
+      // From the head at the desk to the head at the table.
+      const deskScale = STATION[desk.size].w / 160;
+      offsets.set(place.agentId, { dx: desk.x + 70 * deskScale - (place.x + 50 * place.scale), dy: desk.y + 37 * deskScale - (place.y + 24 * place.scale) });
+    }
+    setArriving((map) => new Map([...map, ...offsets]));
+    setTimeout(() => setArriving((map) => new Map([...map].filter(([id]) => !offsets.has(id)))), WALK_MS);
+  }, [tableSeats, desks, loaded]);
+  return arriving;
 }
 
 /** Scales the floor to fit its viewport, within limits; past the minimum, the viewport scrolls. */

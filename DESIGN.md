@@ -19,7 +19,7 @@ V1 runs on one Windows PC and covers watching and reporting. The first release v
 
 ## The office experience
 
-The 2D office is the home screen: a top-down floor that feels alive. The Chief of Staff has a permanent office, each supervisor gets a team pod when recruited, and workers take a desk at their supervisor's pod while their assignment is active and walk out when it ends. Every character has a generated look of its own. What they do on screen comes from actual run state: they type while working, read while collecting, raise a hand while waiting for approval, show a lock while waiting for access, and rest when idle. Replies stream into speech bubbles, and a staff member asking a colleague for help walks over to that colleague's desk. Lighting follows the time of day in `Europe/Stockholm`.
+The 2D office is the home screen: a top-down floor that feels alive. The Chief of Staff has a permanent office, each supervisor gets a team pod when recruited, and workers take a desk at their supervisor's pod while their assignment is active and walk out when it ends. Every character has a generated look of its own. What they do on screen comes from actual run state: they type while working, read while collecting, raise a hand while waiting for approval, show a lock while waiting for access, and rest when idle. Replies stream into speech bubbles, and a staff member asking a colleague for help walks over to that colleague's desk. While a meeting runs, those in it walk to the meeting room under the hall and sit along its one long table, the chair in the middle; their desks stand empty, whoever speaks talks there, and the room opens the meeting. The floor has room for sixteen pods, four to a row, and adds a row as the office grows; it scales to fit the screen. Lighting follows the time of day in `Europe/Stockholm`.
 
 Selecting a character opens its profile card: name, title, job description, working style, manager and reports, responsibility, assignments, recent activity, next run, its notes, and a chat with it. Game elements count real work and nothing else. Experience comes from delivered results and resolved items, the day's energy bar is the remaining turn budget, and a streak counts briefings delivered on time.
 
@@ -44,7 +44,7 @@ The Chief of Staff proposes new roles or reuses existing ones, identifies the re
 
 ### Layout and notifications
 
-A rail down the left edge holds the pages (the office, Today, Chats, Notes, and Dashboards), the Assignments panel, Access, Policy, and settings, each with a count of what waits there. A slim top bar shows the office's numbers on the office page, the day's energy, one health chip for Codex, the page's connection, and the sources, the time, and the chat button. The roster shows only on the office page.
+A rail down the left edge holds the pages (the office, Today, Chats, Notes, and Dashboards), the Assignments panel, Access, Policy, and settings (the theme, and the day's turn budget), each with a count of what waits there. A slim top bar shows the office's numbers on the office page, the day's energy, one health chip for Codex, the page's connection, and the sources, the time, and the chat button. The roster shows only on the office page.
 
 Today is where the operator starts the day. What needs the operator comes first: decisions waiting on a card or a meeting's conclusion, oldest first, each opening where it waits, and then the items that need the operator, most pressing first, each with its source, a button to resolve or dismiss it, and one that opens a chat with its supervisor to discuss it. The latest briefing follows: the Chief of Staff's overview, then one section per supervisor, those that ask something of the operator first. A section shows its supervisor's summary, its questions for the operator, its new items with where each stands now, what is still open from earlier folded into one line, what was resolved, any warning, and its views. Each item opens its source, and each section and question opens the supervisor's chat with a line about it in the box, unsent. Nothing asks the operator a question before the briefing.
 
@@ -139,7 +139,7 @@ Each staff member runs on a model and a reasoning level from the runtime's catal
 
 The Chief of Staff can propose new supervisors or reuse existing ones within standing goals. Each proposal includes a charter, reporting relationship, responsibility, routine, and requested capabilities. Requested capabilities can exceed current access so the office can prepare the role while you connect a service. The operator approves, edits, or declines the proposal from a card in the Chief of Staff's chat, which Today lists among what needs the operator. Once a role exists, the Chief of Staff can assign work within it without further approval.
 
-AiHub caps the number of active supervisors and the daily turn budget. A proposal that would exceed either cap says so. Before proposing a new role, the Chief of Staff checks existing responsibilities for overlap and proposes extending one where it fits.
+AiHub caps the number of active supervisors, at sixteen, and the daily turn budget, which the operator sets in settings: 200 turns by default, from 10 to 2,000. A proposal that would exceed either cap says so. (Revised 2026-11-08: until then the caps were eight supervisors and 80 turns, fixed.) Before proposing a new role, the Chief of Staff checks existing responsibilities for overlap and proposes extending one where it fits.
 
 Delegation returns an assignment ID immediately. No model turn stays open while it waits. The delegating turn ends after the assignment is recorded. When the dependencies finish, the daemon starts a new turn for the parent with their results. V1 starts with one execution slot. Interactive chat gets priority when the slot becomes free.
 
@@ -163,7 +163,7 @@ Meetings only talk. A turn in a meeting can't read sources, call services, or se
 
 The chair concludes with a summary, at most eight decisions, and at most four tasks, each for someone in the room. The conclusion waits for the operator on a card in the meeting. Approving it records the decisions in each participant's journal and hands out the tasks as assignments, whose results come back to the meeting. The operator can instead end the meeting without approving, or reply, which sets the conclusion aside, and the chair takes the reply in and concludes again. Nothing a meeting decides acts until the operator approves it.
 
-One meeting runs at a time. Every turn counts against the daily turn budget; when it runs out, the meeting pauses until the operator says something the next day. A meeting under way carries on after a restart.
+One meeting runs at a time. Every turn counts against the daily turn budget; when it runs out, the meeting pauses until the operator says something the next day, or raises the budget. A meeting under way carries on after a restart.
 
 ### Staff review
 
