@@ -2,11 +2,9 @@
 
 Where the build stands against [DESIGN.md](../DESIGN.md) › Build sequence and acceptance.
 
-## Up next: the rest of the Milestone 6 proof
+## Up next
 
-The proof against real Codex ran on GitHub on 2026-11-08 (below). Two checks wait for the operator:
-- **An unsafe operation runs after its tick.** Vera's card that lets Elias add and remove reactions on pull requests is waiting in her chat. Approving it with a tick, then asking Elias to react to a pull request and take the reaction back, writes to GitHub, so the operator does it.
-- **Sign in again after signing out at the service.** For a ChatGPT app, that means disconnecting GitHub at ChatGPT, seeing the lapse in Vera's chat and in Access, connecting it again, and pressing Check again.
+The Milestone 6 proof is done (below). The operator ran the unsafe check and chose to skip signing in again after signing out at the service, since a ChatGPT app's sign-in belongs to ChatGPT.
 
 The proof used a ChatGPT app, so what the probe left open about MCP servers is still open: Windows Credential Manager as the store for sign-ins, a real MCP server's sign-in, and how long its refresh token lasts.
 
@@ -22,6 +20,7 @@ GitHub is connected at ChatGPT with two linked accounts, Personal and Work. Ever
 | Account isolation | A second service, GitHub (Work), with its own supervisor, Mira. Its source read 2 issues, none of Personal's 100. Asked to call `github.get_user_login` on GitHub (Personal) with Work's `link_id`, Elias got the Personal login, because the daemon sets the account. His call on GitHub (Work) was refused. Nora holds no service. |
 | Items open their source record | Mira's item opens the GitHub issue it came from. |
 | An unsafe operation is refused before its tick | With nothing ticked, the Operations card's Approve stays disabled and the daemon refuses the approval. Elias can't call the operations. Running one waits for the operator (Up next). |
+| An unsafe operation runs after its tick | The operator ticked both reaction operations and approved. Asked in chat, Elias added a reaction to a pull request and took it back, each call recorded and marked unsafe, and Access listed both grants with their last use. |
 | The Access panel | It lists both services with their accounts, each supervisor's operations with when each was last used, both sources with their readers, Nora's cached search, and no unsafe grants. |
 
 ### What the proof changed
@@ -40,6 +39,7 @@ GitHub is connected at ChatGPT with two linked accounts, Personal and Work. Ever
 - Mira spent her 8 calls on broad searches, as her standing instructions said, and found a pull request waiting for review. AiHub left it out of the Inbox because it cited no record the briefing handed her. The briefing text mentions it, without its link.
 - Setting up GitHub, the Chief of Staff's chat turns took 64,000 to 190,000 tokens each, mostly on listing 91 operations.
 - GitHub's search gives no state or times, so records come in the service's order, and an edit to an issue's text counts as a change.
+- Elias guessed the reaction operations' argument names before reading them, so three of his five unsafe calls went to GitHub with the wrong arguments and came back as errors. Each was recorded as an unsafe call.
 
 ## Milestone 6: connections from chat (built 2026-11-08)
 
