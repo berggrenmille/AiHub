@@ -4,9 +4,36 @@ Where the build stands against [DESIGN.md](../DESIGN.md) › Build sequence and 
 
 ## Up next
 
-The Milestone 6 proof is done (below). The operator ran the unsafe check and chose to skip signing in again after signing out at the service, since a ChatGPT app's sign-in belongs to ChatGPT.
+After the Milestone 6 proof the operator asked for meetings, a bigger chat, a calmer screen, room for 16 supervisors, fewer unsafe ticks, and a better way to read the briefing. The plan they accepted on 2026-11-08, built in this order:
+
+1. **Layout and notifications.** Done, below.
+2. **Meetings.** The Chief of Staff chairs, and AiHub runs rounds: each supervisor speaks in turn, and one with nothing new passes without a turn. A meeting ends with a card of decisions and assignments that the operator approves. The operator calls one, the Chief of Staff calls one, or a standup routine does. Meetings only talk: no operation runs in one. A meeting room on the floor.
+3. **A Today page in place of the Inbox.** What needs the operator first, then the briefing by supervisor, each section with Open source and Discuss. The chat gets one line that links to it, and nothing asks a question before the briefing.
+4. **16 supervisors.** A floor of four by four that scales to fit, and the day's turn budget as a setting with a higher default.
+
+At any point along the way:
+- Unsafe ticks grouped by service and kind: one tick for a service's operations that add or change, another for those that delete or overwrite, read from the operations' own labels. A destructive operation never shares a tick with one that isn't. This changes DESIGN.md's "its own tick" rule.
+- The daemon checks a call's arguments against the operation's input schema before calling the service.
 
 The proof used a ChatGPT app, so what the probe left open about MCP servers is still open: Windows Credential Manager as the store for sign-ins, a real MCP server's sign-in, and how long its refresh token lasts.
+
+## Layout and notifications (2026-11-08)
+
+The operator found the top bar bloated, toasts piling up over the chat, and the chat too small, and asked whether several threads with one person would help. The answer they took: named topics, each in a thread of its own, and no forking of a chat. DESIGN.md › Office experience › Layout and notifications has the rules as built.
+
+1. **A rail and a slim top bar.** `Rail.tsx` holds the pages, the Assignments panel, Access, Policy, and settings with the theme, each with its count, and shows icons alone below 1,280 px. `TopBar.tsx` keeps the office's numbers on the office page, energy, one health chip (Codex, the page's connection, and the sources, listed on click), the time, and the chat button. `Hud.tsx` is gone.
+2. **Toasts for what needs the operator.** `lib/toasts.ts` decides: a failed or blocked run, a proposal, a proposed policy or service, a health problem, and the briefing. A card doesn't toast while its chat is on screen. Toasts sit under the top bar, step left of an open chat, and show two at a time; a burst folds into a line that opens the activity log.
+3. **Chats full screen, with topics.** The Chats page lists each staff member's general chat and topics with unread counts, and opens one at reading width. The drawer switches between them and expands to the page. A topic is a conversation with its own model thread (migration v16, `POST /api/agents/:id/topics`, `PATCH /api/conversations/:id`), named by the operator's first message and renamed from its title. A card from a chat turn of the Chief of Staff's stays in that chat, and the notice when it is decided goes beside it.
+
+### How it was shown
+
+- Tests: `office.test.ts` ("starts a topic in a thread of its own, named by the operator's first message" and "puts a card where the operator asked for it, and the answer to the card beside it"), `server.test.ts` ("starts and renames a topic"), `lib/chat.test.ts`, and `lib/toasts.test.ts`.
+- In a browser against the fake office at 1,440 and 1,024 px wide, in both themes: the rail collapsing to icons with nothing wider than the window, the health and settings popovers, the Chats page with a long topic name, a new topic named by its first message, renaming it, and the drawer's topic switch and expand button.
+
+### Known gaps
+
+- A topic can't be closed or removed; the list grows with them.
+- Unread counts live in the browser, so another browser counts everything before its first visit as read.
 
 ## Milestone 6 proof against real GitHub (2026-11-08)
 
@@ -19,7 +46,7 @@ GitHub is connected at ChatGPT with two linked accounts, Personal and Work. Ever
 | A cut-off read says what it held back | The first read held 100 records. Elias was handed the 60 newest, with the note that the rest were recorded as seen, and his report said so. |
 | Account isolation | A second service, GitHub (Work), with its own supervisor, Mira. Its source read 2 issues, none of Personal's 100. Asked to call `github.get_user_login` on GitHub (Personal) with Work's `link_id`, Elias got the Personal login, because the daemon sets the account. His call on GitHub (Work) was refused. Nora holds no service. |
 | Items open their source record | Mira's item opens the GitHub issue it came from. |
-| An unsafe operation is refused before its tick | With nothing ticked, the Operations card's Approve stays disabled and the daemon refuses the approval. Elias can't call the operations. Running one waits for the operator (Up next). |
+| An unsafe operation is refused before its tick | With nothing ticked, the Operations card's Approve stays disabled and the daemon refuses the approval. Elias can't call the operations. |
 | An unsafe operation runs after its tick | The operator ticked both reaction operations and approved. Asked in chat, Elias added a reaction to a pull request and took it back, each call recorded and marked unsafe, and Access listed both grants with their last use. |
 | The Access panel | It lists both services with their accounts, each supervisor's operations with when each was last used, both sources with their readers, Nora's cached search, and no unsafe grants. |
 

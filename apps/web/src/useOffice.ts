@@ -19,6 +19,8 @@ import {
   listModels,
   openChat,
   previewProposal,
+  renameTopic,
+  startTopic,
   putNote,
   removeView,
   resolveItem,
@@ -37,8 +39,11 @@ import { initialOfficeState, officeReducer } from "./state.ts";
 /** Commands the operator gives. Each applies the daemon's answer at once; the stream confirms it. */
 export interface OfficeCommands {
   send(conversationId: string, text: string): Promise<void>;
-  /** Opens the operator's chat with a staff member and returns it. */
+  /** Opens the operator's general chat with a staff member and returns it. */
   openChat(agentId: string): Promise<Conversation>;
+  /** Starts a chat on a topic with a staff member and returns it. */
+  startTopic(agentId: string, title?: string): Promise<Conversation>;
+  renameTopic(conversationId: string, title: string): Promise<void>;
   updateAgent(agentId: string, changes: UpdateAgentRequest): Promise<void>;
   setWeb(agentId: string, web: WebGrant | null): Promise<void>;
   /** Loads the models Codex offers into `models`. */
@@ -107,6 +112,15 @@ export function useOffice() {
         const { conversation } = await openChat(agentId);
         apply({ type: "conversation", conversation });
         return conversation;
+      },
+      startTopic: async (agentId, title) => {
+        const { conversation } = await startTopic(agentId, title);
+        apply({ type: "conversation", conversation });
+        return conversation;
+      },
+      renameTopic: async (conversationId, title) => {
+        const { conversation } = await renameTopic(conversationId, title);
+        apply({ type: "conversation", conversation });
       },
       updateAgent: async (agentId, changes) => apply({ type: "agent", agent: await updateAgent(agentId, changes) }),
       setWeb: async (agentId, web) => apply({ type: "agent", agent: await setWebGrant(agentId, web) }),

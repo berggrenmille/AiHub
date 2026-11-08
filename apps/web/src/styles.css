@@ -269,11 +269,17 @@ a {
 
 .app {
   display: flex;
-  flex-direction: column;
   height: 100vh;
-  /* The floor scales to fit and the HUD shrinks to icons, so narrow windows work too. */
+  /* The floor scales to fit and the rail shrinks to icons, so narrow windows work too. */
   min-width: 640px;
   overflow: hidden;
+}
+
+.app-column {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .stage {
@@ -616,24 +622,27 @@ textarea {
   flex: none;
 }
 
-/* HUD */
+/* Rail: the office's navigation down the left edge (pages, then panels, then settings) */
 
-.hud {
+.rail {
   position: relative;
-  z-index: 30;
+  z-index: 35;
+  flex: none;
+  width: 188px;
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 8px 14px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 8px;
   background: var(--glass-bg);
   backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
 }
 
-.hud-brand {
+.rail-brand {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 2px 8px 12px;
   font-weight: 800;
   font-size: 16px;
 }
@@ -641,45 +650,176 @@ textarea {
 .logo {
   width: 28px;
   height: 28px;
+  flex: none;
 }
 
-.hud-tabs {
-  display: flex;
+.rail-group {
+  display: grid;
   gap: 2px;
-  padding: 3px;
-  border-radius: 12px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.hud-tab {
-  display: inline-flex;
+.rail-bottom {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.rail-item {
+  display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border-radius: 9px;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 10px;
   border: none;
   background: transparent;
   color: var(--muted);
   font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  list-style: none;
   transition: background 0.15s, color 0.15s;
 }
 
-.hud-tab:hover {
+.rail-item::-webkit-details-marker {
+  display: none;
+}
+
+.rail-item:hover {
+  background: var(--surface-2);
   color: var(--text);
 }
 
-.hud-tab[aria-current="page"] {
-  background: var(--surface);
+.rail-item[aria-current="page"] {
+  background: var(--accent-soft);
   color: var(--text);
-  box-shadow: var(--shadow-sm);
 }
 
-.hud-stats {
+.rail-item[aria-current="page"] .icon,
+.rail-item[aria-pressed="true"] .icon {
+  color: var(--accent);
+}
+
+.rail-item[aria-pressed="true"] {
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.rail-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-item .count-badge {
+  margin-left: auto;
+}
+
+.rail-settings[open] > .rail-item {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.popover-panel.rail-popover {
+  top: auto;
+  right: auto;
+  bottom: 0;
+  left: calc(100% + 10px);
+  width: 220px;
+}
+
+.theme-choice {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.theme-choice legend {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.theme-choice label {
   display: flex;
   align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.count-badge.tone-accent {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* Top bar: the office's numbers on the Office page, then energy, health, the time, and the chat */
+
+.topbar {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 14px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar-context {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.topbar-stats {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.topbar-stats > span {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
-  margin-left: auto;
+}
+
+.topbar-stats .icon {
+  color: var(--accent);
+}
+
+.topbar-stats .hot .icon {
+  color: #ff8a3d;
+}
+
+.topbar-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.health-list > li + li {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
 }
 
 .hud-stat {
@@ -738,12 +878,6 @@ textarea {
 
 .energy-low .icon {
   color: var(--urgent);
-}
-
-.hud-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .hud-chip {
@@ -846,12 +980,6 @@ summary.hud-chip::-webkit-details-marker {
   color: #b9c6ff;
 }
 
-.hud-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
 .chat-button {
   display: inline-flex;
   align-items: center;
@@ -875,12 +1003,13 @@ summary.hud-chip::-webkit-details-marker {
   animation: pop 0.4s ease-out;
 }
 
-@media (max-width: 1320px) {
-  /* Icons alone on narrower screens; the labels stay for screen readers. */
-  .hud-tab > span:not(.count-badge),
-  .chat-button > span:not(.count-badge),
-  .hud-button > span:not(.count-badge),
-  .hud-name {
+@media (max-width: 1280px) {
+  /* Icons alone on narrower screens; the labels stay for screen readers and tooltips. */
+  .rail {
+    width: 58px;
+    padding-inline: 7px;
+  }
+  .rail-label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -888,30 +1017,41 @@ summary.hud-chip::-webkit-details-marker {
     clip-path: inset(50%);
     white-space: nowrap;
   }
-  .hud {
-    gap: 8px;
+  .rail-brand {
+    justify-content: center;
+    padding-inline: 0;
   }
-  .energy-bar {
-    width: 56px;
+  .rail-item {
+    position: relative;
+    justify-content: center;
+    padding: 9px 0;
+  }
+  .rail-item .count-badge {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    font-size: 10.5px;
   }
 }
 
 @media (max-width: 980px) {
-  /* Narrow windows keep the numbers, the status dots and icons, and every action on screen.
-     The chips' words stay in the accessibility tree and in their tooltips. */
+  /* Narrow windows keep the numbers, the status dot and every action on screen. */
   .energy-bar,
   .hud-stat .muted,
-  .hud-clock {
+  .hud-clock,
+  .topbar-stats > span:last-child {
     display: none;
   }
-  .hud-status .hud-chip {
-    font-size: 0;
-    gap: 0;
-    padding-inline: 8px;
-  }
-  .hud {
-    gap: 6px;
-    padding-inline: 10px;
+  .chat-button > span:not(.count-badge) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 
@@ -1942,6 +2082,191 @@ summary.hud-chip::-webkit-details-marker {
 
 .chat-closed .icon {
   margin-top: 2px;
+}
+
+/* Topics: a staff member's chats, switched in the drawer and listed on the Chats page */
+
+.chat-topics {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 6px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chat-topics select {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  font-size: 13px;
+}
+
+.chat-column {
+  width: 100%;
+  max-width: 820px;
+  margin: 0 auto;
+}
+
+.chats-view {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr);
+}
+
+.chats-list {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 10px 18px;
+  border-right: 1px solid var(--border);
+  background: var(--glass-bg);
+}
+
+.chats-heading {
+  margin: 0 6px 12px;
+  font-size: 18px;
+}
+
+.chats-people,
+.chats-topics {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chats-people {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+.chats-person-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px 4px 6px;
+}
+
+.chats-person-name {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  line-height: 1.25;
+}
+
+.chats-person-name .agent-role {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chats-topics {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  padding-left: 36px;
+}
+
+.chats-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13.5px;
+  text-align: left;
+}
+
+.chats-link:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.chats-link[aria-current="page"] {
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.chats-link-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chats-departed {
+  margin: 18px 6px 8px;
+}
+
+.chats-open {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.chat-page {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-top: 3px solid var(--chat-accent, var(--accent));
+}
+
+.chat-page .drawer-body {
+  padding: 18px 24px;
+}
+
+.chat-page .composer {
+  width: 100%;
+  max-width: 868px;
+  margin: 0 auto;
+  border-top: none;
+  padding: 12px 24px 16px;
+}
+
+.chat-page .chat-scope {
+  text-align: center;
+}
+
+.topic-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.topic-title > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topic-rename {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.topic-rename input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.topic-rename .form-error {
+  flex-basis: 100%;
 }
 
 /* Proposal card */
@@ -3360,13 +3685,23 @@ button.wikilink:hover {
 
 .toasts {
   position: fixed;
+  top: 62px;
   right: 18px;
-  bottom: 52px;
   display: grid;
   gap: 8px;
   z-index: 50;
-  width: min(360px, 90vw);
+  width: min(340px, 90vw);
   pointer-events: none;
+}
+
+.with-drawer .toasts {
+  right: calc(min(450px, 92vw) + 18px);
+}
+
+.toast-more {
+  grid-template-columns: 1fr auto;
+  padding-left: 14px;
+  color: var(--muted);
 }
 
 .toast {

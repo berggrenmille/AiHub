@@ -42,6 +42,14 @@ A single request can establish multiple roles:
 
 The Chief of Staff proposes new roles or reuses existing ones, identifies the required connections, and drafts the briefing routine. The operator approves the setup from one card. Missing access leaves the relevant responsibility waiting for connection. AiHub resumes eligible work after verifying the connection.
 
+### Layout and notifications
+
+A rail down the left edge holds the pages (the office, the Inbox, Chats, Notes, and Dashboards), the Assignments panel, Access, Policy, and settings, each with a count of what waits there. A slim top bar shows the office's numbers on the office page, the day's energy, one health chip for Codex, the page's connection, and the sources, the time, and the chat button. The roster shows only on the office page.
+
+A chat opens in a drawer beside any page, or full screen on the Chats page, which lists every staff member's general chat and topics with their unread counts. A topic is named by the operator's first message and can be renamed. Topics share what the staff member knows through records and notes, not what was said in another chat. A card raised in a chat with the Chief of Staff stays in that chat, with its answer beside it; other cards go to the Chief of Staff's general chat.
+
+Toasts show only what needs the operator or went wrong: a failed or blocked run, a proposal, a proposed policy or service, a problem the health check found, and the morning briefing. A card doesn't toast while the chat it is in is on screen. Toasts sit under the top bar, clear of the chat, at most two at a time, and a burst folds into one line that opens the activity log. The ticker and the log carry everything else.
+
 ### Views
 
 Staff answer with interface where it reads better than text: a chart, a table, a few key numbers, a list, a timeline, or tabs. A view is a short program in [OpenUI Lang](https://github.com/thesysdev/open-intelligent-ui) that uses only AiHub's own components, defined once in `packages/views` for the daemon's check and the web app's renderers. A staff member reads the guide and hands a view in through gateway tools. So any runtime can write one, and none can change what a view may do. AiHub uses the OpenUI language and renderer packages, not Thesys's hosted service, so nothing beyond the model service sees the data.
@@ -114,7 +122,7 @@ flowchart LR
 | Cursor | The last position a responsibility has checked on a connection, so collectors fetch only what changed. |
 | Proposal | A change that needs operator approval: a new supervisor, responsibility, routine, access request, or reader, or a change to a supervisor from the staff review. |
 | Action | A step outside AiHub's own records, such as a draft to create, a listing to publish, or a purchase. It has an autonomy level, a target connection, a cost if any, evidence, and a status (proposed, approved, done, failed, or declined). |
-| Conversation | A chat between the operator and one staff member, or a meeting with several. It keeps the transcript and links to the decisions and assignments it produced. |
+| Conversation | A chat between the operator and one staff member, or a meeting with several. Each staff member has a general chat, and the operator can start topics: chats of their own, each with a name and its own model thread. It keeps the transcript and links to the decisions and assignments it produced. |
 | Connection | An authenticated account or an identified local resource, such as a mailbox or a project folder. |
 | Grant | The agents, operations, scope, and limits, such as a daily spending cap, allowed for a specific connection. |
 | Note | A markdown file in the notes vault, written by a staff member, the operator, or AiHub, and linked to other notes with `[[wikilinks]]`. |

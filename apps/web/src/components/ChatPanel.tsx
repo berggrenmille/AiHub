@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import type { Agent, ChatMessage, Conversation, Item, ModelOption, PolicyVersion, Proposal, Run, Service, SourcePreview, StaffChange, StaffReader, View } from "@aihub/shared";
 import { errorText } from "../api.ts";
 import { lookFor } from "../lib/avatar.ts";
+import { chatName } from "../lib/chat.ts";
 import { formatClock, formatDateTime, formatLongDate, STATE_LABELS, toneOf } from "../format.ts";
 import type { StreamingReply } from "../state.ts";
 import { Icon } from "./Icon.tsx";
@@ -28,11 +29,17 @@ export interface ServiceCardActions {
   refresh(serviceId: string): Promise<void>;
 }
 
-interface ChatDrawerProps {
+interface ChatPanelProps {
+  /** Beside the office in a drawer, or full screen on the Chats page. */
+  variant: "drawer" | "page";
   agent: Agent;
   /** False once the staff member has left the office: the history stays, and the chat is closed. */
   present: boolean;
   conversation: Conversation;
+  /** This staff member's chats, the general one first, for switching between topics in the drawer. */
+  chats: Conversation[];
+  /** Unread staff messages by chat. */
+  unread: ReadonlyMap<string, number>;
   messages: ChatMessage[];
   runs: Record<string, Run>;
   streaming: StreamingReply[];
@@ -46,9 +53,12 @@ interface ChatDrawerProps {
   serviceActions: ServiceCardActions;
   /** What the staff member answers from, for anyone but the Chief of Staff. */
   scope: string | null;
-  /** The way back to the Chief of Staff's chat, while someone else's is open. */
+  /** The way back to the Chief of Staff's chat, while someone else's is open in the drawer. */
   back: { name: string; unread: number } | null;
   onBack(): void;
+  onSelectChat(conversationId: string): void;
+  onNewTopic(): Promise<void>;
+  onRename(title: string): Promise<void>;
   onSend(text: string): Promise<void>;
   onPreview(proposalId: string, sourcePath: string): Promise<SourcePreview>;
   onApprove(proposalId: string, sourcePath: string | undefined, unsafe: string[]): Promise<void>;
@@ -57,6 +67,8 @@ interface ChatDrawerProps {
   onDeclinePolicy(policyId: number): Promise<void>;
   onApproveStaffChange(changeId: number, unsafe: string[]): Promise<void>;
   onDeclineStaffChange(changeId: number): Promise<void>;
+  /** Opens this chat full screen. Drawer only. */
+  onExpand(): void;
   onClose(): void;
   onOpenProfile(): void;
   resolveLink(target: string): WikilinkTarget;
@@ -73,8 +85,8 @@ interface ChatDrawerProps {
   onPrefilled(): void;
 }
 
-export function ChatDrawer(props: ChatDrawerProps) {
-  const { agent, present, conversation, messages, runs, streaming, onSend, back } = props;
+export function ChatPanel(props: ChatPanelProps) {
+  const { variant, agent, present, conversation, messages, runs, streaming, onSend, back } = props;
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -164,14 +176,30 @@ export function ChatDrawer(props: ChatDrawerProps) {
     }
   };
 
+  const newTopic = () => {
+    setError(null);
+    props.onNewTopic().catch((failure: unknown) => setError(`Couldn't start a topic: ${errorText(failure)}`));
+  };
+
   const inputId = `chat-input-${conversation.id}`;
   const hintId = `chat-hint-${conversation.id}`;
+  const page = variant === "page";
   // The chief's chat is titled after the role, which the subtitle already says.
-  const subtitle = [agent.title, conversation.title].filter((part, index, parts) => part && part !== agent.name && parts.indexOf(part) === index).join(" · ");
+  const subtitle = [agent.title, conversation.topic ? null : conversation.title].filter((part, index, parts) => part && part !== agent.name && parts.indexOf(part) === index).join(" · ");
+  const Root = page ? "section" : "aside";
+  const empty = conversation.topic
+    ? `A new topic with ${agent.name}, in a thread of its own. What you say first names it.`
+    : present
+      ? `No messages yet. Ask ${agent.name} anything.`
+      : `You and ${agent.name} never talked.`;
 
   return (
-    <aside className={`drawer chat-drawer${back ? " chat-elsewhere" : ""}`} aria-label={`Chat with ${agent.name}`} style={{ "--chat-accent": look.accent } as CSSProperties}>
-      {back && (
+    <Root
+      className={`${page ? "chat-page" : "drawer chat-drawer"}${back && !page ? " chat-elsewhere" : ""}`}
+      aria-label={`Chat with ${agent.name}${conversation.topic ? `: ${conversation.title}` : ""}`}
+      style={{ "--chat-accent": look.accent } as CSSProperties}
+    >
+      {back && !page && (
         <button type="button" className="chat-back" onClick={props.onBack}>
           <Icon name="back" size={16} />
           <span>Back to {back.name}'s chat</span>
@@ -193,63 +221,106 @@ export function ChatDrawer(props: ChatDrawerProps) {
             <Portrait look={look} size={40} animated={false} label={agent.name} />
           </span>
         )}
-        <div className="drawer-title">
-          <p className="eyebrow">Your chat with</p>
-          <h2>{agent.name}</h2>
-          {subtitle && <p className="muted small">{subtitle}</p>}
-        </div>
+        {page ? (
+          <PageTitle agent={agent} conversation={conversation} onRename={props.onRename} />
+        ) : (
+          <div className="drawer-title">
+            <p className="eyebrow">Your chat with</p>
+            <h2>{agent.name}</h2>
+            {subtitle && <p className="muted small">{subtitle}</p>}
+          </div>
+        )}
         {present ? <StateBadge state={agent.state} /> : <span className="pill">Left the office</span>}
-        <button type="button" className="icon-button" onClick={props.onClose} title="Close the chat">
-          <Icon name="close" />
-          <span className="visually-hidden">Close the chat</span>
-        </button>
+        {page
+          ? present && (
+              <button type="button" className="hud-button" onClick={newTopic} title={`Start a topic with ${agent.name}, in a thread of its own`}>
+                <Icon name="plus" size={16} />
+                <span>New topic</span>
+              </button>
+            )
+          : (
+              <>
+                <button type="button" className="icon-button" onClick={props.onExpand} title="Open full screen">
+                  <Icon name="expand" />
+                  <span className="visually-hidden">Open full screen</span>
+                </button>
+                <button type="button" className="icon-button" onClick={props.onClose} title="Close the chat">
+                  <Icon name="close" />
+                  <span className="visually-hidden">Close the chat</span>
+                </button>
+              </>
+            )}
       </header>
+      {!page && (props.chats.length > 1 || present) && (
+        <div className="chat-topics">
+          <label className="visually-hidden" htmlFor={`chat-topic-${conversation.id}`}>
+            Topic
+          </label>
+          <select id={`chat-topic-${conversation.id}`} value={conversation.id} onChange={(event) => props.onSelectChat(event.target.value)}>
+            {props.chats.map((chat) => {
+              const unread = props.unread.get(chat.id) ?? 0;
+              return (
+                <option key={chat.id} value={chat.id}>
+                  {chatName(chat)}
+                  {unread > 0 ? ` (${unread} unread)` : ""}
+                </option>
+              );
+            })}
+          </select>
+          {present && (
+            <button type="button" className="icon-button" onClick={newTopic} title={`Start a topic with ${agent.name}, in a thread of its own`}>
+              <Icon name="plus" size={16} />
+              <span className="visually-hidden">New topic</span>
+            </button>
+          )}
+        </div>
+      )}
       {props.scope && present && <p className="chat-scope">{props.scope}</p>}
 
       <div className="drawer-body chat-scroll" ref={scrollRef} onScroll={onScroll}>
-        {messages.length === 0 && streaming.length === 0 && (
-          <p className="empty">{present ? `No messages yet. Ask ${agent.name} anything.` : `You and ${agent.name} never talked.`}</p>
-        )}
-        <ol className="messages" aria-label={`Messages with ${agent.name}`}>
-          {messages.map((message) => (
-            <MessageView
-              key={message.id}
-              message={message}
-              agentName={agent.name}
-              run={message.runId ? runs[message.runId] : undefined}
-              proposal={message.kind === "proposal" ? props.proposals.find((proposal) => proposal.id === message.refId) : undefined}
-              policy={message.kind === "policy" ? props.policies.find((policy) => String(policy.id) === message.refId) : undefined}
-              policies={props.policies}
-              staffChange={message.kind === "staff_change" ? props.staffChanges.find((change) => String(change.id) === message.refId) : undefined}
-              models={props.models}
-              readers={props.readers}
-              services={props.services}
-              serviceActions={props.serviceActions}
-              onPreview={props.onPreview}
-              onApprove={props.onApprove}
-              onDecline={props.onDecline}
-              onApprovePolicy={props.onApprovePolicy}
-              onDeclinePolicy={props.onDeclinePolicy}
-              onApproveStaffChange={props.onApproveStaffChange}
-              onDeclineStaffChange={props.onDeclineStaffChange}
-              resolveLink={props.resolveLink}
-              onOpenLink={props.onOpenLink}
-              views={props.views.get(message.id) ?? NO_VIEWS}
-              renderView={renderView}
-              nameOf={nameOf}
-            />
-          ))}
-        </ol>
-        <div className="messages streaming" aria-live="polite">
-          {streaming.map((reply) => (
-            <div key={reply.runId} className="message message-agent">
-              <span className="visually-hidden">{agent.name} is replying: </span>
-              <p className="bubble">
-                {reply.text}
-                <span className="caret" aria-hidden="true" />
-              </p>
-            </div>
-          ))}
+        <div className="chat-column">
+          {messages.length === 0 && streaming.length === 0 && <p className="empty">{empty}</p>}
+          <ol className="messages" aria-label={`Messages with ${agent.name}`}>
+            {messages.map((message) => (
+              <MessageView
+                key={message.id}
+                message={message}
+                agentName={agent.name}
+                run={message.runId ? runs[message.runId] : undefined}
+                proposal={message.kind === "proposal" ? props.proposals.find((proposal) => proposal.id === message.refId) : undefined}
+                policy={message.kind === "policy" ? props.policies.find((policy) => String(policy.id) === message.refId) : undefined}
+                policies={props.policies}
+                staffChange={message.kind === "staff_change" ? props.staffChanges.find((change) => String(change.id) === message.refId) : undefined}
+                models={props.models}
+                readers={props.readers}
+                services={props.services}
+                serviceActions={props.serviceActions}
+                onPreview={props.onPreview}
+                onApprove={props.onApprove}
+                onDecline={props.onDecline}
+                onApprovePolicy={props.onApprovePolicy}
+                onDeclinePolicy={props.onDeclinePolicy}
+                onApproveStaffChange={props.onApproveStaffChange}
+                onDeclineStaffChange={props.onDeclineStaffChange}
+                resolveLink={props.resolveLink}
+                onOpenLink={props.onOpenLink}
+                views={props.views.get(message.id) ?? NO_VIEWS}
+                renderView={renderView}
+                nameOf={nameOf}
+              />
+            ))}
+          </ol>
+          <div className="messages streaming" aria-live="polite">
+            {streaming.map((reply) => (
+              <div key={reply.runId} className="message message-agent">
+                <span className="visually-hidden">{agent.name} is replying: </span>
+                <p className="bubble">
+                  {reply.text}
+                  <span className="caret" aria-hidden="true" />
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -290,7 +361,82 @@ export function ChatDrawer(props: ChatDrawerProps) {
           </span>
         </p>
       )}
-    </aside>
+    </Root>
+  );
+}
+
+/** The full-screen chat's heading: whose chat and which topic, with a topic renamed in place. */
+function PageTitle({ agent, conversation, onRename }: { agent: Agent; conversation: Conversation; onRename(title: string): Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(conversation.title);
+  const [error, setError] = useState<string | null>(null);
+  const save = (event: FormEvent) => {
+    event.preventDefault();
+    const title = name.trim();
+    if (!title) return setError("A topic needs a name.");
+    if (title === conversation.title) return setEditing(false);
+    onRename(title).then(
+      () => setEditing(false),
+      (failure: unknown) => setError(`Couldn't rename it: ${errorText(failure)}`),
+    );
+  };
+  return (
+    <div className="drawer-title">
+      <p className="eyebrow">
+        {agent.name}
+        {agent.title ? ` · ${agent.title}` : ""}
+      </p>
+      {editing ? (
+        <form className="topic-rename" onSubmit={save}>
+          <label className="visually-hidden" htmlFor={`rename-${conversation.id}`}>
+            Topic name
+          </label>
+          <input
+            id={`rename-${conversation.id}`}
+            value={name}
+            maxLength={60}
+            autoFocus
+            onChange={(event) => {
+              setName(event.target.value);
+              setError(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setEditing(false);
+              }
+            }}
+          />
+          <button type="submit" className="icon-button" title="Save the name">
+            <Icon name="check" size={16} />
+            <span className="visually-hidden">Save the name</span>
+          </button>
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+        </form>
+      ) : (
+        <h2 className="topic-title">
+          <span>{chatName(conversation)}</span>
+          {conversation.topic && (
+            <button
+              type="button"
+              className="icon-button small"
+              onClick={() => {
+                setName(conversation.title);
+                setEditing(true);
+              }}
+              title="Rename the topic"
+            >
+              <Icon name="edit" size={14} />
+              <span className="visually-hidden">Rename the topic</span>
+            </button>
+          )}
+        </h2>
+      )}
+    </div>
   );
 }
 

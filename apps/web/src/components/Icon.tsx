@@ -35,7 +35,11 @@ export type IconName =
   | "hourglass"
   | "dashboard"
   | "refresh"
-  | "trash";
+  | "trash"
+  | "chats"
+  | "plus"
+  | "expand"
+  | "settings";
 
 const PATHS: Record<IconName, string> = {
   office: "M3 21V8l9-5 9 5v13M3 21h18M9 21v-6h6v6M7 10h2M15 10h2",
@@ -73,6 +77,10 @@ const PATHS: Record<IconName, string> = {
   dashboard: "M4 4h7v9H4zM13 4h7v5h-7zM13 11h7v9h-7zM4 15h7v5H4z",
   refresh: "M20 11a8 8 0 0 0-14.6-4.5M4 4v4h4M4 13a8 8 0 0 0 14.6 4.5M20 20v-4h-4",
   trash: "M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3",
+  chats: "M3 4h12v9H8l-5 4zM18 8h3v12l-4-3h-6v-2",
+  plus: "M12 5v14M5 12h14",
+  expand: "M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7",
+  settings: "M4 6h9M17 6h3M15 4v4M4 12h3M11 12h9M9 10v4M4 18h11M19 18h1M17 16v4",
 };
 
 export function Icon({ name, size = 18, className }: { name: IconName; size?: number; className?: string }) {

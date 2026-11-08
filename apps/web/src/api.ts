@@ -140,9 +140,18 @@ export function putNote(path: string, body: WriteNoteRequest): Promise<NoteSumma
   return request<NoteSummary>(noteUrl(path), json("PUT", body));
 }
 
-/** Opens the operator's chat with a staff member, or finds the one already open. */
+/** Opens the operator's general chat with a staff member, or finds the one already open. */
 export function openChat(agentId: string): Promise<OpenChatResponse> {
   return request<OpenChatResponse>(`/api/agents/${encodeURIComponent(agentId)}/chat`, json("POST", {}));
+}
+
+/** Starts a chat on a topic with a staff member. Without a title, the first message names it. */
+export function startTopic(agentId: string, title?: string): Promise<OpenChatResponse> {
+  return request<OpenChatResponse>(`/api/agents/${encodeURIComponent(agentId)}/topics`, json("POST", title ? { title } : {}));
+}
+
+export function renameTopic(conversationId: string, title: string): Promise<OpenChatResponse> {
+  return request<OpenChatResponse>(`/api/conversations/${encodeURIComponent(conversationId)}`, json("PATCH", { title }));
 }
 
 /** What a proposed source would read at a path. Nothing is created; a 400 says why it can't be read. */

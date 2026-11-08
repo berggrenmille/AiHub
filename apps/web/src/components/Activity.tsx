@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import type { ActivityEntry, ActivityKind } from "@aihub/shared";
+import type { ActivityEntry } from "@aihub/shared";
 import { activityLine, activityTone, formatDateTime, formatFeedTime } from "../format.ts";
+import { MAX_TOASTS, toastWorthy, type ToastContext } from "../lib/toasts.ts";
 import { Icon } from "./Icon.tsx";
 
-// Activity as a ticker along the bottom, toasts for what matters, and the full log on demand.
+// Activity as a ticker along the bottom, toasts for what needs the operator, and the full log on demand.
 
 interface TickerProps {
   entries: ActivityEntry[];
@@ -78,31 +79,19 @@ export function ActivityLog({ entries, agentName, onClose }: { entries: Activity
   );
 }
 
-/** Kinds worth a toast: outcomes and things that need the operator. */
-const TOAST_KINDS: ReadonlySet<ActivityKind> = new Set([
-  "run_finished",
-  "run_failed",
-  "proposal",
-  "approved",
-  "declined",
-  "item",
-  "briefing",
-  "health",
-  "blocked",
-  "tool_refused",
-  "responsibility_ended",
-  // Questions asked, tasks delivered or failed, and workers joining or leaving a team.
-  "assignment",
-  "worker",
-]);
-
 const TOAST_MS = 6000;
-const MAX_TOASTS = 3;
 
-/** Shows a toast for each new activity entry that matters. Entries already there on load don't count. */
-export function Toasts({ entries, loaded, agentName }: { entries: ActivityEntry[]; loaded: boolean; agentName(agentId: string | null): string }) {
+/**
+ * Shows a toast for each new activity entry that needs the operator or went wrong (lib/toasts.ts).
+ * Entries already there on load don't count. A burst shows the newest and folds the rest into a line
+ * that opens the log.
+ */
+export function Toasts({ entries, loaded, agentName, context, onOpenLog }: { entries: ActivityEntry[]; loaded: boolean; agentName(agentId: string | null): string; context: ToastContext; onOpenLog(): void }) {
   const seen = useRef<number | null>(null);
   const [toasts, setToasts] = useState<ActivityEntry[]>([]);
+  // What is on screen changes often; the filter reads it as of each new entry.
+  const latest = useRef(context);
+  latest.current = context;
 
   useEffect(() => {
     if (!loaded) return;
@@ -111,17 +100,36 @@ export function Toasts({ entries, loaded, agentName }: { entries: ActivityEntry[
       seen.current = newest;
       return;
     }
-    const fresh = entries.filter((entry) => entry.id > seen.current! && TOAST_KINDS.has(entry.kind)).reverse();
+    const fresh = entries.filter((entry) => entry.id > seen.current! && toastWorthy(entry, latest.current)).reverse();
     seen.current = Math.max(seen.current, newest);
     if (fresh.length === 0) return;
-    setToasts((current) => [...current, ...fresh].slice(-MAX_TOASTS));
+    setToasts((current) => [...current, ...fresh]);
     // Not cleared when entries change again: each batch leaves on its own schedule.
     setTimeout(() => setToasts((current) => current.filter((toast) => !fresh.includes(toast))), TOAST_MS);
   }, [entries, loaded]);
 
+  const shown = toasts.length > MAX_TOASTS ? toasts.slice(-(MAX_TOASTS - 1)) : toasts;
+  const folded = toasts.length - shown.length;
   return (
     <div className="toasts" role="status" aria-live="polite">
-      {toasts.map((toast) => {
+      {folded > 0 && (
+        <div className="toast toast-more">
+          <p>
+            {folded} more {folded === 1 ? "update" : "updates"}
+          </p>
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => {
+              setToasts([]);
+              onOpenLog();
+            }}
+          >
+            Open the activity log
+          </button>
+        </div>
+      )}
+      {shown.map((toast) => {
         const line = activityLine(agentName(toast.agentId), toast.summary);
         return (
           <div key={toast.id} className={`toast tone-${activityTone(toast.kind)} kind-${toast.kind}`}>
