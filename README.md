@@ -98,7 +98,7 @@ Each staff member's profile card shows the model and reasoning level they run on
 
 Staff can answer with a chart, a table, a few key numbers, a list, or a timeline where it reads better than text. Ask for one in chat, such as "show me this month's spending as a chart"; it appears under the reply. A supervisor can add one to its section of the morning briefing, though most sections need none. Hover a chart to read its values, use the arrow keys to step through them, or switch it to a table.
 
-Ask the Chief of Staff for a dashboard, such as "make me a dashboard of open items by staff member", and it appears in the Dashboards tab. A dashboard reads the office's records each time it opens, so its numbers are current, and Refresh reads them again. Opening one never changes anything. Ask opens a chat with whoever made it, ready for your question, and Remove deletes it.
+Ask the Chief of Staff or a supervisor for a dashboard in chat, such as "make me a dashboard of open items by staff member", and it appears in the Dashboards tab. A dashboard reads the office's records each time it opens, so its numbers are current, and Refresh reads them again. Opening one never changes anything. Ask opens a chat with whoever made it, ready for your question, and Remove deletes it.
 
 A button in a view says what it does: hover it to read its action, and one that opens a page shows the site. A message for staff goes into the chat box for you to edit or send. In chat and on dashboards, a picture from another site waits for your click on a placeholder that names the site, so an address can't carry anything out of the office by itself.
 
