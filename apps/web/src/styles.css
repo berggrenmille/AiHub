@@ -4980,6 +4980,13 @@ button.wikilink:hover {
   overflow-y: auto;
 }
 
+/* A service's descriptions can hold long links, which would widen the whole chat. */
+.operation-list li,
+.operation-grants li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .operation-grants .pill,
 .unsafe-grants .pill {
   margin-left: 6px;
