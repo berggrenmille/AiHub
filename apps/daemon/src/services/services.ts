@@ -7,6 +7,7 @@ import { checkProposedSource } from "../sources/collect.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "../staff/chief-of-staff.ts";
 import type { ServiceConfig, ServiceRecord, ServiceTool } from "../store/store.ts";
 import {
+  argumentProblems,
   callsOn,
   collectionRisk,
   describeInput,
@@ -449,6 +450,10 @@ export class Services {
     const record = this.find(input.service);
     const grant = record ? store.serviceGrantFor(caller.agentId, record.id, input.operation) : null;
     if (!record || !grant) throw new Error(`You may not call ${input.operation} on ${input.service}. Yours: ${yours}. Only the operator grants more.`);
+    // Arguments that don't fit go back before the service sees them, with what does fit.
+    const schema = record.tools.find((tool) => tool.name === input.operation)?.inputSchema;
+    const problems = argumentProblems(schema, input.arguments);
+    if (problems.length) throw new Error(`The arguments don't fit ${input.operation} on ${record.name}: ${problems.join("; ")}. Its input: ${describeInput(schema)}.`);
     // The briefing runs while the operator is away: it only reads, and only a few times.
     if (store.getRun(caller.runId)?.kind === "report") {
       if (grant.unsafe) throw new Error(`${input.operation} on ${record.name} is an unsafe grant, so it runs only when the operator is there, in chat or a task, never at the briefing.`);

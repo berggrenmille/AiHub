@@ -13,7 +13,7 @@ After the Milestone 6 proof the operator asked for meetings, a bigger chat, a ca
 
 At any point along the way:
 - Unsafe ticks grouped by service and kind: one tick for a service's operations that add or change, another for those that delete or overwrite, read from the operations' own labels. A destructive operation never shares a tick with one that isn't. This changes DESIGN.md's "its own tick" rule.
-- The daemon checks a call's arguments against the operation's input schema before calling the service.
+- Done: the daemon checks a staff member's call against the operation's input schema before calling the service (`argumentProblems` in `services/catalog.ts`). An argument missing, unknown, of the wrong type, or outside its list goes back to the staff member with the operation's input; what a schema leaves open passes, and the service has the last word.
 
 The proof used a ChatGPT app, so what the probe left open about MCP servers is still open: Windows Credential Manager as the store for sign-ins, a real MCP server's sign-in, and how long its refresh token lasts.
 

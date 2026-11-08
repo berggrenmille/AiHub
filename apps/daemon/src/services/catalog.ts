@@ -132,6 +132,87 @@ export function describeInput(schema: unknown): string {
     .join("; ");
 }
 
+type JsonType = "string" | "number" | "integer" | "boolean" | "array" | "object" | "null";
+const JSON_TYPES: readonly string[] = ["string", "number", "integer", "boolean", "array", "object", "null"];
+
+/**
+ * What is wrong with arguments for a tool, checked against its input schema before the call: a
+ * required property missing, one the schema doesn't allow, a value of the wrong type, or one outside
+ * its list. Only what the schema says plainly is checked; anything it leaves open passes, and the
+ * service has the last word. `link_id` is AiHub's to set, so it is never asked for.
+ */
+export function argumentProblems(schema: unknown, args: Record<string, unknown>): string[] {
+  if (typeof schema !== "object" || schema === null) return [];
+  const object = schema as { properties?: Record<string, unknown>; required?: unknown; additionalProperties?: unknown };
+  const properties = typeof object.properties === "object" && object.properties !== null ? object.properties : {};
+  const problems: string[] = [];
+  const required = Array.isArray(object.required) ? object.required.filter((name): name is string => typeof name === "string") : [];
+  for (const name of required) if (name !== "link_id" && args[name] === undefined) problems.push(`${name} is required`);
+  for (const [name, value] of Object.entries(args)) {
+    if (name === "link_id" || value === undefined) continue;
+    const property = properties[name];
+    if (property === undefined) {
+      if (object.additionalProperties === false) problems.push(`${name} isn't one of its arguments`);
+      continue;
+    }
+    const problem = valueProblem(property, value);
+    if (problem) problems.push(`${name} ${problem}`);
+  }
+  return problems;
+}
+
+function valueProblem(property: unknown, value: unknown): string | null {
+  if (typeof property !== "object" || property === null) return null;
+  const { type, enum: allowed } = property as { type?: unknown; enum?: unknown };
+  if (Array.isArray(allowed) && allowed.length && !allowed.some((option) => JSON.stringify(option) === JSON.stringify(value))) {
+    return `must be one of ${allowed.map((option) => JSON.stringify(option)).join(", ")}`;
+  }
+  const types = (Array.isArray(type) ? type : [type]).filter((candidate): candidate is JsonType => typeof candidate === "string" && JSON_TYPES.includes(candidate));
+  if (!types.length || types.some((candidate) => fits(candidate, value))) return null;
+  return `must be ${types.map(typeName).join(" or ")}, not ${kindOf(value)}`;
+}
+
+const TYPE_NAMES: Record<JsonType, string> = {
+  string: "a string",
+  number: "a number",
+  integer: "a whole number",
+  boolean: "true or false",
+  array: "a list",
+  object: "an object",
+  null: "null",
+};
+
+function typeName(type: JsonType): string {
+  return TYPE_NAMES[type];
+}
+
+function fits(type: JsonType, value: unknown): boolean {
+  switch (type) {
+    case "string":
+      return typeof value === "string";
+    case "number":
+      return typeof value === "number" && Number.isFinite(value);
+    case "integer":
+      return typeof value === "number" && Number.isInteger(value);
+    case "boolean":
+      return typeof value === "boolean";
+    case "array":
+      return Array.isArray(value);
+    case "object":
+      return typeof value === "object" && value !== null && !Array.isArray(value);
+    case "null":
+      return value === null;
+  }
+}
+
+function kindOf(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "a list";
+  if (typeof value === "number") return Number.isInteger(value) ? "a whole number" : "a number";
+  if (typeof value === "boolean") return String(value);
+  return typeof value === "object" ? "an object" : `a ${typeof value}`;
+}
+
 /** A tool's declared output, cut short, so the Chief of Staff can write a mapping. */
 export function describeOutput(schema: unknown): string {
   if (!schema) return "not declared";

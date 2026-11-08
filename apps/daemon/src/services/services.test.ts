@@ -206,6 +206,12 @@ describe("Services", () => {
     assert.ok(store.recentActivity(10).some((entry) => entry.kind === "service" && entry.summary === "Unsafe: Ines called send_message on Work mail"));
     assert.notEqual(store.serviceGrantFor(ines.id, service.id, "send_message")?.lastUsedAt, null);
 
+    // Arguments that don't fit the operation go back before the service sees them.
+    const unfit = await tool("aihub_use_service", { service: "Work mail", operation: "send_message", arguments: { to: ["anna@example.test"], subject: "Hi" } }, caller);
+    assert.equal(unfit.ok, false);
+    assert.match(unfit.text, /The arguments don't fit send_message on Work mail: body is required; to must be a string, not a list\. Its input: to \(string, required\); subject/);
+    assert.equal(mail.sent.length, 1);
+
     office.services.revokeGrant(send.id);
     const again = await tool("aihub_use_service", { service: "Work mail", operation: "send_message", arguments: { to: "anna@example.test", subject: "Again", body: "Hi" } }, caller);
     assert.equal(again.ok, false);
