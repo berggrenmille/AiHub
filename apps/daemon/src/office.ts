@@ -240,6 +240,11 @@ export class Office {
     return { blocker, detail: BLOCKED_DETAIL[blocker], resetsAt: usage?.resetsAt ?? null };
   }
 
+  /** Who Codex last said is signed in, or null before it was asked. */
+  get codexStatus(): RuntimeStatus | null {
+    return this.runtimeStatus;
+  }
+
   /** Asks the runtime who is signed in and publishes the answer. */
   async refreshRuntimeStatus(): Promise<RuntimeStatus> {
     return (await this.checkRuntime()).status;

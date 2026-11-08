@@ -40,7 +40,7 @@ npm run codex -- login
 | `npm run measure:briefing` | Runs a simulated four-section briefing against real Codex and reports its turns, tokens, and isolation checks. Uses about 100K input tokens. |
 | `npm run codex -- <args>` | Runs the pinned Codex CLI with AiHub's `CODEX_HOME`. |
 | `npm run codex:protocol` | Regenerates the App Server protocol types after a Codex upgrade. |
-| `npm run windows -- install` | Runs AiHub in the background on Windows: now and at every sign-in, with no window, a Start menu entry, and notifications (`AIHUB_NOTIFICATIONS=off` turns them off). Its log is `data/logs/daemon.log`. `uninstall` removes it all, and `status` says what's installed. |
+| `npm run windows -- install` | Runs AiHub in the background on Windows: now and at every sign-in, with no window, an icon in the notification area, a Start menu entry, and notifications (`AIHUB_NOTIFICATIONS=off` turns them off). Its log is `data/logs/daemon.log`. `uninstall` removes it all, and `status` says what's installed. |
 | `npm run probe:failures` | Shows how AiHub reads a signed-out and an offline Codex, and the plan's usage, without touching the real sign-in. Spends no usage. |
 
 ## The morning briefing
@@ -49,11 +49,15 @@ Ask the Chief of Staff in chat to look after something, such as your work calend
 
 ## In the background
 
-`npm run windows -- install` keeps AiHub running without a window: it starts now and at every Windows sign-in, and its Start menu entry opens the office. Before each health check it sets a Task Scheduler task that wakes the PC from sleep, and it keeps the PC awake until the briefing is done. Wake timers have to be allowed in the power plan; `npm run windows -- status` says whether they are, along with what is installed. Windows notifications tell you when the briefing is ready, with counts but none of its content, and when something needs you first. Clicking one opens the office.
+`npm run windows -- install` keeps AiHub running without a window: it starts now and at every Windows sign-in.
+
+AiHub's icon in the notification area opens the office with a click. Its menu says when the next briefing is and what needs you, such as items in your inbox or a proposal to approve, and a dot on the icon marks what can't wait. The menu also opens the staff notes and quits AiHub. Windows 11 puts a new icon under the ^ arrow at first; drag it onto the taskbar to keep it in sight. The Start menu entry opens the office too, and starts AiHub first if you quit it.
+
+Before each health check it sets a Task Scheduler task that wakes the PC from sleep, and it keeps the PC awake until the briefing is done. Wake timers have to be allowed in the power plan; `npm run windows -- status` says whether they are, along with what is installed. Windows notifications tell you when the briefing is ready, with counts but none of its content, and when something needs you first. Clicking one opens the office.
 
 If Codex is signed out, offline, busy, or out of usage, the briefing waits instead of failing. The chat and a notification say why and when it tries again, and it keeps trying until the end of the day. Anything it didn't report shows up in the next briefing.
 
-`npm run windows -- uninstall` removes the tasks, the Start menu entry, and the notification registration. Your office's data stays in `data/`.
+`npm run windows -- uninstall` stops AiHub and removes the tasks, the Start menu entry, and the notification registration. Your office's data stays in `data/`.
 
 `npm run dev:fake` opens a furnished sample office with the same flow, reading `apps/daemon/test/fixtures/work.ics`.
 

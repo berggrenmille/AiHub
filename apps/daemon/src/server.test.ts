@@ -17,7 +17,7 @@ const TOKEN = "test-token";
 const PAGE = { host: HOST, origin: `http://${HOST}`, cookie: `aihub_token=${TOKEN}` };
 
 /** `port: null` takes the port the server actually binds, for tests that listen. */
-async function server(port: number | null = PORT) {
+async function server(port: number | null = PORT, onQuit?: () => void) {
   const office = new Office({ store: new Store(":memory:"), runtime: new FakeRuntime() });
   office.start();
   const app = await buildServer({
@@ -27,6 +27,7 @@ async function server(port: number | null = PORT) {
     devOrigins: ["http://127.0.0.1:5173"],
     port: port ?? undefined,
     logger: false,
+    onQuit,
   });
   return { office, app };
 }
@@ -67,6 +68,22 @@ describe("HTTP server", () => {
     assert.equal((await health(`localhost:${PORT}`)).statusCode, 200);
     assert.equal((await health("evil.example:7420")).statusCode, 421);
     assert.equal((await health("127.0.0.1:8080")).statusCode, 421);
+  });
+
+  it("lets the background daemon be asked to quit, with the token and from its own origin", async () => {
+    ({ app } = await server());
+    assert.equal((await app.inject({ method: "POST", url: "/api/quit", headers: PAGE })).statusCode, 404, "a daemon in a terminal has no quit");
+    await app.close();
+
+    let quits = 0;
+    ({ app } = await server(PORT, () => quits++));
+    const quit = (headers: Record<string, string>) => app!.inject({ method: "POST", url: "/api/quit", headers });
+    assert.equal((await quit({ host: HOST, origin: `http://${HOST}` })).statusCode, 401);
+    assert.equal((await quit({ ...PAGE, origin: "http://evil.example" })).statusCode, 403);
+    const asked = await quit(PAGE);
+    assert.equal(asked.statusCode, 202);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(quits, 1);
   });
 
   it("requires the install token on every API request", async () => {

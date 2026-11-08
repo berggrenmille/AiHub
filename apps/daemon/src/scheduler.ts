@@ -90,6 +90,11 @@ export class Scheduler {
     this.office.platform.stayAwake(false);
   }
 
+  /** True while a briefing runs. */
+  get busy(): boolean {
+    return this.running !== null;
+  }
+
   /** Waits for the check and the briefing in progress, for tests and shutdown. */
   async idle() {
     await this.ticking;
@@ -339,7 +344,7 @@ function deliveredText(sections: SectionOutcome[] | undefined): string {
 }
 
 /** "09:12" in the routine's timezone. */
-function clock(at: Date, timeZone: string): string {
+export function clock(at: Date, timeZone: string): string {
   const { hour, minute } = localParts(at, timeZone);
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }

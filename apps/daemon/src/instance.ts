@@ -40,6 +40,31 @@ export function askHealth(port: number, token: string | null, timeoutMs = 3_000)
   });
 }
 
+/** Asks this office's background daemon to stop. True when it agreed. */
+export function askToQuit(port: number, token: string, timeoutMs = 3_000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const origin = `http://127.0.0.1:${port}`;
+    const req = request(
+      {
+        host: "127.0.0.1",
+        port,
+        method: "POST",
+        path: "/api/quit",
+        headers: { cookie: `${TOKEN_COOKIE}=${token}`, origin, "content-length": 0 },
+        timeout: timeoutMs,
+        agent: false,
+      },
+      (response) => {
+        response.resume();
+        resolve(response.statusCode === 202);
+      },
+    );
+    req.on("timeout", () => req.destroy(new Error("no answer in time")));
+    req.on("error", () => resolve(false));
+    req.end();
+  });
+}
+
 function readAnswer(status: number, body: string): Answer {
   let json: Record<string, unknown> = {};
   try {

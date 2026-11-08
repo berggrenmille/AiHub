@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { parseArgs, shortcutFile, webBuildNeeded } from "./cli.ts";
+import { parseArgs, webBuildNeeded } from "./cli.ts";
+import { openAction, shortcutPath } from "./names.ts";
 import { parseWakeTimers } from "./power.ts";
 
 describe("npm run windows", () => {
@@ -30,11 +31,20 @@ describe("npm run windows", () => {
     assert.match((parseArgs(["install", "--port", "7421"]) as { error: string }).error, /One command at a time|isn't a setting/);
   });
 
-  it("writes a Start menu entry that opens the office", () => {
-    assert.equal(
-      shortcutFile("http://127.0.0.1:7420/", "C:\\AiHub\\apps\\daemon\\assets\\aihub.ico"),
-      "[InternetShortcut]\r\nURL=http://127.0.0.1:7420/\r\nIconFile=C:\\AiHub\\apps\\daemon\\assets\\aihub.ico\r\nIconIndex=0\r\n",
-    );
+  it("has a Start menu entry that opens the office, starting AiHub with its settings, with no window", () => {
+    const action = openAction({ root: "C:\\My Projects\\AiHub", passOn: ["--port=7421"] }, "C:\\Program Files\\nodejs\\node.exe", "C:\\WINDOWS");
+    assert.equal(action.command, "C:\\WINDOWS\\System32\\conhost.exe");
+    assert.deepEqual(action.args, [
+      "--headless",
+      "C:\\Program Files\\nodejs\\node.exe",
+      "--disable-warning=ExperimentalWarning",
+      "--import",
+      "tsx",
+      "src/windows/open.ts",
+      "--port=7421",
+    ]);
+    assert.equal(action.workingDirectory, "C:\\My Projects\\AiHub\\apps\\daemon");
+    assert.equal(shortcutPath("AiHub", "C:\\Users\\op\\AppData\\Roaming"), "C:\\Users\\op\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\AiHub.lnk");
   });
 
   it("builds the office when it's missing or older than its sources", () => {

@@ -215,6 +215,7 @@ Already in place from earlier milestones: the daemon, not the browser, schedules
 5. **The failure cases, tested.** Restart during a briefing, duplicate triggers (two schedulers on one database), a stale calendar export (older than a week: the health check and the section say so), revoked access (the section says the supervisor can't read its source, with no model turn), a supervisor whose run fails (the briefing still goes out and names the gap, and its changes are reported next time), used-up usage, and an expired sign-in caught by the health check.
 6. **Source data after a briefing.** Once a briefing or another source-data turn enters a chat's thread, every later turn in that thread counts as source data, so a note written from it can't pass as the operator's word. A new thread starts clean.
 7. **The proof.** Below.
+8. **A tray icon**, added after the proof. The background daemon shows an icon in the notification area through a Windows PowerShell helper, like the stay-awake one. A click opens the office; the menu shows the next briefing and what needs the operator, in counts, and opens the notes and quits AiHub. The Start menu entry became a shortcut that starts AiHub through its sign-in task when it isn't running, then opens the office. `npm run windows` asks the daemon to quit before it ends the process, so the icon goes away cleanly.
 
 Not in this milestone: phone notifications and approvals away from the PC (Roadmap phase C), live accounts (Milestone 6), and running without a signed-in Windows session.
 

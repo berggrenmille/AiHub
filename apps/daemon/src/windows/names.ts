@@ -26,9 +26,19 @@ export function windowsNames(name: string): WindowsNames {
   };
 }
 
-/** The Start menu entry that opens the office. */
+/** The Start menu entry that opens the office, and starts AiHub first when it isn't running. */
 export function shortcutPath(name: string, appData = process.env.APPDATA ?? ""): string {
+  return win32.join(appData, "Microsoft", "Windows", "Start Menu", "Programs", `${name}.lnk`);
+}
+
+/** The entry earlier installs made, which only opened the office: install replaces it. */
+export function oldShortcutPath(name: string, appData = process.env.APPDATA ?? ""): string {
   return win32.join(appData, "Microsoft", "Windows", "Start Menu", "Programs", `${name}.url`);
+}
+
+/** AiHub's icon, for the Start menu, notifications, and the tray. */
+export function iconPath(root: string, extension: "png" | "ico"): string {
+  return win32.join(root, "apps", "daemon", "assets", `aihub.${extension}`);
 }
 
 export function systemTool(file: string, systemRoot = process.env.SystemRoot ?? "C:\\Windows"): string {
@@ -47,18 +57,22 @@ export function daemonAction(
   node = process.execPath,
   systemRoot?: string,
 ): TaskAction {
+  return headless(config, ["src/index.ts", "--background", ...config.passOn], node, systemRoot);
+}
+
+/** What the Start menu entry runs, the same way: it opens the office, starting AiHub first if needed. */
+export function openAction(
+  config: Pick<DaemonConfig, "root" | "passOn">,
+  node = process.execPath,
+  systemRoot?: string,
+): TaskAction {
+  return headless(config, ["src/windows/open.ts", ...config.passOn], node, systemRoot);
+}
+
+function headless(config: Pick<DaemonConfig, "root">, script: string[], node: string, systemRoot?: string): TaskAction {
   return {
     command: systemTool("conhost.exe", systemRoot),
-    args: [
-      "--headless",
-      node,
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      "tsx",
-      "src/index.ts",
-      "--background",
-      ...config.passOn,
-    ],
+    args: ["--headless", node, "--disable-warning=ExperimentalWarning", "--import", "tsx", ...script],
     workingDirectory: win32.join(config.root, "apps", "daemon"),
   };
 }

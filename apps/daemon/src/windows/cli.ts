@@ -1,25 +1,27 @@
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { readPid, type DaemonConfig } from "../config.ts";
-import { askHealth, type Answer } from "../instance.ts";
+import { askHealth, askToQuit, type Answer } from "../instance.ts";
 import { existingInstallToken } from "../security.ts";
 import { Store } from "../store/store.ts";
 import { appIdRegistered, registerAppId, removeAppId } from "./app-id.ts";
 import { failure, type Exec } from "./exec.ts";
-import { daemonAction, shortcutPath, systemTool, type WindowsNames } from "./names.ts";
+import { daemonAction, iconPath, oldShortcutPath, openAction, shortcutPath, systemTool, type WindowsNames } from "./names.ts";
 import { wakeTimers, type WakeTimers } from "./power.ts";
 import { powershellArgs, powershellPath } from "./powershell.ts";
+import { writeShortcut } from "./shortcut.ts";
 import { currentUserSid, deleteTask, queryTask, registerTask, runTask, taskElement } from "./tasks.ts";
 import { signInTaskXml } from "./task-xml.ts";
 
 // `npm run windows -- install | uninstall | status` (DESIGN.md › Windows lifecycle): the daemon
-// starts at sign-in with no window, a Start menu entry opens the office, and notifications show as
-// AiHub. Everything is added for the current user only, so none of it needs elevation.
+// starts at sign-in with no window and shows an icon in the notification area, a Start menu entry
+// opens the office, and notifications show as AiHub. Everything is added for the current user only,
+// so none of it needs elevation.
 
 export const USAGE = `Usage: npm run windows -- <command> [settings]
 
-  install     Start AiHub now and whenever you sign in, with a Start menu entry and notifications
+  install     Start AiHub now and whenever you sign in, with a tray icon, a Start menu entry, and notifications
   uninstall   Stop AiHub and remove everything install added. Your office's data stays.
   status      Say what's installed, whether AiHub answers, and when it next wakes the PC
 
@@ -66,15 +68,6 @@ function officeUrl(config: DaemonConfig): string {
   return `http://127.0.0.1:${config.port}/`;
 }
 
-function iconPath(config: DaemonConfig, extension: "png" | "ico"): string {
-  return join(config.root, "apps", "daemon", "assets", `aihub.${extension}`);
-}
-
-/** An internet shortcut: the Start menu lists it like an app, and it opens the office in the browser. */
-export function shortcutFile(url: string, icon: string): string {
-  return ["[InternetShortcut]", `URL=${url}`, `IconFile=${icon}`, "IconIndex=0", ""].join("\r\n");
-}
-
 async function install(context: Context): Promise<number> {
   const { config, names, exec, say } = context;
   if (webBuildNeeded(config.root)) {
@@ -97,15 +90,22 @@ async function install(context: Context): Promise<number> {
   }
   say(`Added the task ${names.signInTask}, which starts AiHub when you sign in.`);
 
-  const appId = await registerAppId(exec, names.appId, names.displayName, iconPath(config, "png"));
+  const appId = await registerAppId(exec, names.appId, names.displayName, iconPath(config.root, "png"));
   say(
     appId.code === 0
       ? `Notifications show as ${names.displayName}.`
       : `Couldn't register notifications (${failure(appId)}), so they show without AiHub's name and icon.`,
   );
 
-  writeFileSync(shortcutPath(names.displayName), shortcutFile(officeUrl(config), iconPath(config, "ico")));
-  say(`Added ${names.displayName} to the Start menu.`);
+  const shortcut = await writeShortcut(
+    exec,
+    shortcutPath(names.displayName),
+    openAction(config),
+    iconPath(config.root, "ico"),
+    "Opens your AiHub office, and starts AiHub first if it isn't running.",
+  );
+  rmSync(oldShortcutPath(names.displayName), { force: true });
+  say(shortcut.code === 0 ? `Added ${names.displayName} to the Start menu.` : `Couldn't add the Start menu entry: ${failure(shortcut)}`);
 
   // A running daemon keeps the code and settings it started with, so start it over.
   if (await stopDaemon(context)) say("Stopped the AiHub that was running, to start the new one.");
@@ -149,9 +149,9 @@ async function uninstall(context: Context): Promise<number> {
   }
   await exec(powershellPath(), powershellArgs(REMOVE_FOLDER_SCRIPT), { env: { ...process.env, AIHUB_TASK_FOLDER: names.displayName } });
 
-  const shortcut = shortcutPath(names.displayName);
-  if (existsSync(shortcut)) {
-    rmSync(shortcut, { force: true });
+  const shortcuts = [shortcutPath(names.displayName), oldShortcutPath(names.displayName)].filter((path) => existsSync(path));
+  if (shortcuts.length) {
+    for (const shortcut of shortcuts) rmSync(shortcut, { force: true });
     say("Removed the Start menu entry.");
     removed++;
   }
@@ -189,7 +189,14 @@ async function status(context: Context): Promise<number> {
     "Notifications",
     off ? "off" : appId ? `on, shown as ${names.displayName}` : signIn ? "on, but without AiHub's name and icon" : "not set up",
   );
-  row("Start menu", existsSync(shortcutPath(names.displayName)) ? names.displayName : "no entry");
+  row(
+    "Start menu",
+    existsSync(shortcutPath(names.displayName))
+      ? names.displayName
+      : existsSync(oldShortcutPath(names.displayName))
+        ? `${names.displayName}, from an earlier install, which can't start AiHub. Install again to update it`
+        : "no entry",
+  );
   row("Log", config.logFile);
   return 0;
 }
@@ -222,23 +229,25 @@ function formatTime(at: Date): string {
   return at.toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
-/** The daemon at this data folder's answer, with its token when there is one. */
-async function health(config: DaemonConfig): Promise<Answer> {
+/** This office's install token, when it has one. */
+function tokenOf(config: DaemonConfig): string | null {
   const db = join(config.dataDir, "aihub.db");
-  let token: string | null = null;
-  if (existsSync(db)) {
-    const store = new Store(db);
-    try {
-      token = existingInstallToken(store);
-    } finally {
-      store.close();
-    }
+  if (!existsSync(db)) return null;
+  const store = new Store(db);
+  try {
+    return existingInstallToken(store);
+  } finally {
+    store.close();
   }
-  return askHealth(config.port, token);
+}
+
+/** The daemon at this data folder's answer, with its token when there is one. */
+export async function health(config: DaemonConfig): Promise<Answer> {
+  return askHealth(config.port, tokenOf(config));
 }
 
 /** Waits until this office's daemon answers, or something else turns out to hold its port. */
-async function waitForOffice(config: DaemonConfig, timeoutMs: number): Promise<Answer> {
+export async function waitForOffice(config: DaemonConfig, timeoutMs: number): Promise<Answer> {
   const deadline = Date.now() + timeoutMs;
   let answer = await health(config);
   while (answer.kind === "none" && Date.now() < deadline) {
@@ -277,8 +286,14 @@ async function stopDaemon(context: Context): Promise<boolean> {
   const { config, names, exec } = context;
   const pid = await backgroundDaemon(context);
   if (pid) {
-    // A hard stop: the daemon has no window to close, and SQLite and the occurrence records are
-    // built to come back from one. /T takes Codex and the stay-awake helper with it.
+    // Asked first, so it takes its tray icon down: an ended process leaves the icon until the mouse
+    // passes over it.
+    const token = tokenOf(config);
+    if (token && (await askToQuit(config.port, token))) for (let wait = 0; wait < 40 && isAlive(pid); wait++) await sleep(250);
+  }
+  if (pid && isAlive(pid)) {
+    // A hard stop, for a daemon that didn't: SQLite and the occurrence records are built to come
+    // back from one. /T takes Codex and the helpers with it.
     await exec(systemTool("taskkill.exe"), ["/PID", String(pid), "/T", "/F"]);
     for (let wait = 0; wait < 40 && isAlive(pid); wait++) await sleep(250);
   }

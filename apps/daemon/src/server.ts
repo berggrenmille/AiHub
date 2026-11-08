@@ -26,6 +26,11 @@ export interface ServerOptions {
   /** Fastify's logger: on, off, or options such as a stream for the background daemon's log file. */
   logger?: FastifyServerOptions["logger"];
   heartbeatMs?: number;
+  /**
+   * Stops the daemon. Given only to the background daemon, so the tray icon's Quit and
+   * `npm run windows` can stop it cleanly instead of ending its process.
+   */
+  onQuit?: () => void;
 }
 
 const ChatBody = z.object({
@@ -85,6 +90,15 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   });
 
   app.get("/api/health", async (): Promise<HealthResponse> => ({ status: "ok", version: options.version, startedAt }));
+
+  const { onQuit } = options;
+  if (onQuit) {
+    app.post("/api/quit", async (_request, reply) => {
+      // Stopping closes this server, so the answer goes out first.
+      setTimeout(onQuit, 100);
+      return reply.code(202).send({ status: "stopping" });
+    });
+  }
 
   app.get("/api/state", async (): Promise<StateSnapshot> => office.snapshot());
 
