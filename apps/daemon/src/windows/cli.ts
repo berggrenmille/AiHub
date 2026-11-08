@@ -3,8 +3,7 @@ import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { readPid, type DaemonConfig } from "../config.ts";
 import { askHealth, askToQuit, type Answer } from "../instance.ts";
-import { existingInstallToken } from "../security.ts";
-import { Store } from "../store/store.ts";
+import { readInstallToken } from "../security.ts";
 import { appIdRegistered, registerAppId, removeAppId } from "./app-id.ts";
 import { failure, type Exec } from "./exec.ts";
 import { daemonAction, iconPath, oldShortcutPath, openAction, shortcutPath, systemTool, type WindowsNames } from "./names.ts";
@@ -232,13 +231,7 @@ function formatTime(at: Date): string {
 /** This office's install token, when it has one. */
 function tokenOf(config: DaemonConfig): string | null {
   const db = join(config.dataDir, "aihub.db");
-  if (!existsSync(db)) return null;
-  const store = new Store(db);
-  try {
-    return existingInstallToken(store);
-  } finally {
-    store.close();
-  }
+  return existsSync(db) ? readInstallToken(db) : null;
 }
 
 /** The daemon at this data folder's answer, with its token when there is one. */

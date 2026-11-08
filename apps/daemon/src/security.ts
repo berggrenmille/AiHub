@@ -1,4 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Store } from "./store/store.ts";
 
@@ -43,9 +44,21 @@ export interface LoopbackGuardOptions {
   token: string;
 }
 
-/** The token the daemon has, without making one: for tools that ask the running daemon. */
-export function existingInstallToken(store: Store): string | null {
-  return store.getSetting(TOKEN_SETTING);
+/**
+ * The install token, read without opening the office: no migrations run, so a newer checkout's
+ * commands never change the database under the daemon that is running.
+ */
+export function readInstallToken(dbPath: string): string | null {
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(TOKEN_SETTING) as { value: string } | undefined;
+    return row?.value ?? null;
+  } catch {
+    // A database without the settings table has no token to give.
+    return null;
+  } finally {
+    db.close();
+  }
 }
 
 /** The per-install token, generated on first start and kept in SQLite. */
