@@ -258,6 +258,82 @@ describe("CodexRuntime", () => {
     await assert.rejects(runtime.startContext({ ...conversation, profile: "workspace" }), /phase B/);
   });
 
+  describe("services", () => {
+    const mail = { kind: "remote_mcp", server: "aihub_mail_1a2b3c", url: "https://mail.example.test/mcp" } as const;
+
+    it("reaches services from a connector process of its own, with apps on, and gives a server only to its own thread", async () => {
+      await runtime.startContext(conversation);
+      const found = await runtime.connectors.inspect(mail);
+      assert.deepEqual([found.signedIn, found.tools, found.error], [false, [], null], "it asks for a sign-in");
+
+      const [chat, service] = requests("thread/start");
+      assert.notEqual(chat!.pid, service!.pid);
+      assert.ok(chat!.argv.join(" ").includes("--disable apps"), "staff processes keep apps off");
+      assert.ok(!service!.argv.join(" ").includes("--disable apps"), "the connector process has apps on");
+      for (const feature of LOCKED_DOWN_FEATURES.filter((feature) => feature !== "apps")) {
+        assert.ok(service!.argv.join(" ").includes(`--disable ${feature}`), `--disable ${feature}`);
+      }
+      assert.deepEqual(chat!.params.config, { web_search: "disabled" });
+      assert.deepEqual(service!.params.config, { web_search: "disabled", mcp_servers: { aihub_mail_1a2b3c: { url: "https://mail.example.test/mcp" } } });
+      assert.equal(service!.params.ephemeral, true);
+      assert.equal(requests("turn/start").length, 0, "no turn runs in the connector process");
+
+      await runtime.connectors.inspect({ kind: "local_mcp", server: "aihub_files_4d5e6f", command: "node", args: ["server.mjs"] });
+      const starts = requests("thread/start");
+      assert.equal(starts.length, 3, "each service gets its own thread");
+      assert.deepEqual(starts[2]!.params.config, { web_search: "disabled", mcp_servers: { aihub_files_4d5e6f: { command: "node", args: ["server.mjs"] } } });
+      await runtime.connectors.inspect(mail);
+      assert.equal(requests("thread/start").length, 3, "and keeps it");
+    });
+
+    it("signs in, waits for Codex to say it finished, then lists the tools with their labels", async () => {
+      const { url, done } = await runtime.connectors.signIn(mail);
+      assert.equal(url, "https://auth.example.test/authorize?server=aihub_mail_1a2b3c");
+      assert.deepEqual(await done, { ok: true, error: null });
+      const [login] = requests("mcpServer/oauth/login");
+      assert.equal(login!.params.name, mail.server);
+      const found = await runtime.connectors.inspect(mail);
+      assert.equal(found.signedIn, true);
+      assert.deepEqual(
+        found.tools.map((tool) => [tool.name, tool.annotations]),
+        [
+          ["list_messages", { readOnlyHint: true, destructiveHint: undefined, openWorldHint: false }],
+          ["send_message", { readOnlyHint: false, destructiveHint: false, openWorldHint: undefined }],
+        ],
+      );
+      assert.deepEqual(found.tools[0]!.outputSchema, { type: "object", properties: { messages: { type: "array" } } });
+      await assert.rejects(() => runtime.connectors.signIn({ kind: "app", appId: "connector_notes" }), /connected at ChatGPT/);
+    });
+
+    it("calls a tool from code and reads its structured answer, with an error result not ok", async () => {
+      assert.deepEqual(await runtime.connectors.call(mail, "list_messages", {}), { ok: false, text: "401 Unauthorized: not logged in", structured: null });
+      await (await runtime.connectors.signIn(mail)).done;
+      const read = await runtime.connectors.call(mail, "list_messages", { limit: 5 });
+      assert.deepEqual(read, { ok: true, text: '{"messages":[{"id":"m-1","subject":"Hello"}]}', structured: { messages: [{ id: "m-1", subject: "Hello" }] } });
+      const [first, second] = requests("mcpServer/tool/call");
+      const { threadId, ...rest } = second!.params;
+      assert.deepEqual(rest, { server: mail.server, tool: "list_messages", arguments: { limit: 5 } });
+      assert.equal(threadId, first!.params.threadId, "every call goes to the service's own thread");
+    });
+
+    it("lists the apps across pages, and an app's own tools and linked accounts from the shared apps server", async () => {
+      assert.deepEqual(await runtime.connectors.apps(), [
+        { id: "connector_notes", name: "Notes", description: "Notes in a made-up app.", connected: true, connectUrl: "https://chatgpt.com/apps/notes" },
+        { id: "connector_drive", name: "Drive", description: null, connected: false, connectUrl: "https://chatgpt.com/apps/drive" },
+      ]);
+      const notes = await runtime.connectors.inspect({ kind: "app", appId: "connector_notes" });
+      assert.deepEqual(notes.tools.map((tool) => tool.name), ["notes_list"], "not the other app's tools");
+      assert.deepEqual(notes.accounts, [
+        { linkId: "link-1", name: "Personal" },
+        { linkId: "link-2", name: "Work" },
+      ]);
+      assert.equal(notes.signedIn, true);
+      const called = await runtime.connectors.call({ kind: "app", appId: "connector_notes" }, "notes_list", { link_id: "link-2" });
+      assert.deepEqual(called.structured, { notes: [{ id: "n-1", title: "Groceries" }], account: "link-2" });
+      assert.equal((await runtime.connectors.call({ kind: "app", appId: "connector_notes" }, "notes_list", {})).ok, false);
+    });
+  });
+
   it("reads the account and usage limits", async () => {
     assert.deepEqual(await runtime.account(), { signedIn: true, detail: "operator@example.com, plan plus" });
     assert.deepEqual(await runtime.usageLimits(), { usedPercent: 12, resetsAt: new Date(1_900_000_000_000), exhausted: false });

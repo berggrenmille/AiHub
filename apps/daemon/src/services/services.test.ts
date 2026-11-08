@@ -199,6 +199,10 @@ describe("Services", () => {
     assert.match((await change([{ service: "Work mail", operation: "delete_everything", why: "No." }])).text, /Work mail has no operation called delete_everything/);
     assert.match((await tool("aihub_propose_staff_change", { supervisor: "Ines", change: "end", operations: [{ service: "Work mail", operation: "send_message", why: "x" }], reason: "x" })).text, /An end change takes no operations\./);
 
+    const review = { agentId: CHIEF_OF_STAFF_ID, runId: store.createRun({ agentId: CHIEF_OF_STAFF_ID, kind: "review", title: "Staff review" }).id, profile: "conversation" as const };
+    const fromReview = await tool("aihub_propose_staff_change", { supervisor: "Ines", change: "operations", operations: [{ service: "Work mail", operation: "send_message", why: "x" }], reason: "x" }, review);
+    assert.match(fromReview.text, /A staff review doesn't add operations/);
+
     const proposed = await change([{ service: "Work mail", operation: "send_message", why: "To send replies you ask for." }]);
     assert.equal(proposed.ok, true, proposed.text);
     const [pending] = store.pendingStaffChanges(ines.id);

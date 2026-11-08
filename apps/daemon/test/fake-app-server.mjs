@@ -123,6 +123,78 @@ async function runTurn(threadId, turnId, input) {
   }
 }
 
+// Services (Milestone 6). With apps on, every thread sees "codex_apps", one server with the tools of
+// every connected app. An MCP server loads only in the thread whose config names it. A server at an
+// address needs a sign-in, which finishes by itself; a local program needs none.
+const appsOn = !process.argv.slice(2).some((arg, index, args) => arg === "--disable" && args[index + 1] === "apps");
+const signedIn = new Set();
+const APPS = [
+  { id: "connector_notes", name: "Notes", description: "Notes in a made-up app.", installUrl: "https://chatgpt.com/apps/notes", isAccessible: true },
+  { id: "connector_drive", name: "Drive", description: null, installUrl: "https://chatgpt.com/apps/drive", isAccessible: false },
+];
+const APP_TOOLS = {
+  notes_list: {
+    name: "notes_list",
+    title: "List notes",
+    description: "The account's latest notes.",
+    inputSchema: { type: "object", properties: { link_id: { type: "string" } }, required: ["link_id"] },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    _meta: { connector_id: "connector_notes", link_accounts: [{ link_id: "link-1", link_name: "Personal" }, { link_id: "link-2", link_name: "Work" }] },
+  },
+  drive_search: { name: "drive_search", inputSchema: { type: "object" }, _meta: { connector_id: "connector_drive" } },
+};
+const MAIL_TOOLS = {
+  list_messages: {
+    name: "list_messages",
+    description: "The latest messages.",
+    inputSchema: { type: "object", properties: { limit: { type: "integer" } } },
+    outputSchema: { type: "object", properties: { messages: { type: "array" } } },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  send_message: { name: "send_message", inputSchema: { type: "object" }, annotations: { readOnlyHint: false, destructiveHint: false } },
+};
+
+function mcpStatus(name, tools, authStatus) {
+  return {
+    name,
+    runtimeStatus: null,
+    pluginId: null,
+    httpOrigin: null,
+    serverInfo: null,
+    serverCapabilities: null,
+    toolListMeta: null,
+    tools,
+    toolsError: null,
+    resources: [],
+    resourceTemplates: [],
+    authStatus,
+  };
+}
+
+function serverStatuses(thread) {
+  const statuses = appsOn ? [mcpStatus("codex_apps", APP_TOOLS, "bearerToken")] : [];
+  for (const [name, config] of Object.entries(thread.servers)) {
+    const auth = "url" in config ? (signedIn.has(name) ? "oAuth" : "notLoggedIn") : "unsupported";
+    statuses.push(mcpStatus(name, auth === "notLoggedIn" ? {} : MAIL_TOOLS, auth));
+  }
+  return statuses;
+}
+
+function callTool(thread, server, tool, args) {
+  const answer = (structuredContent) => ({ content: [{ type: "text", text: JSON.stringify(structuredContent) }], structuredContent });
+  const failure = (text) => ({ content: [{ type: "text", text }], isError: true });
+  if (server === "codex_apps" && appsOn) {
+    if (tool !== "notes_list") return failure(`Unknown tool ${tool}`);
+    if (!args.link_id) return failure("link_id is required for this multi-link tool");
+    return answer({ notes: [{ id: "n-1", title: "Groceries" }], account: args.link_id });
+  }
+  const config = thread.servers[server];
+  if (!config) return null;
+  if ("url" in config && !signedIn.has(server)) return failure("401 Unauthorized: not logged in");
+  if (tool === "list_messages") return answer({ messages: [{ id: "m-1", subject: "Hello" }].slice(0, args.limit ?? 20) });
+  return failure(`Unknown tool ${tool}`);
+}
+
 function handle(message) {
   const { id, method, params } = message;
   log(method, params);
@@ -144,14 +216,14 @@ function handle(message) {
       return send({ id, result: { rateLimits: { primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: 1_900_000_000 }, secondary: null } } });
     case "thread/start": {
       const threadId = randomUUID();
-      threads.set(threadId, { total: usage(0, 0, 0) });
+      threads.set(threadId, { total: usage(0, 0, 0), servers: params.config?.mcp_servers ?? {} });
       if (!params.ephemeral) save(threadId);
       return send({ id, result: { thread: { id: threadId }, model: params.model ?? "gpt-fake", reasoningEffort: null } });
     }
     case "thread/resume": {
       const total = savedThreads[params.threadId];
       if (!total) return send({ id, error: { code: -32600, message: `no rollout found for thread id ${params.threadId}` } });
-      threads.set(params.threadId, { total });
+      threads.set(params.threadId, { total, servers: {} });
       return send({ id, result: { thread: { id: params.threadId } } });
     }
     case "turn/start": {
@@ -181,6 +253,33 @@ function handle(message) {
       });
       if (!params.cursor) return send({ id, result: { data: [model("gpt-fake", true, ["low", "high", "ultra"])], nextCursor: "page-2" } });
       return send({ id, result: { data: [model("gpt-fake-mini", false, ["medium"])], nextCursor: null } });
+    }
+    case "app/list": {
+      // Two pages, so the client has to follow the cursor.
+      if (!appsOn) return send({ id, result: { data: [], nextCursor: null } });
+      return send({ id, result: { data: params.cursor ? [APPS[1]] : [APPS[0]], nextCursor: params.cursor ? null : "apps-2" } });
+    }
+    case "mcpServerStatus/list": {
+      const thread = threads.get(params.threadId);
+      if (!thread) return send({ id, error: { code: -32600, message: `thread not found: ${params.threadId}` } });
+      const data = serverStatuses(thread).filter((status) => !params.serverName || status.name === params.serverName);
+      return send({ id, result: { data, nextCursor: null } });
+    }
+    case "mcpServer/oauth/login": {
+      const thread = threads.get(params.threadId);
+      if (!thread?.servers[params.name]) return send({ id, error: { code: -32600, message: `no MCP server named ${params.name}` } });
+      send({ id, result: { authorizationUrl: `https://auth.example.test/authorize?server=${params.name}` } });
+      // The operator finishes in the browser a moment later.
+      return setTimeout(() => {
+        signedIn.add(params.name);
+        send({ method: "mcpServer/oauthLogin/completed", params: { name: params.name, success: true } });
+      }, 20);
+    }
+    case "mcpServer/tool/call": {
+      const thread = threads.get(params.threadId);
+      const result = thread ? callTool(thread, params.server, params.tool, params.arguments ?? {}) : null;
+      if (!result) return send({ id, error: { code: -32600, message: `no MCP server named ${params.server} in this thread` } });
+      return send({ id, result });
     }
     case "turn/interrupt": {
       send({ id, result: {} });

@@ -43,6 +43,8 @@ export async function proposeStaffChange(office: Office, caller: Caller, input: 
   const { store, bus } = office;
   const { agent, responsibility } = supervisorNamed(office, input.supervisor);
   const inReview = store.getRun(caller.runId)?.kind === "review";
+  // More access comes only from the operator asking for it, never from the numbers.
+  if (inReview && input.change.kind === "operations") throw new Error("A staff review doesn't add operations. The operator asks for those in chat.");
   if (inReview && store.staffChangesOfRun(caller.runId).length >= CHANGES_PER_REVIEW) {
     throw new Error(`A review proposes at most ${CHANGES_PER_REVIEW} changes. Keep the most useful ones.`);
   }
