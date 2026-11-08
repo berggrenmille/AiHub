@@ -51,6 +51,7 @@ const ProfileBody = z
 
 const NoteBody = z.object({ body: z.string().max(20_000) }).strict();
 const WebBody = z.object({ sites: z.array(z.string().max(200)).max(50) }).strict();
+const RoutineBody = z.object({ weekends: z.boolean() }).strict();
 const ApproveBody = z.object({ sourcePath: z.string().max(1_000).optional() }).strict();
 const PreviewBody = z.object({ sourcePath: z.string().max(1_000) }).strict();
 const ReasonBody = z.object({ reason: z.string().max(500).optional() }).strict();
@@ -207,6 +208,17 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   app.post<{ Params: { id: string } }>("/api/responsibilities/:id/end", async (request, reply) => {
     try {
       return office.endResponsibility(request.params.id);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.patch<{ Params: { id: string } }>("/api/routines/:id", async (request, reply) => {
+    const body = bodyOf(RoutineBody, request.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
+    try {
+      if (!office.scheduler) throw new ConflictError("This daemon runs no routines.");
+      return office.scheduler.setWeekends(request.params.id, body.data.weekends);
     } catch (error) {
       return sendError(reply, error);
     }

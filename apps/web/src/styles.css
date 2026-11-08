@@ -3179,6 +3179,10 @@ button.wikilink:hover {
   font-size: 13px;
 }
 
+.routine-weekends {
+  margin-top: 4px;
+}
+
 .graph-legend {
   display: flex;
   flex-wrap: wrap;

@@ -571,6 +571,11 @@ export class Store {
     return (this.db.prepare("SELECT * FROM routines ORDER BY created_at, id").all() as Row[]).map(toRoutine);
   }
 
+  setRoutineTrigger(id: string, trigger: RoutineTrigger): Routine | null {
+    this.db.prepare("UPDATE routines SET trigger = ? WHERE id = ?").run(JSON.stringify(trigger), id);
+    return this.getRoutine(id);
+  }
+
   setRoutinePaused(id: string, paused: boolean): Routine | null {
     this.db.prepare("UPDATE routines SET paused = ? WHERE id = ?").run(paused ? 1 : 0, id);
     return this.getRoutine(id);

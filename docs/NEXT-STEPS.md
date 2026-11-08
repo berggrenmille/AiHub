@@ -301,8 +301,12 @@ Search results come back as input, so a research report takes four to eight time
 
 ### Known gaps
 
-- Briefings run on weekdays, so Monday's research covers the weekend. Nora's responsibility mentions weekends.
+- Briefings ran on weekdays only, though Nora's responsibility mentions weekends. Weekend briefings followed the same day, below.
 - A supervisor with both a source and web search reads only its source at the briefing. Web search is there in its chat and tasks.
 - Workers don't get web search, even when their supervisor has it.
 - The cached index can lag the news. In the probe, the newest stories were from the day before.
 - Live web search isn't offered. If it comes, it is only for staff with no personal data (DESIGN.md).
+
+## Weekend briefings (2026-11-08)
+
+The operator asked for weekend briefings, for Nora's news. The briefing routine's trigger can now be `daily` as well as `weekdays`, switched with Weekends too on the Chief of Staff's profile card (`PATCH /api/routines/:id`). Everything that followed weekdays now follows the routine's days: the health check, the wake timer, the next run the UI and the tray show, and catching up later the same day. Turned on after the day's briefing time on a weekend, that day's briefing is skipped rather than run late. A weekend with a briefing adds to the streak, and one without never breaks it. Tests: `scheduler.test.ts` and `server.test.ts`.

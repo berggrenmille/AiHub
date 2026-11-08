@@ -262,6 +262,7 @@ export function App() {
           onUpdate={(changes) => commands.updateAgent(profile.id, changes)}
           onSetWeb={(web) => commands.setWeb(profile.id, web)}
           onRunRoutine={commands.runRoutine}
+          onSetWeekends={commands.setWeekends}
         />
       )}
     </div>

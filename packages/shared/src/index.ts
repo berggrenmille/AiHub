@@ -220,6 +220,8 @@ export interface SourceConnection {
 export type RoutineTrigger =
   /** Runs on Monday to Friday at a local time, such as "07:00". */
   | { type: "weekdays"; time: string }
+  /** Runs every day, weekends too, at a local time. */
+  | { type: "daily"; time: string }
   /** Runs as a section of the briefing. */
   | { type: "briefing" };
 
@@ -455,6 +457,11 @@ export interface RunRoutineResponse {
 
 /** `PATCH /api/agents/:id`: the operator edits a staff member's profile. */
 export type UpdateAgentRequest = Partial<StaffProfile>;
+
+/** `PATCH /api/routines/:id`: a scheduled routine runs on weekends too, or on weekdays only. */
+export interface UpdateRoutineRequest {
+  weekends: boolean;
+}
 
 /** `PUT /api/notes/<path>`: the operator writes a note. */
 export interface WriteNoteRequest {

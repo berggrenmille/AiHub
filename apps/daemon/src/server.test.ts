@@ -274,6 +274,24 @@ describe("HTTP server: profiles and notes", () => {
     assert.equal(taken.json().web, null);
   });
 
+  it("turns weekend briefings on and off", async () => {
+    let office: Office;
+    ({ app, office } = await server());
+    const routine = office.store.listRoutines()[0]!;
+    const patch = (payload: object) => app!.inject({ method: "PATCH", url: `/api/routines/${routine.id}`, headers: PAGE, payload });
+    // A daemon without a scheduler runs no routines.
+    assert.equal((await patch({ weekends: true })).statusCode, 409);
+
+    // Saturday at 05:00 in Stockholm: today's briefing is next.
+    office.scheduler = new Scheduler(office, { now: () => new Date("2026-11-14T04:00:00.000Z") });
+    const daily = await patch({ weekends: true });
+    assert.equal(daily.statusCode, 200);
+    assert.deepEqual([daily.json().trigger, daily.json().nextRunAt], [{ type: "daily", time: "07:00" }, "2026-11-14T06:00:00.000Z"]);
+    assert.deepEqual((await patch({ weekends: false })).json().trigger, { type: "weekdays", time: "07:00" });
+    assert.equal((await patch({ weekends: "yes" })).statusCode, 400);
+    assert.equal((await app.inject({ method: "PATCH", url: "/api/routines/nope", headers: PAGE, payload: { weekends: true } })).statusCode, 404);
+  });
+
   it("reads and writes notes by their vault path", async () => {
     ({ app } = await server());
     const url = `/api/notes/${encodeURIComponent("Office/Operator preferences.md")}`;

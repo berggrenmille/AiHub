@@ -10,10 +10,12 @@ import type {
   OpenChatResponse,
   Proposal,
   ResolveItemRequest,
+  Routine,
   RunRoutineResponse,
   SourcePreview,
   StateSnapshot,
   UpdateAgentRequest,
+  UpdateRoutineRequest,
   WebGrant,
   WriteNoteRequest,
 } from "@aihub/shared";
@@ -142,6 +144,11 @@ export function dismissItem(itemId: number): Promise<Item> {
 
 export function resolveItem(itemId: number, body: ResolveItemRequest): Promise<Item> {
   return request<Item>(`/api/items/${itemId}/resolve`, json("POST", body));
+}
+
+/** Has a scheduled routine run on weekends too, or on weekdays only. */
+export function updateRoutine(routineId: string, body: UpdateRoutineRequest): Promise<Routine> {
+  return request<Routine>(`/api/routines/${encodeURIComponent(routineId)}`, json("PATCH", body));
 }
 
 /** Starts a routine now. Its run arrives on the event stream. */

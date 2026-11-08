@@ -1,7 +1,7 @@
-import type { Routine } from "@aihub/shared";
+import type { Routine, RoutineTrigger } from "@aihub/shared";
 import { runBriefing, type SectionOutcome } from "./briefing/briefing.ts";
 import { collectSections } from "./briefing/morning.ts";
-import { ConflictError, NotFoundError } from "./errors.ts";
+import { ConflictError, InvalidRequestError, NotFoundError } from "./errors.ts";
 import { DAILY_TURN_LIMIT } from "./limits.ts";
 import type { Blocked, Office } from "./office.ts";
 import type { Notification } from "./platform.ts";
@@ -9,10 +9,10 @@ import type { TurnBlocker } from "./runtime/types.ts";
 import { checkConnection } from "./sources/collect.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "./staff/chief-of-staff.ts";
 import type { Occurrence } from "./store/store.ts";
-import { addDays, isWeekday, localDate, localParts, zonedInstant } from "./time.ts";
+import { addDays, localDate, localParts, runsOn, scheduledTime, zonedInstant } from "./time.ts";
 
-// The scheduler (DESIGN.md › Scheduling and reporting, Windows lifecycle). Each weekday routine has
-// one occurrence a day, recorded before it runs and started by one scheduler only, so retries,
+// The scheduler (DESIGN.md › Scheduling and reporting, Windows lifecycle). The briefing runs on
+// weekdays, or every day once the operator turns weekends on. Each day it runs has one occurrence, recorded before it runs and started by one scheduler only, so retries,
 // restarts, and a second daemon never deliver twice. A missed briefing is caught up later the same
 // day; earlier missed days are skipped, and the next briefing still covers everything, since
 // collectors report all changes since their cursor. A health check an hour before tells the
@@ -110,10 +110,11 @@ export class Scheduler {
     const now = this.now();
     await this.giveUpPastDays(now);
     for (const routine of this.office.store.listRoutines()) {
-      if (routine.paused || routine.trigger.type !== "weekdays") continue;
+      const time = scheduledTime(routine.trigger);
+      if (routine.paused || !time) continue;
       const today = localDate(now, routine.timezone);
-      if (!isWeekday(today)) continue;
-      const due = zonedInstant(today, routine.trigger.time, routine.timezone);
+      if (!runsOn(routine.trigger, today)) continue;
+      const due = zonedInstant(today, time, routine.timezone);
       if (now >= new Date(due.getTime() - HEALTH_LEAD_MS) && now < due) await this.healthCheck(routine, today);
       if (now >= due) this.runOccurrence(routine, `${routine.id}:${today}`, due);
     }
@@ -131,14 +132,43 @@ export class Scheduler {
     return id;
   }
 
+  /**
+   * A scheduled routine runs on weekends too, or on weekdays only. Turned on after today's time has
+   * passed, today's run is skipped rather than run late: the change counts from the next time.
+   */
+  setWeekends(routineId: string, weekends: boolean): Routine {
+    const { store, bus } = this.office;
+    const routine = store.getRoutine(routineId);
+    if (!routine) throw new NotFoundError(`No routine ${routineId}`);
+    const time = scheduledTime(routine.trigger);
+    if (!time) throw new InvalidRequestError("This routine is part of the briefing, so it runs on the briefing's days.");
+    const trigger: RoutineTrigger = weekends ? { type: "daily", time } : { type: "weekdays", time };
+    const now = this.now();
+    const today = localDate(now, routine.timezone);
+    const due = zonedInstant(today, time, routine.timezone);
+    if (!runsOn(routine.trigger, today) && runsOn(trigger, today) && now >= due) {
+      const id = `${routine.id}:${today}`;
+      if (store.claimOccurrence(id, routine.id, due.toISOString())) store.updateOccurrence(id, { status: "skipped", detail: "Weekends were turned on after its time." });
+    }
+    store.setRoutineTrigger(routine.id, trigger);
+    const updated = store.getRoutine(routine.id)!;
+    const published = { ...updated, nextRunAt: this.nextRunAt(updated) };
+    bus.publish({ type: "routine", routine: published });
+    const summary = `The operator set "${routine.title}" to run ${weekends ? "every day" : "on weekdays only"}`;
+    bus.publish({ type: "activity", entry: store.addActivity({ agentId: routine.ownerId, runId: null, kind: "briefing", summary }) });
+    this.power(now);
+    return published;
+  }
+
   /** The next time a routine runs on its own, for the UI. A waiting briefing runs when it tries again. */
   nextRunAt(routine: Routine): string | null {
-    if (routine.paused || routine.trigger.type !== "weekdays") return null;
+    const time = scheduledTime(routine.trigger);
+    if (routine.paused || !time) return null;
     const now = this.now();
     let day = localDate(now, routine.timezone);
     for (let n = 0; n < 8; n++, day = addDays(day, 1)) {
-      if (!isWeekday(day)) continue;
-      const at = zonedInstant(day, routine.trigger.time, routine.timezone);
+      if (!runsOn(routine.trigger, day)) continue;
+      const at = zonedInstant(day, time, routine.timezone);
       const claimed = this.office.store.getOccurrence(`${routine.id}:${day}`);
       if (n === 0 && claimed?.retryAt) return claimed.retryAt;
       if (at > now || (!claimed && n === 0)) return at.toISOString();
@@ -250,11 +280,12 @@ export class Scheduler {
     let awake = this.running !== null;
     const wakes: number[] = [];
     for (const routine of store.listRoutines()) {
-      if (routine.paused || routine.trigger.type !== "weekdays") continue;
+      const time = scheduledTime(routine.trigger);
+      if (routine.paused || !time) continue;
       const { timezone: timeZone, trigger } = routine;
       const today = localDate(now, timeZone);
-      if (isWeekday(today)) {
-        const due = zonedInstant(today, trigger.time, timeZone).getTime();
+      if (runsOn(trigger, today)) {
+        const due = zonedInstant(today, time, timeZone).getTime();
         const occurrence = store.getOccurrence(`${routine.id}:${today}`);
         const retryAt = occurrence?.retryAt ? Date.parse(occurrence.retryAt) : null;
         const settled = !!occurrence && occurrence.status !== "pending" && occurrence.status !== "running" && retryAt === null;
@@ -264,8 +295,8 @@ export class Scheduler {
         }
       }
       for (let n = 0, day = today; n < 8; n++, day = addDays(day, 1)) {
-        if (!isWeekday(day)) continue;
-        const at = zonedInstant(day, trigger.time, timeZone).getTime() - HEALTH_LEAD_MS - WAKE_LEAD_MS;
+        if (!runsOn(trigger, day)) continue;
+        const at = zonedInstant(day, time, timeZone).getTime() - HEALTH_LEAD_MS - WAKE_LEAD_MS;
         if (at > now.getTime()) {
           wakes.push(at);
           break;
@@ -306,7 +337,7 @@ export class Scheduler {
     const summary = problems.length ? `Health check: ${problems.length} problem${problems.length === 1 ? "" : "s"} before the briefing` : "Health check passed";
     bus.publish({ type: "activity", entry: store.addActivity({ agentId: CHIEF_OF_STAFF_ID, runId: null, kind: "health", summary }) });
     if (!problems.length) return;
-    const time = routine.trigger.type === "weekdays" ? routine.trigger.time : "the briefing";
+    const time = scheduledTime(routine.trigger) ?? "the briefing";
     const heading = `Before ${time}, ${problems.length === 1 ? "one thing needs" : `${problems.length} things need`} you`;
     this.notice(`${heading}:\n${problems.map((problem) => `- ${problem}`).join("\n")}`);
     await this.notify({

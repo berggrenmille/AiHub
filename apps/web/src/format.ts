@@ -122,7 +122,9 @@ export const URGENCY_LABELS: Record<Urgency, string> = {
 };
 
 export function triggerLabel(trigger: RoutineTrigger): string {
-  return trigger.type === "weekdays" ? `Weekdays at ${trigger.time}` : "Part of the morning briefing";
+  if (trigger.type === "weekdays") return `Weekdays at ${trigger.time}`;
+  if (trigger.type === "daily") return `Every day at ${trigger.time}`;
+  return "Part of the morning briefing";
 }
 
 export const CONNECTION_STATUS_LABELS: Record<SourceConnection["status"], string> = {

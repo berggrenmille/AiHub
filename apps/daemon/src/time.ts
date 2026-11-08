@@ -1,3 +1,5 @@
+import type { RoutineTrigger } from "@aihub/shared";
+
 // Local time in the operator's timezone, with Intl only. Briefings, budgets, and streaks count local days.
 
 export const TIMEZONE = "Europe/Stockholm";
@@ -76,4 +78,14 @@ export function weekdayOf(date: string): number {
 
 export function isWeekday(date: string): boolean {
   return weekdayOf(date) <= 5;
+}
+
+/** The local time a routine runs at on its own, such as "07:00", or null for a briefing section. */
+export function scheduledTime(trigger: RoutineTrigger): string | null {
+  return trigger.type === "weekdays" || trigger.type === "daily" ? trigger.time : null;
+}
+
+/** Whether a scheduled routine runs on a local date. */
+export function runsOn(trigger: RoutineTrigger, date: string): boolean {
+  return trigger.type === "daily" || (trigger.type === "weekdays" && isWeekday(date));
 }

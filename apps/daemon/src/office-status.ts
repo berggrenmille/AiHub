@@ -1,7 +1,7 @@
 import type { Office } from "./office.ts";
 import { clock } from "./scheduler.ts";
 import { CHIEF_OF_STAFF_ID } from "./staff/chief-of-staff.ts";
-import { addDays, localDate } from "./time.ts";
+import { addDays, localDate, scheduledTime } from "./time.ts";
 
 // The office in a few short lines, for places outside the browser such as the notification-area
 // icon on Windows. Like notifications, it says states and counts, never what a source holds: it can
@@ -47,7 +47,7 @@ export function officeStatus(office: Office, now = new Date()): OfficeStatus {
 function briefingStatus(office: Office, now: Date): { text: string; waiting: boolean } {
   const { store, scheduler } = office;
   if (scheduler?.busy) return { text: "Writing your briefing…", waiting: false };
-  const routine = store.listRoutines().find((candidate) => candidate.trigger.type === "weekdays" && !candidate.paused);
+  const routine = store.listRoutines().find((candidate) => scheduledTime(candidate.trigger) !== null && !candidate.paused);
   if (!routine) return { text: "No briefing scheduled", waiting: false };
   if (!someoneReports(office)) {
     const chief = store.getAgent(CHIEF_OF_STAFF_ID)?.name ?? "the Chief of Staff";

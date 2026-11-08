@@ -57,6 +57,7 @@ interface ProfileCardProps {
   /** Gives web search, or with null takes it away. */
   onSetWeb(web: WebGrant | null): Promise<void>;
   onRunRoutine(routineId: string): Promise<void>;
+  onSetWeekends(routineId: string, weekends: boolean): Promise<void>;
 }
 
 export function ProfileCard(props: ProfileCardProps) {
@@ -222,7 +223,7 @@ export function ProfileCard(props: ProfileCardProps) {
             ) : (
               <p className="muted">{agent.role === "chief_of_staff" ? "The morning briefing and any mandates you grant." : "None yet."}</p>
             )}
-            {routines.length > 0 && <RoutineList routines={routines} onRun={props.onRunRoutine} now={now} />}
+            {routines.length > 0 && <RoutineList routines={routines} onRun={props.onRunRoutine} onSetWeekends={props.onSetWeekends} now={now} />}
           </section>
 
           <section className="profile-section" aria-labelledby={`${titleId}-assignments`}>
@@ -556,8 +557,19 @@ function PersonChip({ agent, onSelect }: { agent: Agent; onSelect(agentId: strin
   );
 }
 
-function RoutineList({ routines, onRun, now }: { routines: Routine[]; onRun(routineId: string): Promise<void>; now: number }) {
+function RoutineList({
+  routines,
+  onRun,
+  onSetWeekends,
+  now,
+}: {
+  routines: Routine[];
+  onRun(routineId: string): Promise<void>;
+  onSetWeekends(routineId: string, weekends: boolean): Promise<void>;
+  now: number;
+}) {
   const [busy, setBusy] = useState<string | null>(null);
+  const id = useId();
   const [message, setMessage] = useState<{ routineId: string; text: string; error: boolean } | null>(null);
   const run = async (routine: Routine) => {
     setBusy(routine.id);
@@ -565,6 +577,17 @@ function RoutineList({ routines, onRun, now }: { routines: Routine[]; onRun(rout
     try {
       await onRun(routine.id);
       setMessage({ routineId: routine.id, text: "Started. Watch the office.", error: false });
+    } catch (failure) {
+      setMessage({ routineId: routine.id, text: errorText(failure), error: true });
+    } finally {
+      setBusy(null);
+    }
+  };
+  const setWeekends = async (routine: Routine, weekends: boolean) => {
+    setBusy(routine.id);
+    setMessage(null);
+    try {
+      await onSetWeekends(routine.id, weekends);
     } catch (failure) {
       setMessage({ routineId: routine.id, text: errorText(failure), error: true });
     } finally {
@@ -581,6 +604,18 @@ function RoutineList({ routines, onRun, now }: { routines: Routine[]; onRun(rout
               {triggerLabel(routine.trigger)} · {routine.dailyTurnBudget} turns a day
               {routine.paused ? " · paused" : routine.nextRunAt ? ` · next ${formatShortWhen(routine.nextRunAt, new Date(now))}` : ""}
             </span>
+            {routine.trigger.type !== "briefing" && (
+              <label className="toggle routine-weekends" htmlFor={`${id}-${routine.id}-weekends`}>
+                <input
+                  id={`${id}-${routine.id}-weekends`}
+                  type="checkbox"
+                  checked={routine.trigger.type === "daily"}
+                  disabled={busy !== null}
+                  onChange={(event) => void setWeekends(routine, event.target.checked)}
+                />
+                Weekends too
+              </label>
+            )}
             {message?.routineId === routine.id && (
               <span className={`small block ${message.error ? "form-error" : "tone-text-done"}`} role={message.error ? "alert" : "status"}>
                 {message.text}

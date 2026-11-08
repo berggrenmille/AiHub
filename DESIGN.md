@@ -183,7 +183,7 @@ V1 supports on-demand work, schedules, assignment completion triggers, and polli
 
 Every routine runs in two phases. First, collectors fetch changes since the cursor and compare them with known items without using the model. Second, a model turn runs only when there are changes to interpret, open items to reassess, or a report is due. Polling rules define a check interval, a condition, and a deduplication policy. Evaluate conditions in code where possible, such as a new message from a listed sender or a holding crossing a threshold. Escalate to a model turn only when a match needs interpretation.
 
-A weekday briefing runs as follows:
+The briefing runs on weekdays, or every day once the operator turns on weekends for it. Turned on after the day's briefing time, weekends start with the next day, so no briefing runs late. A briefing runs as follows:
 
 1. The scheduler creates a unique occurrence with a delivery time and a cutoff.
 2. One hour before delivery, a health check verifies Codex sign-in, connection status, and remaining usage. A failure posts an actionable alert to the AiHub inbox right away so the operator can fix it before the briefing.

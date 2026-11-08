@@ -3,7 +3,7 @@ import { copyFileSync, mkdtempSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
-import { ConflictError } from "./errors.ts";
+import { ConflictError, InvalidRequestError } from "./errors.ts";
 import { fileURLToPath } from "node:url";
 import { Office, type Blocked } from "./office.ts";
 import { RecordingPlatform } from "./platform.ts";
@@ -171,6 +171,59 @@ describe("The scheduler", () => {
     assert.equal(office.snapshot().routines.find((candidate) => candidate.id === routine.id)?.nextRunAt, "2026-11-16T06:00:00.000Z");
     store.setRoutinePaused(routine.id, true);
     assert.equal(scheduler.nextRunAt(store.getRoutine(routine.id)!), null);
+  });
+
+  it("briefs on weekends too once the operator turns them on, and stops when turned off", async () => {
+    // Friday afternoon: the morning's briefing catches up, and the next wake is Monday's.
+    const { store, scheduler, routine, calls, at, platform } = setUp("2026-11-13T13:00:00.000Z");
+    await at("2026-11-13T13:00:00.000Z");
+    assert.equal(platform.wake?.toISOString(), "2026-11-16T04:58:00.000Z");
+
+    const updated = scheduler.setWeekends(routine.id, true);
+    assert.deepEqual([updated.trigger, updated.nextRunAt], [{ type: "daily", time: "07:00" }, "2026-11-14T06:00:00.000Z"]);
+    assert.equal(platform.wake?.toISOString(), "2026-11-14T04:58:00.000Z", "Saturday's");
+    assert.ok(store.recentActivity(5).some((entry) => entry.summary === 'The operator set "Morning briefing" to run every day'));
+
+    await at("2026-11-14T05:10:00.000Z");
+    assert.equal(store.getOccurrence(`${routine.id}:2026-11-14:health`)?.status, "delivered", "a health check on Saturday too");
+    await at("2026-11-14T06:00:00.000Z");
+    assert.deepEqual(calls, ["2026-11-13T13:00:00.000Z", "2026-11-14T06:00:00.000Z"]);
+
+    assert.deepEqual(scheduler.setWeekends(routine.id, false).trigger, { type: "weekdays", time: "07:00" });
+    await at("2026-11-15T09:00:00.000Z");
+    assert.equal(calls.length, 2, "no Sunday briefing");
+  });
+
+  it("doesn't brief late on the weekend day weekends are turned on after the briefing's time", async () => {
+    const { store, scheduler, routine, calls, at } = setUp("2026-11-14T10:00:00.000Z");
+    scheduler.setWeekends(routine.id, true);
+    await at("2026-11-14T10:00:00.000Z");
+    assert.deepEqual(calls, []);
+    assert.equal(store.getOccurrence(`${routine.id}:2026-11-14`)?.status, "skipped");
+    assert.equal(scheduler.nextRunAt(store.getRoutine(routine.id)!), "2026-11-15T06:00:00.000Z");
+    await at("2026-11-15T06:00:00.000Z");
+    assert.deepEqual(calls, ["2026-11-15T06:00:00.000Z"]);
+  });
+
+  it("keeps a briefing section on the briefing's days", () => {
+    const { store, scheduler } = setUp(MONDAY_0700);
+    const section = store.createRoutine({ ownerId: CHIEF_OF_STAFF_ID, responsibilityId: null, title: "Section", trigger: { type: "briefing" }, timezone: "Europe/Stockholm", dailyTurnBudget: 1 });
+    assert.throws(() => scheduler.setWeekends(section.id, true), InvalidRequestError);
+  });
+
+  it("counts a weekend briefing in the streak, and never breaks it for a weekend without one", () => {
+    const { store, office, clock, done } = setUp("2026-11-13T07:00:00.000Z");
+    const deliverOn = (iso: string) => {
+      clock.now = new Date(iso);
+      office.finishRun(done()!.run!.id, "done");
+    };
+    for (const day of ["2026-11-12", "2026-11-13"]) deliverOn(`${day}T06:30:00.000Z`);
+    clock.now = new Date("2026-11-16T05:00:00.000Z");
+    assert.equal(office.officeStats(clock.now).briefingStreak, 2, "Thursday and Friday, across an empty weekend");
+    deliverOn("2026-11-15T06:30:00.000Z");
+    clock.now = new Date("2026-11-16T05:00:00.000Z");
+    assert.equal(office.officeStats(clock.now).briefingStreak, 3, "and Sunday's");
+    assert.equal(store.briefingDeliveries().length, 3);
   });
 });
 

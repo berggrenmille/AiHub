@@ -39,7 +39,7 @@ import type { SourceContext } from "./sources/source.ts";
 import type { Scheduler } from "./scheduler.ts";
 import { NO_PLATFORM, type Platform } from "./platform.ts";
 import type { ConversationRecord, Store } from "./store/store.ts";
-import { addDays, isWeekday, localDate, TIMEZONE, zonedInstant } from "./time.ts";
+import { addDays, isWeekday, localDate, scheduledTime, TIMEZONE, zonedInstant } from "./time.ts";
 
 export { ConflictError, InvalidRequestError, NotFoundError } from "./errors.ts";
 
@@ -185,8 +185,8 @@ export class Office {
       this.activity(run.agentId, run.id, "run_failed", `${run.title}: stopped by a daemon restart`);
     }
     this.syncProfiles();
-    // Every office has the weekday briefing. It runs once a supervisor reports to it.
-    const hasBriefing = this.store.listRoutines().some((routine) => routine.ownerId === CHIEF_OF_STAFF.id && routine.trigger.type === "weekdays");
+    // Every office has the morning briefing, on weekdays until the operator adds weekends. It runs once a supervisor reports to it.
+    const hasBriefing = this.store.listRoutines().some((routine) => routine.ownerId === CHIEF_OF_STAFF.id && scheduledTime(routine.trigger) !== null);
     if (!hasBriefing) {
       this.store.createRoutine({
         ownerId: CHIEF_OF_STAFF.id,
@@ -297,11 +297,12 @@ export class Office {
   officeStats(now = new Date()): OfficeStats {
     const today = localDate(now, TIMEZONE);
     const delivered = new Set(this.store.briefingDeliveries().map((at) => localDate(new Date(at), TIMEZONE)));
-    // A streak counts weekdays in a row with a briefing. Today counts once delivered, and doesn't break it before.
+    // A streak counts days in a row with a briefing. A weekend counts when it had one, and never breaks
+    // it. Today counts once delivered, and doesn't break it before.
     let day = delivered.has(today) ? today : addDays(today, -1);
     let briefingStreak = 0;
     for (; ; day = addDays(day, -1)) {
-      if (!isWeekday(day)) continue;
+      if (!isWeekday(day) && !delivered.has(day)) continue;
       if (!delivered.has(day)) break;
       briefingStreak++;
     }

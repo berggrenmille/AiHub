@@ -13,6 +13,7 @@ import {
   sendChat,
   setWebGrant,
   updateAgent,
+  updateRoutine,
 } from "./api.ts";
 import { initialOfficeState, officeReducer } from "./state.ts";
 
@@ -23,6 +24,7 @@ export interface OfficeCommands {
   openChat(agentId: string): Promise<Conversation>;
   updateAgent(agentId: string, changes: UpdateAgentRequest): Promise<void>;
   setWeb(agentId: string, web: WebGrant | null): Promise<void>;
+  setWeekends(routineId: string, weekends: boolean): Promise<void>;
   /** What a proposal's source would read at a path. Changes nothing. */
   preview(proposalId: string, sourcePath: string): Promise<SourcePreview>;
   approve(proposalId: string, sourcePath?: string): Promise<void>;
@@ -66,6 +68,7 @@ export function useOffice() {
       },
       updateAgent: async (agentId, changes) => apply({ type: "agent", agent: await updateAgent(agentId, changes) }),
       setWeb: async (agentId, web) => apply({ type: "agent", agent: await setWebGrant(agentId, web) }),
+      setWeekends: async (routineId, weekends) => apply({ type: "routine", routine: await updateRoutine(routineId, { weekends }) }),
       preview: (proposalId, sourcePath) => previewProposal(proposalId, { sourcePath }),
       approve: async (proposalId, sourcePath) =>
         apply({ type: "proposal", proposal: await approveProposal(proposalId, sourcePath ? { sourcePath } : {}) }),
