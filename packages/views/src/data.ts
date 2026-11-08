@@ -39,6 +39,7 @@ const AssignmentsInput = z
   .object({
     staff,
     days: days(365, "Assignments created in the last this many days. 30 when left out."),
+    limit: z.number().int().min(1).max(500).optional().describe("Most rows, newest first. 100 when left out."),
   })
   .strict();
 

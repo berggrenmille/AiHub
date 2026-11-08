@@ -36,6 +36,18 @@ describe("Checking a view", () => {
     assert.match(checkView(elsewhere, { fetches: true }).problems[0]!, /no data tool "send_email"/);
   });
 
+  it("checks a query's arguments as far as the program writes them out", () => {
+    const query = (tool: string, args: string) => checkView(`root = Stack([t])\nq = Query("${tool}", ${args}, {rows: []})\nt = Text("" + @Count(q.rows))`, { fetches: true }).problems;
+    assert.deepEqual(query("office_assignments", `{staff: "Nora", days: 7, limit: 3}`), []);
+    assert.deepEqual(query("office_usage", `{days: 7, limit: 3}`), [`q: office_usage takes no argument "limit". It takes days.`]);
+    assert.deepEqual(query("office_staff", `{staff: "Nora"}`), [`q: office_staff takes no argument "staff". It takes none.`]);
+    assert.match(query("office_items", `{days: 0}`).join("\n"), /^q: office_items "days": /);
+    assert.match(query("office_items", `{states: ["closed"]}`).join("\n"), /"states"/);
+    assert.match(query("source_records", `{}`).join("\n"), /"source"/);
+    // A value the page works out, such as from a filter, is checked when the dashboard opens.
+    assert.deepEqual(checkView(`$who = "Nora"\nroot = Stack([f, t])\nf = Select($who, ["Nora", "Vera"], "Who")\nq = Query("office_items", {staff: $who, states: [$who]}, {rows: []})\nt = Text("" + @Count(q.rows))`, { fetches: true }).problems, []);
+  });
+
   it("refuses anything that writes", () => {
     const writing = `root = Stack([b])\nsave = Mutation("office_items", {})\nb = Button("Save", @Run(save))`;
     assert.ok(checkView(writing, { fetches: true }).problems.some((problem) => /Mutation/.test(problem)));

@@ -1,5 +1,5 @@
 import { createParser, type ASTNode, type ParseResult } from "@openuidev/lang-core";
-import { isDataTool } from "./data.ts";
+import { DATA_TOOLS, isDataTool, type DataToolName } from "./data.ts";
 import { viewLibrary, VIEW_ROOT } from "./library.ts";
 
 // The daemon checks every view a staff member hands in (DESIGN.md › Views), and answers with what
@@ -56,6 +56,7 @@ export function checkView(program: string, { fetches }: { fetches: boolean }): V
     const tool = literal(query.toolAST);
     if (tool === null) problems.push(`${query.statementId}: name the data tool as a quoted string, such as Query("office_items", {}, {rows: []}).`);
     else if (!isDataTool(tool)) problems.push(`${query.statementId}: there is no data tool "${tool}". See the guide for the ones there are.`);
+    else problems.push(...checkArguments(query.statementId, tool, query.argsAST));
   }
   for (const mutation of result.mutationStatements) {
     problems.push(`${mutation.statementId}: views can't change anything through Mutation().`);
@@ -65,4 +66,63 @@ export function checkView(program: string, { fetches }: { fetches: boolean }): V
 
 function literal(node: ASTNode | null): string | null {
   return node?.k === "Str" ? node.v : null;
+}
+
+const COMPUTED = Symbol("computed");
+
+/**
+ * Checks a query's arguments against its data tool, as far as the program writes them out: every
+ * name, and every value that isn't worked out on the page, such as from a filter. A value that is
+ * worked out is checked when the dashboard opens.
+ */
+function checkArguments(statementId: string, tool: DataToolName, node: ASTNode | null): string[] {
+  if (node && node.k !== "Obj") return [];
+  const input = DATA_TOOLS[tool].input;
+  const known = Object.keys(input.shape);
+  const takes = known.length ? `It takes ${known.join(", ")}.` : "It takes none.";
+  const problems: string[] = [];
+  const written: Record<string, unknown> = {};
+  const computed = new Set<string>();
+  for (const [name, value] of node?.entries ?? []) {
+    if (!known.includes(name)) {
+      problems.push(`${statementId}: ${tool} takes no argument "${name}". ${takes}`);
+      continue;
+    }
+    const plain = plainValue(value);
+    if (plain === COMPUTED) computed.add(name);
+    else written[name] = plain;
+  }
+  const parsed = input.safeParse(written);
+  for (const issue of parsed.success ? [] : parsed.error.issues) {
+    const name = String(issue.path[0] ?? "");
+    if (computed.has(name)) continue;
+    problems.push(`${statementId}: ${tool}${name ? ` "${name}"` : ""}: ${issue.message}.`);
+  }
+  return problems;
+}
+
+/** The value a node writes out, or COMPUTED when the page works it out. */
+function plainValue(node: ASTNode): unknown {
+  switch (node.k) {
+    case "Str":
+    case "Num":
+    case "Bool":
+      return node.v;
+    case "Null":
+      return null;
+    case "UnaryOp": {
+      const operand = node.op === "-" ? plainValue(node.operand) : COMPUTED;
+      return typeof operand === "number" ? -operand : COMPUTED;
+    }
+    case "Arr": {
+      const values = node.els.map(plainValue);
+      return values.includes(COMPUTED) ? COMPUTED : values;
+    }
+    case "Obj": {
+      const entries = node.entries.map(([name, value]) => [name, plainValue(value)] as const);
+      return entries.some(([, value]) => value === COMPUTED) ? COMPUTED : Object.fromEntries(entries);
+    }
+    default:
+      return COMPUTED;
+  }
 }

@@ -408,6 +408,7 @@ The guide costs about 2,800 tokens for a reply and 5,000 for a dashboard, only i
 | A chat view repeated its title above its own heading. | Only a section view shows a title, with its author's name. |
 | In development, OpenUI's developer tools mounted on the page, with links to Thesys's cloud. | They are turned off before the renderer loads. |
 | The office asked for `/api/models` before its session started, and the first request failed. | It waits for the first snapshot. |
+| The operator's first dashboard in the installed office asked `office_assignments` for a `limit`, which only the other list tools took. The check looked at tool names only, so the error showed when the dashboard opened. | Every list tool takes a `limit`, and the check tests each query's written-out arguments against its tool, so the staff member fixes them in the same turn. |
 
 ### Known gaps
 

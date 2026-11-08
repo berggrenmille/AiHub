@@ -126,7 +126,8 @@ class OfficeData {
     const who = input.staff ? this.idOf(input.staff) : null;
     const assignments = this.office.store
       .assignmentsSince(this.daysAgo(input.days ?? 30))
-      .filter((assignment) => !who || assignment.requesterId === who || assignment.ownerId === who);
+      .filter((assignment) => !who || assignment.requesterId === who || assignment.ownerId === who)
+      .slice(0, input.limit ?? 100);
     return {
       rows: assignments.map((assignment) => ({
         id: assignment.id,

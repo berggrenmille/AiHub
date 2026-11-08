@@ -213,6 +213,12 @@ describe("A dashboard's data", () => {
     const staff = (await answerData(office, "office_staff", {}, now)) as { rows: Array<{ name: string; model: string }> };
     assert.deepEqual(staff.rows.map((row) => row.name).sort(), ["Elsa", "Vera"]);
 
+    for (const title of ["First", "Second", "Third"]) {
+      store.createAssignment({ kind: "question", requesterId: CHIEF_OF_STAFF_ID, ownerId: "prices", parentId: null, conversationId: null, responsibilityId: null, title, brief: "?", runBudget: 1 });
+    }
+    const asked = (await answerData(office, "office_assignments", { staff: "Elsa", days: 7, limit: 2 }, now)) as { rows: Array<{ title: string }> };
+    assert.equal(asked.rows.length, 2);
+
     await assert.rejects(answerData(office, "office_items", { staff: "Nobody" }, now), /Nobody on staff is called Nobody/);
     await assert.rejects(answerData(office, "send_mail", {}, now), /no data tool "send_mail"/);
     await assert.rejects(answerData(office, "office_runs", { days: 1000 }, now), /Invalid arguments for office_runs/);
