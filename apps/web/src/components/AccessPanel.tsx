@@ -97,14 +97,16 @@ export function AccessPanel(props: AccessPanelProps) {
               {unsafe.map((row) => (
                 <li key={row.key} className="access-row unsafe">
                   <div>
-                    <strong>{row.what}</strong>
-                    {row.agentId && (
-                      <>
-                        {" "}
-                        <span className="muted">·</span> <AgentLink agentId={row.agentId} name={agentName(row.agentId)} onSelect={props.onSelectAgent} />
-                      </>
-                    )}
-                    <span className="block small">{row.risk}</span>
+                    <p>
+                      <strong>{row.what}</strong>
+                      {row.agentId && (
+                        <>
+                          {" "}
+                          <span className="muted">·</span> <AgentLink agentId={row.agentId} name={agentName(row.agentId)} onSelect={props.onSelectAgent} />
+                        </>
+                      )}
+                    </p>
+                    <p className="small">{row.risk}</p>
                   </div>
                   {row.grantId !== undefined && <ActionButton label="Revoke" busyLabel="Revoking…" onAct={() => props.onRevokeGrant(row.grantId!)} />}
                   {row.kind === "web" && row.agentId && (
@@ -140,7 +142,7 @@ export function AccessPanel(props: AccessPanelProps) {
                       {SERVICE_KIND_LABELS[service.kind]}: <span className="connection-path">{service.where}</span>
                       {service.account ? `, as ${service.account}` : ""}
                     </p>
-                    {service.detail && <p className="small">{service.detail}</p>}
+                    {service.detail && service.status !== "connected" && <p className="small">{service.detail}</p>}
                     <OperationList service={service} />
                     <GrantList grants={grantsOn(service, props.grants).filter((grant) => mine(grant.agentId))} agentName={agentName} onSelect={props.onSelectAgent} onRevoke={props.onRevokeGrant} />
                     {props.connections
@@ -187,8 +189,10 @@ export function AccessPanel(props: AccessPanelProps) {
                         {connection.kind === "service"
                           ? `${connection.service?.operation ?? "An operation"} on ${service?.name ?? "a removed service"}`
                           : connection.kind === "folder"
-                            ? `Folder ${connection.path}, ${connection.pattern ?? "*"}, read by ${readerName(readerOf(connection.reader, props.readers))}`
-                            : `Calendar file ${connection.path}`}
+                            ? `${connection.path ? `Folder ${connection.path}` : "A folder not picked yet"}, ${connection.pattern ?? "*"}, read by ${readerName(readerOf(connection.reader, props.readers))}`
+                            : connection.path
+                              ? `Calendar file ${connection.path}`
+                              : "A calendar file not picked yet"}
                       </p>
                       {connection.detail && <p className="small">{connection.detail}</p>}
                       {connection.verifiedAt && <p className="tiny muted">Last read {formatDateTime(connection.verifiedAt)}</p>}
@@ -299,20 +303,25 @@ export function AccessPanel(props: AccessPanelProps) {
                       <p>
                         <AgentLink agentId={entry.agentId} name={agentName(entry.agentId)} onSelect={props.onSelectAgent} />
                       </p>
-                      <dl className="tool-kinds">
-                        {entry.kinds.map((kind) => (
-                          <div key={kind.kind}>
-                            <dt>{RUN_KIND_LABELS[kind.kind] ?? kind.kind}</dt>
-                            <dd>
-                              {kind.tools.map((tool) => (
-                                <code key={tool} className={UNSAFE_TOOLS.has(tool) ? "unsafe-tool" : undefined}>
-                                  {tool.replace(/^aihub_/, "")}
-                                </code>
-                              ))}
-                            </dd>
-                          </div>
-                        ))}
-                      </dl>
+                      <details className="tool-kinds-list" open={focused !== null}>
+                        <summary className="small">
+                          {new Set(entry.kinds.flatMap((kind) => kind.tools)).size} tools across {entry.kinds.length} kinds of run
+                        </summary>
+                        <dl className="tool-kinds">
+                          {entry.kinds.map((kind) => (
+                            <div key={kind.kind}>
+                              <dt>{RUN_KIND_LABELS[kind.kind] ?? kind.kind}</dt>
+                              <dd>
+                                {kind.tools.map((tool) => (
+                                  <code key={tool} className={UNSAFE_TOOLS.has(tool) ? "unsafe-tool" : undefined}>
+                                    {tool.replace(/^aihub_/, "")}
+                                  </code>
+                                ))}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </details>
                     </div>
                   </li>
                 ))}

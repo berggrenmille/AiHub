@@ -196,6 +196,19 @@ async function delegate(input: string, options: RunTurnOptions): Promise<string 
   }
   // The operator's request in chat.
   const message = input.includes("The operator's new message:\n") ? input.split("The operator's new message:\n").at(-1)! : input.slice(input.lastIndexOf("\n\n") + 1).trim();
+  // The Chief of Staff composing a briefing, whose sections name their sources, such as "Inbox".
+  const composing = /^Section \d+: /m.test(input);
+  // "Let Ines send replies": more operations for a supervisor, the sending an unsafe grant.
+  const letSend = composing ? null : /\blet (\w+) (?:also )?send\b/i.exec(message);
+  if (letSend) {
+    const proposed = await call("aihub_propose_staff_change", {
+      supervisor: letSend[1],
+      change: "operations",
+      operations: [{ service: "Fake mail", operation: "send_message", why: "To send replies you ask for." }],
+      reason: "You asked for it.",
+    });
+    return proposed.ok ? `I've proposed letting ${letSend[1]} send mail. It's unsafe, so it has its own tick on the card.` : proposed.text;
+  }
   const ask = /\bask (\w+)\b/i.exec(message);
   if (ask) {
     const outcome = await call("aihub_ask_colleague", { colleague: ask[1], question: message });
@@ -217,20 +230,7 @@ async function delegate(input: string, options: RunTurnOptions): Promise<string 
     }
   }
   // Mail: connect the fake mail service, then a supervisor that watches the inbox.
-  // Only in a chat, since a briefing's own prompt names its sections, such as "Inbox".
-  const inChat = input.includes("The operator's new message:\n");
-  // "Let Ines send replies": more operations for a supervisor, the sending an unsafe grant.
-  const letSend = inChat ? /\blet (\w+) (?:also )?send\b/i.exec(message) : null;
-  if (letSend) {
-    const proposed = await call("aihub_propose_staff_change", {
-      supervisor: letSend[1],
-      change: "operations",
-      operations: [{ service: "Fake mail", operation: "send_message", why: "To send replies you ask for." }],
-      reason: "You asked for it.",
-    });
-    return proposed.ok ? `I've proposed letting ${letSend[1]} send mail. It's unsafe, so it has its own tick on the card.` : proposed.text;
-  }
-  if (inChat && /\b(inbox|e-?mail|mail)\b/i.test(message)) return mail(message, call);
+  if (!composing && /\b(inbox|e-?mail|mail)\b/i.test(message)) return mail(message, call);
   // "Watch my reading list": a supervisor for a folder, on the built-in reader its words suggest.
   const watch = /\bwatch (?:my |the )?([\w ]+?)(?: folder)?(?:[.:,?!]|$)/i.exec(message);
   if (watch) {
@@ -269,7 +269,7 @@ async function mail(message: string, call: (name: string, args: object) => Promi
       operation: "send_message",
       arguments: { to: send[1], subject: "A reply from your office", body: "This is the fake runtime, replying for the operator." },
     });
-    return sent.ok ? `Sent a reply to ${send[1]}.` : `I can't send that: ${sent.text}`;
+    return sent.ok && !sent.text.includes("answered with an error") ? `Sent a reply to ${send[1]}.` : `I couldn't send that: ${sent.text.split("\n")[0]}`;
   }
   const search = /\bsearch (?:my |the )?(?:inbox|e-?mail|mail) for (.+?)[.?!]?$/i.exec(message);
   if (search) {

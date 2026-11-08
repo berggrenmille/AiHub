@@ -399,7 +399,7 @@ function PreviewPanel({ state }: { state: PreviewState }) {
             <li key={row.key}>
               <p className="preview-title">
                 <strong>{row.title}</strong>
-                {row.detail && <span className="muted small"> {row.detail}</span>}
+                {row.detail && <span className="muted small"> {shownDetail(row.detail)}</span>}
               </p>
               {row.fields.length > 0 && (
                 <dl className="preview-fields">
@@ -417,4 +417,9 @@ function PreviewPanel({ state }: { state: PreviewState }) {
       )}
     </section>
   );
+}
+
+/** A record's detail, with a timestamp from a service shown as the office shows times. */
+function shownDetail(detail: string): string {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(detail) && !Number.isNaN(Date.parse(detail)) ? formatDateTime(detail) : detail;
 }

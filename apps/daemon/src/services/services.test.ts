@@ -245,6 +245,13 @@ describe("Services", () => {
     const service = await connectMail(office, tool);
     const { ines, caller } = await hireInes(office, tool);
     mail.mailSignedIn = false;
+    const search = () => tool("aihub_use_service", { service: "Work mail", operation: "search_messages", arguments: { query: "dinner" } }, caller);
+    assert.match((await search()).text, /^Work mail answered with an error\. Everything between the markers/);
+    assert.equal(store.getService(service.id)?.status, "signed_out", "a call that finds the sign-in gone marks it");
+    assert.equal(store.getService(service.id)?.detail, "The sign-in has lapsed: 401 Unauthorized: not logged in. Sign in again.");
+    await search();
+    const signedOut = store.recentMessages(20, CHIEF_OF_STAFF_CONVERSATION_ID).filter((message) => message.body.startsWith("Work mail is signed out"));
+    assert.equal(signedOut.length, 1, "said once");
     const lapsed = await office.services.checkAll();
     assert.deepEqual(lapsed.map((record) => [record.name, record.status]), [["Work mail", "signed_out"]]);
     const read = await tool("aihub_read_source", { source: "Inbox" }, caller);

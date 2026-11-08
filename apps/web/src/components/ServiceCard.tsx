@@ -134,7 +134,7 @@ export function ServiceCard({ service, intro, onApprove, onDecline, onSignIn, on
         </form>
       ) : (
         <div className="proposal-outcome">
-          {service.detail && <p className="small">{service.detail}</p>}
+          {service.detail && service.status !== "connected" && <p className="small">{service.detail}</p>}
           {inUse(service) && <ServiceActions service={service} onSignIn={onSignIn} onRefresh={onRefresh} />}
           {service.checkedAt && <p className="tiny muted">Checked {formatDateTime(service.checkedAt)}</p>}
         </div>
@@ -226,7 +226,7 @@ export function ServiceActions({ service, onSignIn, onRefresh }: { service: Serv
           {busy === "refresh" ? "Checking…" : "Check again"}
         </button>
       </div>
-      {signInUrl && (
+      {signInUrl && service.status !== "connected" && (
         <p className="tiny muted">
           Finish signing in on the service's page.{" "}
           <a href={signInUrl} target="_blank" rel="noreferrer">
