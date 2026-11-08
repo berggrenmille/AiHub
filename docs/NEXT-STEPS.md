@@ -7,15 +7,35 @@ Where the build stands against [DESIGN.md](../DESIGN.md) › Build sequence and 
 After the Milestone 6 proof the operator asked for meetings, a bigger chat, a calmer screen, room for 16 supervisors, fewer unsafe ticks, and a better way to read the briefing. The plan they accepted on 2026-11-08, built in this order:
 
 1. **Layout and notifications.** Done, below.
-2. **Meetings.** The Chief of Staff chairs, and AiHub runs rounds: each supervisor speaks in turn, and one with nothing new passes without a turn. A meeting ends with a card of decisions and assignments that the operator approves. The operator calls one, the Chief of Staff calls one, or a standup routine does. Meetings only talk: no operation runs in one. A meeting room on the floor.
+2. **Meetings.** Done, below. The meeting room on the floor moves to step 4, which redraws the floor.
 3. **A Today page in place of the Inbox.** What needs the operator first, then the briefing by supervisor, each section with Open source and Discuss. The chat gets one line that links to it, and nothing asks a question before the briefing.
-4. **16 supervisors.** A floor of four by four that scales to fit, and the day's turn budget as a setting with a higher default.
+4. **16 supervisors.** A floor of four by four that scales to fit, with a meeting room where those in a meeting gather, and the day's turn budget as a setting with a higher default.
 
 At any point along the way:
 - Unsafe ticks grouped by service and kind: one tick for a service's operations that add or change, another for those that delete or overwrite, read from the operations' own labels. A destructive operation never shares a tick with one that isn't. This changes DESIGN.md's "its own tick" rule.
 - The daemon checks a call's arguments against the operation's input schema before calling the service.
 
 The proof used a ChatGPT app, so what the probe left open about MCP servers is still open: Windows Credential Manager as the store for sign-ins, a real MCP server's sign-in, and how long its refresh token lasts.
+
+## Meetings (2026-11-08)
+
+The operator wanted standups and office meetings where everyone can chip in, and a choice between deciding with the team and leaving it to the Chief of Staff. DESIGN.md › Staff and work model › Meetings has the rules as built.
+
+1. **The engine.** `staff/meetings.ts` keeps a meeting's queue in the store (migration v17: conversations get a kind, and meetings and their outcomes get tables). Each turn is a fresh run of kind "meeting" in the interactive lane, with no source, service, or web tools; the chair gets `aihub_next_round` and `aihub_conclude_meeting`, and supervisors `aihub_pass`. A chair that uses neither has had the last word, and that is the conclusion. The operator approving it starts the tasks through `delegation.assignFromMeeting`, so results come back to the meeting.
+2. **Three ways in.** `POST /api/meetings` for the operator; `aihub_call_meeting` for the Chief of Staff in a chat, which leaves a card in the chat that opens the meeting; and the standup routine (migration v18 gives routines a kind), off until the operator ticks it on the Chief of Staff's profile. At the standup, AiHub passes for a supervisor with no new or changed item and no work that moved since the last standup, without a turn, and skips the standup when nobody has news.
+3. **The app.** The Chats page lists meetings first, with Live, Needs you, or Paused, and a form to call one that counts its turns. A meeting shows who is in the room and who has the floor, each speaker by name, passes as one line, and the conclusion as a card: approve and hand out tasks, end without approving, or reply to change it.
+
+### How it was shown
+
+- Tests: `staff/meetings.test.ts` (rounds and approval; a reply that sets the conclusion aside, and ending; the Chief of Staff calling one from chat; the standup with a pass that takes no turn; the rules; resuming after a restart), the meeting route in `server.test.ts`, the standup in `scheduler.test.ts`, and `lib/meetings.test.ts`.
+- In a browser against the fake office: an operator-called meeting with two supervisors, ended without approving; "Call a meeting about Q4 planning" in the Chief of Staff's chat, followed from its card through passes, a second round, a reply that set the conclusion aside, and approval, with the task's result coming back into the meeting; and the standup turned on and run from the profile.
+
+### Known gaps
+
+- A meeting doesn't show on the office floor yet (step 4).
+- A meeting toast opens the activity log, not the meeting.
+- The standup's "something new" counts items and assignments only, not notes a supervisor wrote.
+- A meeting turn that Codex can't run, such as when signed out, fails with a notice in the meeting rather than waiting like the briefing.
 
 ## Layout and notifications (2026-11-08)
 

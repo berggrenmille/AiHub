@@ -223,8 +223,8 @@ export class Office {
     }
     this.syncProfiles();
     // Every office has the morning briefing, on weekdays until the operator adds weekends. It runs once a supervisor reports to it.
-    const hasBriefing = this.store.listRoutines().some((routine) => routine.ownerId === CHIEF_OF_STAFF.id && scheduledTime(routine.trigger) !== null);
-    if (!hasBriefing) {
+    const routines = this.store.listRoutines().filter((routine) => routine.ownerId === CHIEF_OF_STAFF.id && scheduledTime(routine.trigger) !== null);
+    if (!routines.some((routine) => routine.kind === "briefing")) {
       this.store.createRoutine({
         ownerId: CHIEF_OF_STAFF.id,
         responsibilityId: null,
@@ -232,6 +232,20 @@ export class Office {
         trigger: { type: "weekdays", time: "07:00" },
         timezone: TIMEZONE,
         dailyTurnBudget: 6,
+      });
+    }
+    // And the standup, off until the operator turns it on: after the briefing, so there is news to share.
+    if (!routines.some((routine) => routine.kind === "standup")) {
+      this.store.createRoutine({
+        kind: "standup",
+        ownerId: CHIEF_OF_STAFF.id,
+        responsibilityId: null,
+        title: "Standup",
+        trigger: { type: "weekdays", time: "09:00" },
+        timezone: TIMEZONE,
+        // Every supervisor once and the chair, in the first round.
+        dailyTurnBudget: SUPERVISOR_LIMIT + 1,
+        paused: true,
       });
     }
     this.delegation.resume();

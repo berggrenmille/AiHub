@@ -76,7 +76,10 @@ const MeetingBody = z.object({ agenda: z.string().trim().min(1).max(4_000), part
 const SayBody = z.object({ text: z.string().trim().min(1).max(20_000) }).strict();
 const OutcomeBody = z.object({ outcomeId: z.number().int().positive() }).strict();
 const WebBody = z.object({ sites: z.array(z.string().max(200)).max(50), live: z.boolean().optional() }).strict();
-const RoutineBody = z.object({ weekends: z.boolean() }).strict();
+const RoutineBody = z
+  .object({ weekends: z.boolean().optional(), paused: z.boolean().optional() })
+  .strict()
+  .refine((body) => body.weekends !== undefined || body.paused !== undefined, "Say what to change: weekends or paused.");
 const PolicyBody = z.object({ body: z.string().max(20_000) }).strict();
 const ModelBody = z.object({ model: z.string().trim().min(1).max(80).nullable(), effort: z.string().trim().min(1).max(20).nullable() }).strict();
 const UnsafeTicks = z.array(z.string().max(300)).max(40).optional();
@@ -519,8 +522,12 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     const body = bodyOf(RoutineBody, request.body);
     if (!body.ok) return reply.code(400).send({ error: body.error });
     try {
-      if (!office.scheduler) throw new ConflictError("This daemon runs no routines.");
-      return office.scheduler.setWeekends(request.params.id, body.data.weekends);
+      const { scheduler } = office;
+      if (!scheduler) throw new ConflictError("This daemon runs no routines.");
+      const { weekends, paused } = body.data;
+      let routine = weekends === undefined ? null : scheduler.setWeekends(request.params.id, weekends);
+      if (paused !== undefined) routine = scheduler.setPaused(request.params.id, paused);
+      return routine;
     } catch (error) {
       return sendError(reply, error);
     }

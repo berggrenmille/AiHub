@@ -321,7 +321,7 @@ describe("Morning briefing when something is wrong", () => {
   it("tells the operator outside the browser that the briefing is in, in counts only", async () => {
     const { office, store, platform } = await setUp();
     const scheduler = new Scheduler(office, { now: () => MONDAY });
-    const routine = store.listRoutines().find((candidate) => candidate.trigger.type === "weekdays")!;
+    const routine = store.listRoutines().find((candidate) => candidate.kind === "briefing" && candidate.trigger.type === "weekdays")!;
     const id = scheduler.runNow(routine.id);
     await scheduler.idle();
     assert.equal(store.getOccurrence(id)?.status, "delivered");

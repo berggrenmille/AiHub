@@ -498,6 +498,7 @@ export function App() {
           onSetModel={(choice) => commands.setModel(profile.id, choice)}
           onRunRoutine={commands.runRoutine}
           onSetWeekends={commands.setWeekends}
+          onSetRoutineOn={commands.setRoutineOn}
           staffReview={
             profile.role === "chief_of_staff"
               ? { lastAt: state.office?.staffReviewAt ?? null, running: reviewRunning, onRun: commands.reviewStaff }

@@ -48,7 +48,7 @@ export function officeStatus(office: Office, now = new Date()): OfficeStatus {
 function briefingStatus(office: Office, now: Date): { text: string; waiting: boolean } {
   const { store, scheduler } = office;
   if (scheduler?.busy) return { text: "Writing your briefing…", waiting: false };
-  const routine = store.listRoutines().find((candidate) => scheduledTime(candidate.trigger) !== null && !candidate.paused);
+  const routine = store.listRoutines().find((candidate) => candidate.kind === "briefing" && scheduledTime(candidate.trigger) !== null && !candidate.paused);
   if (!routine) return { text: "No briefing scheduled", waiting: false };
   if (!someoneReports(office)) {
     const chief = store.getAgent(CHIEF_OF_STAFF_ID)?.name ?? "the Chief of Staff";

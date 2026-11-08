@@ -480,8 +480,15 @@ export type RoutineTrigger =
   /** Runs as a section of the briefing. */
   | { type: "briefing" };
 
+/**
+ * briefing: the morning briefing, or a section of it. standup: the Chief of Staff calls a meeting
+ * with the supervisors, off until the operator turns it on.
+ */
+export type RoutineKind = "briefing" | "standup";
+
 export interface Routine {
   id: string;
+  kind: RoutineKind;
   ownerId: string;
   responsibilityId: string | null;
   title: string;
@@ -881,8 +888,10 @@ export interface WritePolicyRequest {
 }
 
 /** `PATCH /api/routines/:id`: a scheduled routine runs on weekends too, or on weekdays only. */
+/** `PATCH /api/routines/:id`: runs on weekends too, or is turned off. Only the standup can be turned off. */
 export interface UpdateRoutineRequest {
-  weekends: boolean;
+  weekends?: boolean;
+  paused?: boolean;
 }
 
 /** `PUT /api/notes/<path>`: the operator writes a note. */

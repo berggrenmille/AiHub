@@ -354,7 +354,7 @@ describe("office records", () => {
       snapshot: snapshot({
         responsibilities: [responsibility()],
         connections: [{ id: "conn-1", kind: "ics_file", label: "Work calendar", path: "C:/work.ics", pattern: null, reader: null, service: null, status: "connected", detail: "12 events", verifiedAt: null }],
-        routines: [{ id: "routine-1", ownerId: "work-schedule", responsibilityId: "resp-1", title: "Check", trigger: { type: "briefing" }, timezone: "Europe/Stockholm", dailyTurnBudget: 4, paused: false, nextRunAt: null }],
+        routines: [{ id: "routine-1", kind: "briefing", ownerId: "work-schedule", responsibilityId: "resp-1", title: "Check", trigger: { type: "briefing" }, timezone: "Europe/Stockholm", dailyTurnBudget: 4, paused: false, nextRunAt: null }],
         proposals: [proposal({ id: "old", createdAt: "2026-11-06T09:00:00.000Z" }), proposal({ id: "new" })],
         items: [item()],
         notes: [note()],
@@ -380,7 +380,7 @@ describe("office records", () => {
     state = events(state, { type: "connection", connection }, { type: "connection", connection: { ...connection, status: "failed", detail: "Not found" } });
     assert.deepEqual(state.connections.map((c) => [c.id, c.status]), [["conn-1", "failed"]]);
 
-    const routine = { id: "r-1", ownerId: "work-schedule", responsibilityId: null, title: "Check", trigger: { type: "weekdays" as const, time: "07:00" }, timezone: "Europe/Stockholm", dailyTurnBudget: 4, paused: false, nextRunAt: null };
+    const routine = { id: "r-1", kind: "briefing" as const, ownerId: "work-schedule", responsibilityId: null, title: "Check", trigger: { type: "weekdays" as const, time: "07:00" }, timezone: "Europe/Stockholm", dailyTurnBudget: 4, paused: false, nextRunAt: null };
     state = events(state, { type: "routine", routine }, { type: "routine", routine: { ...routine, paused: true } }, { type: "routine", routine: { ...routine, id: "r-2" } });
     assert.deepEqual(state.routines.map((r) => [r.id, r.paused]), [["r-1", true], ["r-2", false]]);
   });

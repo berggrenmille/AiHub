@@ -59,6 +59,8 @@ export interface OfficeCommands {
   loadModels(): Promise<ModelOption[]>;
   setModel(agentId: string, choice: ModelChoice): Promise<void>;
   setWeekends(routineId: string, weekends: boolean): Promise<void>;
+  /** Turns the standup on or off. */
+  setRoutineOn(routineId: string, on: boolean): Promise<void>;
   savePolicy(body: string): Promise<void>;
   approvePolicy(policyId: number): Promise<void>;
   declinePolicy(policyId: number): Promise<void>;
@@ -148,6 +150,7 @@ export function useOffice() {
       },
       setModel: async (agentId, choice) => apply({ type: "agent", agent: await setAgentModel(agentId, choice) }),
       setWeekends: async (routineId, weekends) => apply({ type: "routine", routine: await updateRoutine(routineId, { weekends }) }),
+      setRoutineOn: async (routineId, on) => apply({ type: "routine", routine: await updateRoutine(routineId, { paused: !on }) }),
       savePolicy: async (body) => apply({ type: "policy", policy: await writePolicy(body) }),
       approvePolicy: async (policyId) => apply({ type: "policy", policy: await approvePolicy(policyId) }),
       declinePolicy: async (policyId) => apply({ type: "policy", policy: await declinePolicy(policyId) }),

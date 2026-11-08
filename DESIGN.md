@@ -27,7 +27,7 @@ The office is one view of the same state stream that drives the roster, activity
 
 The Chief of Staff desk opens a persistent chat with streamed replies, unread briefings, and approval cards. The operator can inspect tasks, approve or decline proposals and actions, pause a routine, stop a run, dismiss or resolve an item, and trace a briefing item to its assignment and sources.
 
-Every staff member can be talked to. A chat with a supervisor is grounded in its charter, notes, and current work, and anything it agrees to do becomes an assignment through the gateway. The operator can also call a meeting: several staff discuss one topic in a shared thread, the Chief of Staff chairs it, and the outcome is recorded as decisions and assignments.
+Every staff member can be talked to. A chat with a supervisor is grounded in its charter, notes, and current work, and anything it agrees to do becomes an assignment through the gateway. The operator can also call a meeting: several staff discuss one topic in a shared thread, the Chief of Staff chairs it, and its conclusion of decisions and tasks waits for the operator's approval (see Meetings).
 
 A single request can establish multiple roles:
 
@@ -46,9 +46,9 @@ The Chief of Staff proposes new roles or reuses existing ones, identifies the re
 
 A rail down the left edge holds the pages (the office, the Inbox, Chats, Notes, and Dashboards), the Assignments panel, Access, Policy, and settings, each with a count of what waits there. A slim top bar shows the office's numbers on the office page, the day's energy, one health chip for Codex, the page's connection, and the sources, the time, and the chat button. The roster shows only on the office page.
 
-A chat opens in a drawer beside any page, or full screen on the Chats page, which lists every staff member's general chat and topics with their unread counts. A topic is named by the operator's first message and can be renamed. Topics share what the staff member knows through records and notes, not what was said in another chat. A card raised in a chat with the Chief of Staff stays in that chat, with its answer beside it; other cards go to the Chief of Staff's general chat.
+A chat opens in a drawer beside any page, or full screen on the Chats page, which lists meetings first, then every staff member's general chat and topics, with their unread counts. A meeting always opens full screen. A topic is named by the operator's first message and can be renamed. Topics share what the staff member knows through records and notes, not what was said in another chat. A card raised in a chat with the Chief of Staff stays in that chat, with its answer beside it; other cards go to the Chief of Staff's general chat.
 
-Toasts show only what needs the operator or went wrong: a failed or blocked run, a proposal, a proposed policy or service, a problem the health check found, and the morning briefing. A card doesn't toast while the chat it is in is on screen. Toasts sit under the top bar, clear of the chat, at most two at a time, and a burst folds into one line that opens the activity log. The ticker and the log carry everything else.
+Toasts show only what needs the operator or went wrong: a failed or blocked run, a proposal, a proposed policy or service, a meeting's conclusion, a problem the health check found, and the morning briefing. A card doesn't toast while the chat it is in is on screen, nor a conclusion while a meeting is. Toasts sit under the top bar, clear of the chat, at most two at a time, and a burst folds into one line that opens the activity log. The ticker and the log carry everything else.
 
 ### Views
 
@@ -146,6 +146,22 @@ A supervisor recruits a worker for a bounded assignment, such as counting last m
 ### Asking colleagues
 
 A staff member can ask a colleague for help when the colleague knows more, such as the Chief of Staff asking the Work Schedule supervisor whether next week has room for a new meeting. The question becomes an assignment for the colleague, and the asking turn ends. The colleague answers in its own run from its charter, notes, and current work; it shares an answer, not its notes or sources. The daemon then starts a new turn for the asker with the answer. A colleague answering a question cannot ask another one, questions count against the daily turn budget, and the question reaches the colleague as data, never as instructions.
+
+### Meetings
+
+A meeting is a shared thread where the operator, the Chief of Staff, and the supervisors invited discuss one topic. The Chief of Staff chairs it, and AiHub runs the rounds. In the first round every supervisor invited speaks once, in turn, and the chair speaks last. The chair then asks for another round, naming only who should speak, or concludes. A meeting has at most three rounds. The operator can speak at any point, and everyone who speaks after hears it.
+
+A meeting starts in one of three ways:
+
+- The operator calls it from the Chats page, with an agenda and the supervisors to invite. The agenda's first line names the meeting.
+- The Chief of Staff calls it from a chat, when a question needs several supervisors' views or the operator asks for one. The chat links to the meeting.
+- The standup routine calls it on weekdays at 09:00, after the briefing, with every supervisor. It is off until the operator turns it on from the Chief of Staff's profile. A supervisor with nothing new since the last standup (no new or changed item, and no work that moved) passes without a turn. When nobody has anything new, the standup isn't held.
+
+Meetings only talk. A turn in a meeting can't read sources, call services, or search the web; staff speak from their notes, open items, and work under way. A supervisor reads its sources outside meetings, so what it says counts as source data, and a conclusion written after it says so. Staff hear each other inside data markers, never as instructions.
+
+The chair concludes with a summary, at most eight decisions, and at most four tasks, each for someone in the room. The conclusion waits for the operator on a card in the meeting. Approving it records the decisions in each participant's journal and hands out the tasks as assignments, whose results come back to the meeting. The operator can instead end the meeting without approving, or reply, which sets the conclusion aside, and the chair takes the reply in and concludes again. Nothing a meeting decides acts until the operator approves it.
+
+One meeting runs at a time. Every turn counts against the daily turn budget; when it runs out, the meeting pauses until the operator says something the next day. A meeting under way carries on after a restart.
 
 ### Staff review
 
@@ -258,6 +274,8 @@ The briefing runs on weekdays, or every day once the operator turns on weekends 
 5. The Chief of Staff composes the rundown from the reports those roles can share. New items come first, those that need the operator ahead of those only worth knowing. Open items that need the operator are carried over and summarized rather than repeated; items only worth knowing aren't carried over. Items resolved since the last briefing are noted, but not those that lapsed after being told, and dismissed items are left out. If a section misses the cutoff, the briefing identifies what is missing.
 6. AiHub posts one unread briefing in the Chief of Staff inbox and links each entry to its item, assignment, and sources. Configured polling rules can deliver separate alerts between briefings.
 
+The standup is a routine too: once the operator turns it on, it calls a meeting on weekdays at 09:00 (see Meetings). It needs no health check, and it waits for a briefing still under way, since that briefing is its news.
+
 Each routine has a turn budget, and AiHub records usage per routine and per day. Codex background jobs and interactive chat draw from the same plan allowance, including the operator's own Codex use outside AiHub. When the budget or allowance runs low, background work defers to its next occurrence and the briefing says so. [Codex usage limits](https://learn.chatgpt.com/docs/pricing)
 
 Persist occurrence IDs and attempts to deduplicate delivery across retries and restarts. Catch up once for the latest missed briefing after sleep or downtime. Show actionable reasons when a run is waiting for access, internet connectivity, or Codex allowance. Future external writes with an uncertain outcome require reconciliation before retrying.
@@ -311,7 +329,7 @@ Each phase adds one kind of doing, ordered from the easiest to undo to the harde
 
 | Phase | Adds | Acceptance |
 | --- | --- | --- |
-| A. Drafts and meetings | Draft-only operations, the Action record, an approval queue, and meetings | A supervisor prepares a mail draft or draft ledger entries that appear in the approval queue, and no granted operation can send or post them. A meeting with three staff ends with recorded decisions and assignments. |
+| A. Drafts | Draft-only operations, the Action record, and an approval queue. Meetings arrived earlier. | A supervisor prepares a mail draft or draft ledger entries that appear in the approval queue, and no granted operation can send or post them. |
 | B. Workspace runs | The workspace profile, with project folders as connections | A supervisor works on a side project on its own git branch, runs its tests, and reports. It cannot reach personal data connectors, and a long workspace run does not delay the briefing. |
 | C. Approvals away from the PC | Phone notifications and answering approvals from the phone | An approval raised while the operator is away is answered from the phone, and the daemon enforces the answer. |
 | D. Spending | A spending grant with a daily cap and policies for narrow pre-approved cases | Only the role with the spending grant can propose a purchase. The gateway refuses one above the cap, and the operator completes every checkout that no policy covers. Staff never see card details. |

@@ -11,6 +11,7 @@ import { FakeRuntime } from "../runtime/fake-runtime.ts";
 import type { RunTurnOptions, TurnResult } from "../runtime/types.ts";
 import { Store } from "../store/store.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID as CHAT, CHIEF_OF_STAFF_ID as CHIEF } from "./chief-of-staff.ts";
+import { STANDUP_AGENDA } from "./meetings.ts";
 import { approveProposal, proposeSupervisor } from "./proposals.ts";
 
 const CALENDAR = fileURLToPath(new URL("../../test/fixtures/work.ics", import.meta.url));
@@ -249,6 +250,38 @@ describe("Meetings", () => {
         ["chat", null, "I've called a meeting with Elin."],
       ],
     );
+  });
+
+  it("holds the standup when anyone has news, and lets a supervisor with none pass without a turn", async () => {
+    const { store, office, settle, messages, inputsOf } = await setUp({
+      Elin: () => "Two reviews clash on Thursday.",
+      Vera: () => "Elin's clash is the one thing to settle.",
+    });
+    assert.deepEqual(office.meetings.standup(), { skipped: "Nobody had anything new since the last standup." });
+
+    const elin = store.activeResponsibilityOf("elin")!;
+    store.upsertItem({ responsibilityId: elin.id, sourceKey: "clash", sourceVersion: "1", title: "Two reviews at 14:00", detail: "", urgency: "this_week", expiresAt: null });
+    const called = office.meetings.standup();
+    assert.ok("meeting" in called);
+    await settle();
+
+    const meeting = store.getMeeting(called.meeting.id)!;
+    assert.deepEqual([meeting.calledBy, meeting.title, meeting.participantIds], ["routine", "Standup", ["elin", "nils"]]);
+    assert.deepEqual(
+      messages(meeting.id).map((message) => [message.agentId, message.kind, message.body, message.runId === null]),
+      [
+        [CHIEF, "chat", STANDUP_AGENDA, true],
+        ["elin", "chat", "Two reviews clash on Thursday.", false],
+        ["nils", "pass", "Nothing new since the last standup.", true],
+        [CHIEF, "chat", "Elin's clash is the one thing to settle.", false],
+        [CHIEF, "meeting", 'Conclusion of "Standup"', false],
+      ],
+    );
+    assert.deepEqual(inputsOf("Nils"), [], "Nils used no turn");
+
+    // Nothing has changed since, so the next standup isn't held.
+    office.meetings.end(meeting.id);
+    assert.deepEqual(office.meetings.standup(), { skipped: "Nobody had anything new since the last standup." });
   });
 
   it("keeps to its rules: supervisors only, one meeting at a time, and a last round", async () => {

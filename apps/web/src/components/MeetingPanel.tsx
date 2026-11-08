@@ -284,7 +284,8 @@ function MeetingMessage({ message, personOf, outcome, waiting, onApprove, onEnd,
         <p>
           <Portrait look={lookFor(person?.avatar ?? "someone")} size={16} animated={false} />
           <span>
-            {person?.name ?? "Someone"} passed: nothing to add.
+            {/* A pass AiHub made, such as at the standup for someone with nothing new, took no turn. */}
+            {person?.name ?? "Someone"} passed{message.runId === null ? " without a turn" : ""}: {message.body}
           </span>
           <span className="muted"> · {time}</span>
         </p>

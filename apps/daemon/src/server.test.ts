@@ -314,11 +314,12 @@ describe("HTTP server: profiles and notes", () => {
     assert.equal(taken.json().web, null);
   });
 
-  it("turns weekend briefings on and off", async () => {
+  it("turns weekend briefings on and off, and the standup", async () => {
     let office: Office;
     ({ app, office } = await server());
-    const routine = office.store.listRoutines()[0]!;
-    const patch = (payload: object) => app!.inject({ method: "PATCH", url: `/api/routines/${routine.id}`, headers: PAGE, payload });
+    const routine = office.store.listRoutines().find((candidate) => candidate.kind === "briefing")!;
+    const standup = office.store.listRoutines().find((candidate) => candidate.kind === "standup")!;
+    const patch = (payload: object, id = routine.id) => app!.inject({ method: "PATCH", url: `/api/routines/${id}`, headers: PAGE, payload });
     // A daemon without a scheduler runs no routines.
     assert.equal((await patch({ weekends: true })).statusCode, 409);
 
@@ -330,6 +331,14 @@ describe("HTTP server: profiles and notes", () => {
     assert.deepEqual((await patch({ weekends: false })).json().trigger, { type: "weekdays", time: "07:00" });
     assert.equal((await patch({ weekends: "yes" })).statusCode, 400);
     assert.equal((await app.inject({ method: "PATCH", url: "/api/routines/nope", headers: PAGE, payload: { weekends: true } })).statusCode, 404);
+
+    // The standup is off until the operator turns it on. The briefing can't be turned off.
+    assert.equal(standup.paused, true);
+    const on = await patch({ paused: false }, standup.id);
+    assert.equal(on.statusCode, 200);
+    assert.deepEqual([on.json().paused, on.json().nextRunAt], [false, "2026-11-16T08:00:00.000Z"], "Monday at 09:00");
+    assert.equal((await patch({ paused: true })).statusCode, 400);
+    assert.equal((await patch({})).statusCode, 400);
   });
 
   it("writes the office policy, and approves or declines proposals for it", async () => {
@@ -479,7 +488,7 @@ describe("HTTP server: decisions", () => {
   it("runs a routine on request", async () => {
     let office: Office;
     ({ app, office } = await server());
-    const routine = office.store.listRoutines()[0]!;
+    const routine = office.store.listRoutines().find((candidate) => candidate.kind === "briefing")!;
     const run = () => app!.inject({ method: "POST", url: `/api/routines/${routine.id}/run`, headers: PAGE });
     assert.equal((await run()).statusCode, 409, "no scheduler");
 

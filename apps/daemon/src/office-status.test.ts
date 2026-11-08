@@ -60,7 +60,7 @@ describe("The office's status outside the browser", () => {
     let finish: (result: BriefingResult) => void = () => {};
     const { store, office, clock, status } = setUp("2026-11-16T06:00:00.000Z", () => new Promise((resolve) => (finish = resolve)));
     addSupervisor(store);
-    const routine = store.listRoutines().find((candidate) => candidate.trigger.type === "weekdays")!;
+    const routine = store.listRoutines().find((candidate) => candidate.kind === "briefing" && candidate.trigger.type === "weekdays")!;
     void office.scheduler!.tick();
     await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(status().status, "Writing your briefing…");

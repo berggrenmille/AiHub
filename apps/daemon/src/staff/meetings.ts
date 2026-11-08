@@ -42,6 +42,10 @@ interface Transcript {
 
 /** At most this many messages of a meeting go into a turn, the latest. */
 const TRANSCRIPT_LIMIT = 60;
+const DAY_MS = 24 * 60 * 60_000;
+
+/** What the standup is for. Its first line names it. */
+export const STANDUP_AGENDA = "Standup\nWhat is new since the last standup, what is stuck, and what needs the operator. Keep it short: the operator reads every word.";
 
 export class Meetings {
   /** The meeting each turn in progress speaks in. */
@@ -160,6 +164,21 @@ export class Meetings {
     for (const meeting of this.office.store.meetingsIn("running")) this.advance(meeting.id);
   }
 
+  /**
+   * The standup routine calls the standup, with every supervisor, when anyone has news. Returns why
+   * it didn't call one otherwise.
+   */
+  standup(now = new Date()): { meeting: Meeting } | { skipped: string } {
+    const { store } = this.office;
+    const running = store.meetingsIn("running")[0];
+    if (running) return { skipped: `The meeting "${running.title}" was under way.` };
+    const supervisors = store.listAgents().filter((agent) => agent.role === "supervisor");
+    if (!supervisors.length) return { skipped: "There are no supervisors yet." };
+    const since = this.lastStandupAt(now.toISOString());
+    if (!supervisors.some((agent) => this.hasNews(agent.id, since))) return { skipped: "Nobody had anything new since the last standup." };
+    return { meeting: this.call({ agenda: STANDUP_AGENDA, calledBy: "routine" }) };
+  }
+
   // Gateway tools -----------------------------------------------------------
 
   /** The Chief of Staff calls a meeting from chat. It starts once the chat turn has ended. */
@@ -222,6 +241,11 @@ export class Meetings {
       return this.moveOn(meetingId);
     }
     const chair = next === meeting.chairId;
+    // At the standup, a supervisor with nothing new passes without a turn.
+    if (meeting.calledBy === "routine" && meeting.round === 1 && !chair && !this.hasNews(agent.id, this.lastStandupAt(meeting.createdAt))) {
+      this.office.postMessage(meetingId, agent.id, "Nothing new since the last standup.", null, "pass");
+      return this.moveOn(meetingId);
+    }
     const transcript = this.transcript(meeting, agent.id);
     // A supervisor reads its sources outside meetings, so what it says counts as source data.
     const sourceData = transcript.sourceData || agent.profile === "data";
@@ -424,6 +448,21 @@ export class Meetings {
     const meeting = this.office.store.getMeeting(meetingId);
     if (!meeting) throw new NotFoundError(`No meeting ${meetingId}`);
     return meeting;
+  }
+
+  /** When the standup before a time was called, or a day before it if there was none. */
+  private lastStandupAt(before: string): string {
+    const earlier = this.office.store.listMeetings().find((meeting) => meeting.calledBy === "routine" && meeting.createdAt < before);
+    return earlier?.createdAt ?? new Date(Date.parse(before) - DAY_MS).toISOString();
+  }
+
+  /** Something new for a supervisor to share: an item new or changed since then, or work that moved. */
+  private hasNews(agentId: string, since: string): boolean {
+    const { store } = this.office;
+    const responsibility = store.activeResponsibilityOf(agentId);
+    const items = responsibility ? store.itemsOf(responsibility.id, ["new", "open"]) : [];
+    if (items.some((item) => item.firstSeenAt > since || (item.state === "new" && item.updatedAt > since))) return true;
+    return store.listAssignments().some((assignment) => (assignment.ownerId === agentId || assignment.requesterId === agentId) && assignment.updatedAt > since);
   }
 
   private names(ids: string[]): string {

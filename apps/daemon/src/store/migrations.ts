@@ -446,4 +446,9 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX meeting_outcomes_by_meeting ON meeting_outcomes (meeting_id, id);
   `,
+
+  // v18: routines have a kind: the briefing and its sections, or the standup meeting.
+  `
+  ALTER TABLE routines ADD COLUMN kind TEXT NOT NULL DEFAULT 'briefing' CHECK (kind IN ('briefing', 'standup'));
+  `,
 ];

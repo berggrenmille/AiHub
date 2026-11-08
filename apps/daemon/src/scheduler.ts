@@ -115,13 +115,16 @@ export class Scheduler {
       const today = localDate(now, routine.timezone);
       if (!runsOn(routine.trigger, today)) continue;
       const due = zonedInstant(today, time, routine.timezone);
-      if (now >= new Date(due.getTime() - HEALTH_LEAD_MS) && now < due) await this.healthCheck(routine, today);
+      if (routine.kind === "briefing" && now >= new Date(due.getTime() - HEALTH_LEAD_MS) && now < due) await this.healthCheck(routine, today);
       if (now >= due) this.runOccurrence(routine, `${routine.id}:${today}`, due);
     }
     this.power(now);
   }
 
-  /** Runs the briefing now, outside the schedule. It doesn't wait or retry: the operator is there. */
+  /**
+   * Runs a routine now, outside the schedule. The briefing doesn't wait or retry: the operator is
+   * there. A standup that has nothing to discuss says why.
+   */
   runNow(routineId: string): string {
     const routine = this.office.store.getRoutine(routineId);
     if (!routine) throw new NotFoundError(`No routine ${routineId}`);
@@ -129,7 +132,31 @@ export class Scheduler {
     const now = this.now();
     const id = `${routine.id}:manual:${now.toISOString()}`;
     this.runOccurrence(routine, id, now, true);
+    const occurrence = this.office.store.getOccurrence(id);
+    if (routine.kind === "standup" && occurrence?.status !== "delivered") throw new ConflictError(`No standup: ${occurrence?.detail ?? "it didn't start."}`);
     return id;
+  }
+
+  /** The operator turns the standup on or off. Turned on after today's time, it starts tomorrow. */
+  setPaused(routineId: string, paused: boolean): Routine {
+    const { store, bus } = this.office;
+    const routine = store.getRoutine(routineId);
+    if (!routine) throw new NotFoundError(`No routine ${routineId}`);
+    if (routine.kind !== "standup") throw new InvalidRequestError("Only the standup can be turned off.");
+    const time = scheduledTime(routine.trigger);
+    const now = this.now();
+    const today = localDate(now, routine.timezone);
+    if (!paused && time && runsOn(routine.trigger, today) && now >= zonedInstant(today, time, routine.timezone)) {
+      const id = `${routine.id}:${today}`;
+      if (store.claimOccurrence(id, routine.id, zonedInstant(today, time, routine.timezone).toISOString())) store.updateOccurrence(id, { status: "skipped", detail: "Turned on after its time." });
+    }
+    const updated = store.setRoutinePaused(routine.id, paused)!;
+    const published = { ...updated, nextRunAt: this.nextRunAt(updated) };
+    bus.publish({ type: "routine", routine: published });
+    const summary = `The operator turned the ${routine.title.toLowerCase()} ${paused ? "off" : "on"}`;
+    bus.publish({ type: "activity", entry: store.addActivity({ agentId: routine.ownerId, runId: null, kind: "meeting", summary }) });
+    this.power(now);
+    return published;
   }
 
   /**
@@ -178,11 +205,13 @@ export class Scheduler {
 
   private runOccurrence(routine: Routine, id: string, scheduledFor: Date, manual = false) {
     const { store } = this.office;
+    // The standup waits for a briefing still under way: what it reports is the standup's news.
     if (this.running) return;
     store.claimOccurrence(id, routine.id, scheduledFor.toISOString());
     const occurrence = store.getOccurrence(id)!;
     // Another scheduler on the same database may have started it between the read and now.
     if (!this.isDue(occurrence) || !store.startOccurrence(occurrence)) return;
+    if (routine.kind === "standup") return this.standup(routine, id);
     this.running = this.briefing(this.office)
       .then((outcome) => this.settle(routine, occurrence, outcome, manual))
       .catch((error: unknown) => this.fail(id, error instanceof Error ? error.message : String(error), null, manual))
@@ -193,6 +222,23 @@ export class Scheduler {
         if (updated) this.office.bus.publish({ type: "routine", routine: { ...updated, nextRunAt: this.nextRunAt(updated) } });
         this.power(this.now());
       });
+  }
+
+  /** Calls the standup. It only calls the meeting, which then runs on its own. */
+  private standup(routine: Routine, id: string) {
+    const { store, bus } = this.office;
+    try {
+      const outcome = this.office.meetings.standup(this.now());
+      if ("meeting" in outcome) {
+        store.updateOccurrence(id, { status: "delivered", detail: `Called "${outcome.meeting.title}".` });
+      } else {
+        store.updateOccurrence(id, { status: "skipped", detail: outcome.skipped });
+        bus.publish({ type: "activity", entry: store.addActivity({ agentId: routine.ownerId, runId: null, kind: "meeting", summary: `No standup: ${outcome.skipped}` }) });
+      }
+    } catch (error) {
+      store.updateOccurrence(id, { status: "failed", detail: error instanceof Error ? error.message : String(error) });
+    }
+    bus.publish({ type: "routine", routine: { ...store.getRoutine(routine.id)!, nextRunAt: this.nextRunAt(routine) } });
   }
 
   /** A new occurrence runs at once; a waiting or failed one when it is time to try again. */
@@ -295,14 +341,14 @@ export class Scheduler {
         const occurrence = store.getOccurrence(`${routine.id}:${today}`);
         const retryAt = occurrence?.retryAt ? Date.parse(occurrence.retryAt) : null;
         const settled = !!occurrence && occurrence.status !== "pending" && occurrence.status !== "running" && retryAt === null;
-        if (!settled && now.getTime() >= due - HEALTH_LEAD_MS - WAKE_LEAD_MS) {
+        if (!settled && now.getTime() >= due - leadOf(routine) - WAKE_LEAD_MS) {
           if (retryAt !== null && retryAt - now.getTime() > AWAKE_WAIT_MS) wakes.push(retryAt - WAKE_LEAD_MS);
           else awake = true;
         }
       }
       for (let n = 0, day = today; n < 8; n++, day = addDays(day, 1)) {
         if (!runsOn(trigger, day)) continue;
-        const at = zonedInstant(day, time, timeZone).getTime() - HEALTH_LEAD_MS - WAKE_LEAD_MS;
+        const at = zonedInstant(day, time, timeZone).getTime() - leadOf(routine) - WAKE_LEAD_MS;
         if (at > now.getTime()) {
           wakes.push(at);
           break;
@@ -371,6 +417,11 @@ export class Scheduler {
   private later(ms: number): string {
     return new Date(this.now().getTime() + ms).toISOString();
   }
+}
+
+/** How long before its time a routine needs the PC awake: the briefing for its health check. */
+function leadOf(routine: Routine): number {
+  return routine.kind === "briefing" ? HEALTH_LEAD_MS : 0;
 }
 
 /** How many of the new items need the operator, said only when it isn't all of them. */

@@ -41,7 +41,7 @@ function setUp(start: string, briefing?: (done: () => Outcome) => Promise<Outcom
     },
   });
   office.scheduler = scheduler;
-  const routine = store.listRoutines().find((candidate) => candidate.ownerId === CHIEF_OF_STAFF_ID && candidate.trigger.type === "weekdays")!;
+  const routine = store.listRoutines().find((candidate) => candidate.ownerId === CHIEF_OF_STAFF_ID && candidate.kind === "briefing")!;
   const at = async (iso: string) => {
     clock.now = new Date(iso);
     await scheduler.tick();
@@ -58,7 +58,32 @@ describe("The scheduler", () => {
     office.start();
     assert.deepEqual(routine.trigger, { type: "weekdays", time: "07:00" });
     assert.equal(routine.timezone, "Europe/Stockholm");
-    assert.equal(store.listRoutines().filter((candidate) => candidate.trigger.type === "weekdays").length, 1, "starting again adds none");
+    assert.deepEqual(store.listRoutines().map((candidate) => candidate.kind).sort(), ["briefing", "standup"], "starting again adds none");
+  });
+
+  it("holds the standup at 09:00 once the operator turns it on, with no health check of its own", async () => {
+    const { store, scheduler, at } = setUp("2026-11-09T07:00:00.000Z");
+    const standup = store.listRoutines().find((candidate) => candidate.kind === "standup")!;
+    assert.deepEqual([standup.title, standup.trigger, standup.paused], ["Standup", { type: "weekdays", time: "09:00" }, true]);
+
+    // Off: nothing happens at 09:00. Turned on at 09:10, it starts tomorrow.
+    await at("2026-11-09T08:05:00.000Z");
+    assert.equal(store.getOccurrence(`${standup.id}:2026-11-09`), null);
+    await at("2026-11-09T08:10:00.000Z");
+    const on = scheduler.setPaused(standup.id, false);
+    assert.deepEqual([on.paused, on.nextRunAt], [false, "2026-11-10T08:00:00.000Z"]);
+    assert.equal(store.getOccurrence(`${standup.id}:2026-11-09`)?.detail, "Turned on after its time.");
+
+    // Tuesday: the briefing at 07:00, then the standup at 09:00. With no supervisors, there's nobody to meet.
+    await at("2026-11-10T06:00:00.000Z");
+    await at("2026-11-10T08:00:00.000Z");
+    const occurrence = store.getOccurrence(`${standup.id}:2026-11-10`)!;
+    assert.deepEqual([occurrence.status, occurrence.detail], ["skipped", "There are no supervisors yet."]);
+    assert.equal(store.getOccurrence(`${standup.id}:2026-11-10:health`), null);
+    assert.throws(() => scheduler.runNow(standup.id), (error) => error instanceof ConflictError && /^No standup: There are no supervisors yet/.test(error.message));
+
+    const briefing = store.listRoutines().find((candidate) => candidate.kind === "briefing")!;
+    assert.throws(() => scheduler.setPaused(briefing.id, true), InvalidRequestError);
   });
 
   it("checks health an hour before and briefs once at 07:00", async () => {
@@ -146,7 +171,7 @@ describe("The scheduler", () => {
     const scheduler = new Scheduler(office, { now: () => now });
     await scheduler.tick();
     await scheduler.idle();
-    const routine = store.listRoutines()[0]!;
+    const routine = store.listRoutines().find((candidate) => candidate.kind === "briefing")!;
     assert.equal(store.getOccurrence(`${routine.id}:2026-11-09`)?.status, "skipped");
     assert.equal(runtime.calls.filter((call) => call.startsWith("turn ")).length, 0);
   });
@@ -326,8 +351,8 @@ describe("The scheduler when Codex can't run", () => {
     };
     try {
       const { store } = daemons[0]!;
-      const routine = store.listRoutines().find((candidate) => candidate.trigger.type === "weekdays")!;
-      assert.equal(store.listRoutines().length, 1, "the second daemon added no routine");
+      const routine = store.listRoutines().find((candidate) => candidate.kind === "briefing")!;
+      assert.equal(store.listRoutines().length, 2, "the second daemon added no routine");
       await both(MONDAY_0700);
       assert.equal(calls.length, 1);
       fail = false;

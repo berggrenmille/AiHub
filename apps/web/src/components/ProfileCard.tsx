@@ -72,6 +72,7 @@ interface ProfileCardProps {
   onSetModel(choice: ModelChoice): Promise<void>;
   onRunRoutine(routineId: string): Promise<void>;
   onSetWeekends(routineId: string, weekends: boolean): Promise<void>;
+  onSetRoutineOn(routineId: string, on: boolean): Promise<void>;
   /** For the Chief of Staff: her review of the staff, and asking for one now. */
   staffReview: { lastAt: string | null; running: boolean; onRun(): Promise<void> } | null;
 }
@@ -241,7 +242,7 @@ export function ProfileCard(props: ProfileCardProps) {
             ) : (
               <p className="muted">{agent.role === "chief_of_staff" ? "The morning briefing and any mandates you grant." : "None yet."}</p>
             )}
-            {routines.length > 0 && <RoutineList routines={routines} onRun={props.onRunRoutine} onSetWeekends={props.onSetWeekends} now={now} />}
+            {routines.length > 0 && <RoutineList routines={routines} onRun={props.onRunRoutine} onSetWeekends={props.onSetWeekends} onSetOn={props.onSetRoutineOn} now={now} />}
             {props.staffReview && <StaffReviewRow {...props.staffReview} now={now} />}
           </section>
 
@@ -649,11 +650,13 @@ function RoutineList({
   routines,
   onRun,
   onSetWeekends,
+  onSetOn,
   now,
 }: {
   routines: Routine[];
   onRun(routineId: string): Promise<void>;
   onSetWeekends(routineId: string, weekends: boolean): Promise<void>;
+  onSetOn(routineId: string, on: boolean): Promise<void>;
   now: number;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
@@ -664,18 +667,18 @@ function RoutineList({
     setMessage(null);
     try {
       await onRun(routine.id);
-      setMessage({ routineId: routine.id, text: "Started. Watch the office.", error: false });
+      setMessage({ routineId: routine.id, text: routine.kind === "standup" ? "Called. Follow it on the Chats page." : "Started. Watch the office.", error: false });
     } catch (failure) {
       setMessage({ routineId: routine.id, text: errorText(failure), error: true });
     } finally {
       setBusy(null);
     }
   };
-  const setWeekends = async (routine: Routine, weekends: boolean) => {
+  const change = async (routine: Routine, apply: () => Promise<void>) => {
     setBusy(routine.id);
     setMessage(null);
     try {
-      await onSetWeekends(routine.id, weekends);
+      await apply();
     } catch (failure) {
       setMessage({ routineId: routine.id, text: errorText(failure), error: true });
     } finally {
@@ -689,17 +692,32 @@ function RoutineList({
           <div>
             <strong>{routine.title}</strong>
             <span className="muted small block">
-              {triggerLabel(routine.trigger)} · {routine.dailyTurnBudget} turns a day
-              {routine.paused ? " · paused" : routine.nextRunAt ? ` · next ${formatShortWhen(routine.nextRunAt, new Date(now))}` : ""}
+              {triggerLabel(routine.trigger)} · {routine.kind === "standup" ? "a turn for each supervisor with news" : `${routine.dailyTurnBudget} turns a day`}
+              {routine.paused ? (routine.kind === "standup" ? " · off" : " · paused") : routine.nextRunAt ? ` · next ${formatShortWhen(routine.nextRunAt, new Date(now))}` : ""}
             </span>
-            {routine.trigger.type !== "briefing" && (
+            {routine.kind === "standup" && (
+              <span className="muted small block">A meeting with the supervisors. Anyone with nothing new since the last one passes without a turn.</span>
+            )}
+            {routine.kind === "standup" && (
+              <label className="toggle routine-weekends" htmlFor={`${id}-${routine.id}-on`}>
+                <input
+                  id={`${id}-${routine.id}-on`}
+                  type="checkbox"
+                  checked={!routine.paused}
+                  disabled={busy !== null}
+                  onChange={(event) => void change(routine, () => onSetOn(routine.id, event.target.checked))}
+                />
+                On
+              </label>
+            )}
+            {routine.trigger.type !== "briefing" && (routine.kind !== "standup" || !routine.paused) && (
               <label className="toggle routine-weekends" htmlFor={`${id}-${routine.id}-weekends`}>
                 <input
                   id={`${id}-${routine.id}-weekends`}
                   type="checkbox"
                   checked={routine.trigger.type === "daily"}
                   disabled={busy !== null}
-                  onChange={(event) => void setWeekends(routine, event.target.checked)}
+                  onChange={(event) => void change(routine, () => onSetWeekends(routine.id, event.target.checked))}
                 />
                 Weekends too
               </label>

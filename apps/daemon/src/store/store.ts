@@ -25,6 +25,7 @@ import {
   type Responsibility,
   type Routine,
   type PolicyVersion,
+  type RoutineKind,
   type RoutineTrigger,
   type Run,
   type RunKind,
@@ -1068,14 +1069,26 @@ export class Store {
 
   // Routines and occurrences ------------------------------------------------
 
-  createRoutine(input: Omit<Routine, "id" | "paused" | "nextRunAt">): Routine {
+  /** A briefing routine unless it says otherwise, and on unless created paused. */
+  createRoutine(input: Omit<Routine, "id" | "kind" | "paused" | "nextRunAt"> & { kind?: RoutineKind; paused?: boolean }): Routine {
     const id = crypto.randomUUID();
     this.db
       .prepare(
-        `INSERT INTO routines (id, owner_id, responsibility_id, title, trigger, timezone, daily_turn_budget, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO routines (id, kind, owner_id, responsibility_id, title, trigger, timezone, daily_turn_budget, paused, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, input.ownerId, input.responsibilityId, input.title, JSON.stringify(input.trigger), input.timezone, input.dailyTurnBudget, this.timestamp());
+      .run(
+        id,
+        input.kind ?? "briefing",
+        input.ownerId,
+        input.responsibilityId,
+        input.title,
+        JSON.stringify(input.trigger),
+        input.timezone,
+        input.dailyTurnBudget,
+        input.paused ? 1 : 0,
+        this.timestamp(),
+      );
     return this.getRoutine(id)!;
   }
 
@@ -1848,6 +1861,7 @@ function toStaffChange(row: Row): StaffChange {
 function toRoutine(row: Row): Routine {
   return {
     id: String(row.id),
+    kind: row.kind as RoutineKind,
     ownerId: String(row.owner_id),
     responsibilityId: row.responsibility_id as string | null,
     title: String(row.title),
