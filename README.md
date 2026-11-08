@@ -9,6 +9,7 @@ A local, game-like office for your personal staff of AI agents. The Chief of Sta
 | `apps/daemon` | Fastify daemon on `127.0.0.1:7420`. Owns state, scheduling, and the Codex runtime. |
 | `apps/web` | React and Vite UI. In development, Vite proxies `/api` to the daemon. |
 | `packages/shared` | Types shared by the daemon and the UI. |
+| `packages/views` | The components views may use, defined once for the daemon's check and the UI's renderers, and the guide staff read. |
 | `packages/codex-protocol` | Codex App Server protocol types, generated from the pinned Codex version. |
 | `spikes/codex-app-server` | Milestone 1 spike that drives Codex App Server and probes run isolation. |
 | `scripts/codex.mjs` | Runs the project's pinned Codex CLI with AiHub's own `CODEX_HOME`. |
@@ -92,6 +93,16 @@ Staff keep their notes in a vault of markdown files at `data/vault/`, one folder
 ## Models and reasoning
 
 Each staff member's profile card shows the model and reasoning level they run on, and what their last run used; each recent run lists it too, as does the run's line in the activity log. Change them with Change on the card: the lists are the models your Codex sign-in offers and the levels each supports. Staff you haven't set run on the office default, the model Codex marks as its default at that model's default reasoning. When the Chief of Staff proposes a supervisor, she picks a model and level that fit the work and says why on the card. More reasoning thinks longer and uses more of your plan on every run.
+
+## Views and dashboards
+
+Staff can answer with a chart, a table, a few key numbers, a list, or a timeline where it reads better than text. Ask for one in chat, such as "show me this month's spending as a chart"; it appears under the reply. A supervisor can add one to its section of the morning briefing, though most sections need none. Hover a chart to read its values, use the arrow keys to step through them, or switch it to a table.
+
+Ask the Chief of Staff for a dashboard, such as "make me a dashboard of open items by staff member", and it appears in the Dashboards tab. A dashboard reads the office's records each time it opens, so its numbers are current, and Refresh reads them again. Opening one never changes anything. Ask opens a chat with whoever made it, ready for your question, and Remove deletes it.
+
+A button in a view says what it does: hover it to read its action, and one that opens a page shows the site. A message for staff goes into the chat box for you to edit or send. In chat and on dashboards, a picture from another site waits for your click on a placeholder that names the site, so an address can't carry anything out of the office by itself.
+
+In the fake office, try "show me a chart" or "make me a dashboard" in the Chief of Staff's chat.
 
 ## Office policy
 

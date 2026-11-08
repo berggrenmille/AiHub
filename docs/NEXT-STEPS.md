@@ -4,34 +4,9 @@ Where the build stands against [DESIGN.md](../DESIGN.md) › Build sequence and 
 
 ## Up next
 
-The operator set the order on 2026-11-08: views first, then the Chief of Staff's review of the staff. Nothing in this section is built yet. When a phase starts, its rules move into DESIGN.md.
+The operator set the order on 2026-11-08: views first, then the Chief of Staff's review of the staff. Views are built (below), so the review is next. Nothing in this section is built yet. When it starts, its rules move into DESIGN.md.
 
-### 1. Views: answers, reports, and dashboards as interface
-
-Staff answer with interface where it reads better than text: a chart, a table, cards, a timeline, or a small working tool. The language is [OpenUI](https://github.com/thesysdev/open-intelligent-ui): the model writes a short program of components, values that update as the operator interacts, and calculations such as `@GroupBy` and `@Stats`. AiHub checks it and draws it with its own components. It needs `@openuidev/lang-core` and `@openuidev/react-lang` (MIT, React 19 and zod 4, like the web app), but not the demo's Next.js app or Thesys's hosted Gateway, so no Thesys key and nothing beyond Codex sees the data.
-
-Where views appear, in the order to build them:
-
-1. **Chat answers and briefing sections**, with the data written into the program. A supervisor's section carries a view, such as electricity prices as a chart with the cheap hours marked. The text stays the record: a view that fails the check falls back to it.
-2. **Dashboards**: saved views, pinned to a staff member or the office, that fetch fresh data each time they open. The Chief of Staff can make one when asked.
-
-Rules:
-
-- **Views are part of AiHub. Any runtime can write one, and none can change what a view may do.** A staff member reads the language guide and hands a view in through gateway tools, so a Claude or other runtime offers the same tools through its own tool use. Nothing depends on Codex-only features, on Thesys's correction step, or on streaming a view as it is written; a view appears once it is handed in.
-- **No address the model writes loads by itself, in views by staff who hold personal data.** This is the design's rule that no run combines personal data, untrusted content, and a way out to a party the content could control (DESIGN.md › Authority and data boundaries), the reason web search runs in cached mode. A view is written by a model that may have read mail or web pages, and an image whose address carries data sends that data to the image's server as soon as the view renders, with no click. So:
-  - Services AiHub picks itself, such as one map tile provider, load in any view.
-  - Staff who hold no personal data (no sources, no answers from colleagues, no notes but their own, the same line as for live web access) can show any image or embedded page.
-  - In views by staff who hold personal data, an outside image or embedded page shows as a placeholder naming its site, and loads when the operator clicks it. The operator trusts the site's name without seeing what the address carries.
-  - AiHub's components enforce this. The page's content security policy still blocks outside scripts.
-- **Opening a dashboard never acts.** The data it loads each time it opens comes from read-only gateway tools over AiHub's records: items, runs, assignments, and what readers pull from sources. So opening a page can't do anything that needs an approval card. A dashboard can show anything in the office: only the operator sees it, and the data goes to the screen, not back to a staff member.
-- **A button does what it says.** A button the operator clicks can do anything the operator can do in AiHub, such as resolving or dismissing an item, and is labeled with what it does. One that messages the assistant shows what it sends, and the message arrives as the operator's own.
-- **The daemon checks every program** when it is handed in and returns the errors, so the staff member fixes it in the same turn, as with readers.
-- **The guide is read on demand.** The demo's guide is about 8,000 tokens, so it comes from a tool when a staff member makes a view, not in every run's instructions.
-- **Each model is measured before it writes views.** Smaller models write worse programs without a correction step. OpenUI ships a benchmark that checks any model's output; a model that scores poorly answers in text.
-
-To settle when it starts: the first view the operator wants to see; what the install script in `lang-core` does (the demo disables it); and how mature the 1.0 packages are.
-
-### 2. The Chief of Staff reviews the staff
+### The Chief of Staff reviews the staff
 
 The operator wants to revisit how the Chief of Staff behaves. One of the role's purposes is to review the supervisors' work over time and keep them as effective as they can be: catch blockers, and suggest replacing, removing, or adding supervisors, or changing their responsibilities, when something needs to improve. It shouldn't happen all the time, but over time the role is responsible for it: the Chief of Staff runs the staff overall.
 
@@ -390,3 +365,57 @@ The hiring turn on GPT-6-Luna at low reasoning was one turn of 49,337 tokens, in
 - There is no office-wide default of AiHub's own: the office default is whatever Codex marks as its default.
 - Fast service tiers, which Codex offers for most models at more usage, aren't offered.
 - A worker starts on its manager's choice; the supervisor doesn't pick for it.
+
+## Views (2026-11-08)
+
+The operator asked for staff to answer with interface where it reads better than text, and loosened the planned rules before it started: no benchmark gate, outside images in chat and on dashboards behind a click, and no data limits on dashboards beyond read-only. DESIGN.md › Office experience › Views has the rules as built.
+
+1. **One component library.** `packages/views` defines the components a view may use (text, headings, badges, callouts, key numbers, tables, bar and line charts, lists, timelines, links, images, buttons, selects, toggles, cards, and tabs) as zod schemas in [OpenUI Lang](https://github.com/thesysdev/open-intelligent-ui). The daemon checks programs against them, the web app draws them, and the guide staff read is written from them. It uses `@openuidev/lang-core` and `@openuidev/react-lang` 1.1, not Thesys's hosted service. The `lang-core` install script is turned off, and the packages' developer tools never mount.
+2. **Handing a view in.** `aihub_view_guide` returns the guide for a reply or a dashboard. `aihub_show_view` puts a view under a chat reply or on the caller's briefing section, and `aihub_save_dashboard` (the Chief of Staff, in chat) saves or replaces a dashboard by title. Each program is checked when it arrives and the problems go back to the staff member. After three failed checks in a run, the tool says to answer in text. A reply holds three views, a section one, and the office 30 dashboards. Views live in the `views` table (migration v11).
+3. **Dashboard data.** Six read-only data tools (`office_items`, `office_runs`, `office_usage`, `office_staff`, `office_assignments`, `source_records`) answer `POST /api/views/data` when a dashboard opens or a filter in it changes. `DELETE /api/views/:id` removes one.
+4. **Drawing them.** Views load with the first one shown, as their own 218 KB chunk (67 KB gzipped). Charts follow the dataviz method: one axis, thin marks, a legend from two series, hover and arrow-key values, a table a click away, and a categorical palette checked for color vision deficiency on both themes. Views show under replies, on the briefing's paper with their author's name, and in the Dashboards tab with Refresh, Ask (a chat with the author, ready for a question), and Remove. A button's tooltip reads its action; outside images wait on a placeholder naming their site, except on a section by a supervisor with no sources.
+5. **The fake office** shows a chart for "show me a chart", saves a dashboard for "make me a dashboard", and adds a list view to a report section.
+
+### How it was shown
+
+- Tests: `views.test.ts` in `packages/views` (the check, including the guide's own examples and refusing anything that writes, and the guide), `views/views.test.ts` in the daemon (handing in, the caps, section views, dashboards, and the data tools over a real office), `server.test.ts` (the data and remove routes), and `lib/views.test.ts` and `state.test.ts` on the web side.
+- In a browser against the fake office: a chart under a chat reply with its tooltip and table, a dashboard whose filter queries again, Ask filling the author's chat box once, a section view on the briefing's paper, and both themes.
+- Against real Codex, in throwaway offices:
+  - Asked for a week of finished tasks as a chart, Vera read the guide, handed in "Tasks finished this week" on the first try, and named Thursday in her reply.
+  - Asked for a dashboard of how much the office works, Vera saved "Office workload" on the first try. It opened in the production build under the page's CSP, and its data requests answered.
+  - Asked for Sunday's hourly SE3 prices with the cheapest hours marked, Elsa (web search, GPT-6-Luna at low reasoning) searched, read the guide, and handed in a 24-hour bar chart with 02–04 highlighted, on the first try.
+  - Three briefings with Clara, Ingrid, Nora, and Elsa handed in no section views. Ingrid's five new transactions and Elsa's unpublished prices read fine as text, which is what the instructions ask.
+
+### Usage measured
+
+Codex 0.167.0, 2026-11-08:
+
+| Run | Model | Input tokens | Cached | Output | Time |
+| --- | --- | --- | --- | --- | --- |
+| Chat: Vera charts a week of tasks | GPT-6.1-Sol | 44,276 | 28,288 | 186 | 12 s |
+| Chat: Vera saves a dashboard | GPT-6.1-Sol | 79,490 | 73,472 | 505 | 18 s |
+| Chat: Elsa charts the day's prices from web search | GPT-6-Luna, low | 111,828 | 83,072 | 462 | 18 s |
+| Elsa's briefing report (no view) | GPT-6-Luna, low | 79,053 | 34,688 | 458 | |
+
+The guide costs about 2,800 tokens for a reply and 5,000 for a dashboard, only in the turns that read it. A chart turn costs a little more than a plain chat turn (about 35K input), and a dashboard turn about twice as much, most of it cached. Opening a dashboard costs no turn.
+
+### What the real run changed
+
+| Finding | Change |
+| --- | --- |
+| On Elsa's 24 narrow bars at chat width, the values over the three highlighted hours ran into each other. | Highlighted values are labeled only when every one fits; otherwise the tooltip and the table carry them. |
+| The chart's long title squeezed the Table switch onto two lines. | The switch never wraps. |
+| A chat view repeated its title above its own heading. | Only a section view shows a title, with its author's name. |
+| In development, OpenUI's developer tools mounted on the page, with links to Thesys's cloud. | They are turned off before the renderer loads. |
+| The office asked for `/api/models` before its session started, and the first request failed. | It waits for the first snapshot. |
+
+### Known gaps
+
+- No maps, embedded pages, or services AiHub picks itself: images and links only.
+- No per-model benchmark. The failure cap stands in, and GPT-6.1-Sol and GPT-6-Luna each wrote valid programs on the first try.
+- Outside images in chat always wait for a click, even from staff who hold no personal data.
+- Supervisors rarely add section views, by design of their instructions; none has appeared in a real briefing yet.
+- `office_staff` gives roles as ids, such as `chief_of_staff`.
+- A dashboard doesn't update as the office changes while it is open; Refresh reads again.
+- A button's message for the assistant sends only its visible text. OpenUI's hidden context for the model is dropped, so the operator sees everything that is sent.
+- Numbers in key numbers and table cells show as the staff member wrote them; only charts format them.
