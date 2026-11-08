@@ -131,6 +131,19 @@ describe("approving a source", () => {
     assert.match(approvalGate(bank, [staffReader({ status: "failed" })], "", idle).reason ?? "", /never finished/);
     assert.match(approvalGate(bank, [staffReader({ status: "drafting" })], "", idle).reason ?? "", /Ada is still writing/);
   });
+
+  it("needs a preview of a source on a service, which has no path to pick", () => {
+    const inbox: ProposedSource = {
+      kind: "service",
+      label: "Inbox",
+      service: { serviceId: "mail", operation: "list_messages", arguments: { limit: 20 }, mapping: { list: "messages", key: "id", title: "subject" } },
+    };
+    assert.equal(describeSource(inbox, [], "Work mail").kind, "list_messages on Work mail, read in code");
+    assert.equal(describeSource(inbox, []).kind, "list_messages on a service, read in code");
+    assert.deepEqual([approvalGate(inbox, [], "", idle).ready, approvalGate(inbox, [], "", idle).reason], [false, "Preview first: AiHub reads the account now, so you see what the supervisor would get."]);
+    assert.deepEqual(approvalGate(inbox, [], "", done("")), { ready: true, reason: null, tone: "done" });
+    assert.match(approvalGate(inbox, [], "", { status: "failed", path: "", error: "Signed out" }).reason ?? "", /couldn't read the service/);
+  });
 });
 
 describe("preview rows", () => {
