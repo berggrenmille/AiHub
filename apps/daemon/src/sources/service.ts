@@ -62,7 +62,7 @@ export const serviceSource: SourceAdapter = {
       identities.set(id, { version: `${change}:${record.version}`, expiresAt: null, link: record.link });
       return recordFor(id, record, change);
     });
-    return { firstCheck, records: out, identities, cursor, notes };
+    return { firstCheck, records: out, identities, cursor, notes, detail: `${plural(records.length, "record")} in the latest read` };
   },
 
   async read(connection, query, context) {

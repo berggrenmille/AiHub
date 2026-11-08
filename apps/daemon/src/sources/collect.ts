@@ -116,7 +116,9 @@ export async function collect(store: Store, responsibilityId: string, connection
     const failed = store.setConnectionStatus(connection.id, "failed", adapter.describeError(error));
     return { ...base, connection: failed, unavailable: failed.detail };
   }
+  // The read just now is the latest, so the office shows when it was, and what it found where the adapter says.
   if (connection.status !== "connected") connection = await verifyConnection(store, connection.id, context);
+  else connection = store.setConnectionStatus(connection.id, "connected", changes.detail ?? connection.detail);
   const { cursor } = changes;
   return {
     ...base,

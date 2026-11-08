@@ -31,6 +31,8 @@ export interface SourceChanges {
   cursor: unknown;
   /** Anything the supervisor should know about how these changes were cut, such as some held back. */
   notes: string[];
+  /** What the read found, as verify says it, such as "100 records in the latest read", where the adapter knows. */
+  detail?: string;
 }
 
 /** What a question or task asks of a source. Each kind uses what applies to it. */

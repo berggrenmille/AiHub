@@ -281,6 +281,9 @@ describe("Services", () => {
     mail.deliver({ from: "anna@example.test", subject: "Changed my mind about Friday", received_at: "2026-11-08T08:00:00.000Z", snippet: "Saturday instead?" });
     const [later] = await collectSections(office);
     assert.deepEqual(later?.changes.map((change) => (change as { title: string }).title), ["Changed my mind about Friday"]);
+    const read = store.getConnection(connection.id)!;
+    assert.equal(read.detail, "5 records in the latest read", "the office shows what the briefing's read found");
+    assert.ok(read.verifiedAt! >= connection.verifiedAt!, "and when it was");
   });
 
   it("says a lapsed sign-in at the health check and in the source, and removing a service takes everything on it away", async () => {
