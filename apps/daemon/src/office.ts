@@ -18,6 +18,7 @@ import type {
   RuntimeStatus,
   StaffProfile,
   StateSnapshot,
+  WebGrant,
 } from "@aihub/shared";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import { EventBus } from "./events.ts";
@@ -30,6 +31,7 @@ import { Notebook } from "./notes/notebook.ts";
 import { CHIEF_OF_STAFF, CHIEF_OF_STAFF_CONVERSATION_ID } from "./staff/chief-of-staff.ts";
 import { DIRECT_CHAT_INSTRUCTIONS } from "./staff/supervisor.ts";
 import { instructionsFor } from "./staff/identity.ts";
+import { describeWeb, normalizeSites, webAccessOf } from "./staff/web.ts";
 import { Delegation } from "./staff/delegation.ts";
 import { Toolsmith } from "./staff/toolsmith.ts";
 import { proposeSupervisor } from "./staff/proposals.ts";
@@ -395,12 +397,14 @@ export class Office {
     const run = this.store.getRun(runId)!;
     // A data run's chat reads its sources, so everything it writes counts as source data.
     const caller = { agentId: agent.id, runId, profile: agent.profile, sourceData: prompt.sourceData || agent.profile === "data" };
-    const charter = instructionsFor(agent, this.store.activeResponsibilityOf(agent.id), this.sourceNamesOf(agent.id));
+    const web = this.store.webGrantOf(agent.id);
+    const charter = instructionsFor(agent, this.store.activeResponsibilityOf(agent.id), this.sourceNamesOf(agent.id), web);
     // Every turn of a thread is offered the same tools, so a follow-up doesn't restart the thread.
     const options: ContextOptions = {
       profile: agent.profile,
       instructions: agent.role === "chief_of_staff" ? charter : `${charter}\n\n${DIRECT_CHAT_INSTRUCTIONS}`,
       tools: this.gateway.specsFor(caller, "chat"),
+      web: webAccessOf(web),
     };
     this.setRunState(runId, "working");
     this.activity(agent.id, runId, "run_started", run.kind === "chat" ? `${agent.name} is replying in chat` : `${agent.name}: ${run.title}`);
@@ -413,6 +417,12 @@ export class Office {
         onEvent: (event) => {
           if (event.type === "delta") this.bus.publish({ type: "delta", runId, conversationId, text: event.text });
           if (event.type === "blocked") this.activity(agent.id, runId, "blocked", `Blocked an attempt to ${event.what}`);
+          if (event.type === "web") {
+            // What search returned is untrusted, so the thread and what it writes count as source data.
+            caller.sourceData = true;
+            this.store.setConversationThread(conversationId, { sourceData: true });
+            this.webActivity(agent, runId, event);
+          }
         },
       });
 
@@ -491,6 +501,26 @@ export class Office {
     return message;
   }
 
+  /** Every search and page a run opens is on the record (DESIGN.md › Authority and data boundaries). */
+  private webActivity(agent: { id: string; name: string }, runId: string, event: { query: string | null; url: string | null }) {
+    const what = event.url ? `opened ${clip(event.url, 160)}` : event.query ? `searched the web for "${clip(event.query, 160)}"` : "searched the web";
+    this.activity(agent.id, runId, "web", `${agent.name} ${what}`);
+  }
+
+  /** The operator gives a staff member web search, or with null takes it away. */
+  setWebGrant(agentId: string, grant: WebGrant | null): Agent {
+    const record = this.store.getAgentRecord(agentId);
+    if (!record || record.status !== "active") throw new NotFoundError(`No staff member ${agentId}`);
+    const sites = grant ? normalizeSites(grant.sites) : [];
+    this.store.setWebGrant(agentId, grant ? { sites } : null);
+    const agent = this.store.getAgent(agentId)!;
+    this.bus.publish({ type: "agent", agent });
+    const summary = grant ? `The operator gave ${agent.name} ${describeWeb({ sites })}` : `The operator took web search away from ${agent.name}`;
+    this.bus.publish({ type: "activity", entry: this.store.addActivity({ agentId, runId: null, kind: "web", summary }) });
+    this.notebook.journal(agentId, grant ? `The operator gave me ${describeWeb({ sites })}.` : "The operator took my web search away.");
+    return agent;
+  }
+
   private sourceNamesOf(agentId: string): string[] {
     return this.store.connectionsOf(agentId).map((connection) => connection.label);
   }
@@ -506,13 +536,15 @@ export class Office {
       // A worker has no responsibility of its own: it works under its supervisor's, the run's.
       const responsibility =
         this.store.activeResponsibilityOf(agent.id) ?? (task.responsibilityId ? this.store.getResponsibility(task.responsibilityId) : null);
+      const web = this.store.webGrantOf(agent.id);
       const contextId = await this.runtime.startContext({
         profile: agent.profile,
-        instructions: `${instructionsFor(agent, responsibility, this.sourceNamesOf(agent.id))}
+        instructions: `${instructionsFor(agent, responsibility, this.sourceNamesOf(agent.id), web)}
 
 ${task.instructions}`,
         tools: this.gateway.specsFor(caller),
         ephemeral: true,
+        web: webAccessOf(web),
       });
       const memory = this.notebook.memoryFor(agent.id);
       const result = await this.runtime.runTurn(contextId, {
@@ -521,6 +553,10 @@ ${task.instructions}`,
         onToolCall: (call) => this.gateway.call(caller, call),
         onEvent: (event) => {
           if (event.type === "blocked") this.activity(agent.id, runId, "blocked", `Blocked an attempt to ${event.what}`);
+          if (event.type === "web") {
+            caller.sourceData = true;
+            this.webActivity(agent, runId, event);
+          }
         },
       });
       this.publishRun(this.store.addTurn(runId, result.usage));
@@ -644,7 +680,9 @@ ${task.instructions}`,
 }
 
 function fingerprintOf(options: ContextOptions): string {
-  return createHash("sha256").update(JSON.stringify([options.profile, options.instructions, options.tools])).digest("hex");
+  // Web search joins only when held, so threads started before it existed keep their fingerprint.
+  const parts = [options.profile, options.instructions, options.tools, ...(options.web ? [options.web] : [])];
+  return createHash("sha256").update(JSON.stringify(parts)).digest("hex");
 }
 
 function clip(text: string, max: number): string {

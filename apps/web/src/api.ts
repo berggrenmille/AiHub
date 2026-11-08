@@ -14,6 +14,7 @@ import type {
   SourcePreview,
   StateSnapshot,
   UpdateAgentRequest,
+  WebGrant,
   WriteNoteRequest,
 } from "@aihub/shared";
 import type { ConnectionStatus } from "./state.ts";
@@ -95,6 +96,12 @@ export function sendChat(body: ChatRequest): Promise<ChatResponse> {
 /** Edits a staff member's profile. A name another staff member has answers 409. */
 export function updateAgent(agentId: string, body: UpdateAgentRequest): Promise<Agent> {
   return request<Agent>(`/api/agents/${encodeURIComponent(agentId)}`, json("PATCH", body));
+}
+
+/** Gives a staff member web search, or with null takes it away. A site that isn't one answers 400. */
+export function setWebGrant(agentId: string, web: WebGrant | null): Promise<Agent> {
+  const path = `/api/agents/${encodeURIComponent(agentId)}/web`;
+  return request<Agent>(path, web ? json("PUT", web) : json("DELETE", {}));
 }
 
 /** The URL of a note: its vault path, each segment encoded. */

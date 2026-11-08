@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
-import type { Conversation, DaemonEvent, SourcePreview, UpdateAgentRequest } from "@aihub/shared";
+import type { Conversation, DaemonEvent, SourcePreview, UpdateAgentRequest, WebGrant } from "@aihub/shared";
 import {
   approveProposal,
   connectOffice,
@@ -11,6 +11,7 @@ import {
   resolveItem,
   runRoutine,
   sendChat,
+  setWebGrant,
   updateAgent,
 } from "./api.ts";
 import { initialOfficeState, officeReducer } from "./state.ts";
@@ -21,6 +22,7 @@ export interface OfficeCommands {
   /** Opens the operator's chat with a staff member and returns it. */
   openChat(agentId: string): Promise<Conversation>;
   updateAgent(agentId: string, changes: UpdateAgentRequest): Promise<void>;
+  setWeb(agentId: string, web: WebGrant | null): Promise<void>;
   /** What a proposal's source would read at a path. Changes nothing. */
   preview(proposalId: string, sourcePath: string): Promise<SourcePreview>;
   approve(proposalId: string, sourcePath?: string): Promise<void>;
@@ -63,6 +65,7 @@ export function useOffice() {
         return conversation;
       },
       updateAgent: async (agentId, changes) => apply({ type: "agent", agent: await updateAgent(agentId, changes) }),
+      setWeb: async (agentId, web) => apply({ type: "agent", agent: await setWebGrant(agentId, web) }),
       preview: (proposalId, sourcePath) => previewProposal(proposalId, { sourcePath }),
       approve: async (proposalId, sourcePath) =>
         apply({ type: "proposal", proposal: await approveProposal(proposalId, sourcePath ? { sourcePath } : {}) }),

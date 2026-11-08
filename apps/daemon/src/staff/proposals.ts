@@ -7,6 +7,7 @@ import { checkProposedSource, connectionFor, previewProposedSource, verifyConnec
 import { STAFF_READER_PREFIX } from "../sources/folder.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "./chief-of-staff.ts";
 import { SUPERVISOR_CHARTER } from "./supervisor.ts";
+import { describeWeb } from "./web.ts";
 
 // Recruitment (DESIGN.md › Recruitment and delegation). The Chief of Staff proposes; the operator
 // approves from a card; the daemon checks the caps and creates everything in one transaction.
@@ -75,7 +76,7 @@ export async function approveProposal(office: Office, id: string, options: { sou
   const proposal = store.getProposal(id);
   if (!proposal) throw new NotFoundError(`No proposal ${id}`);
   if (proposal.status !== "pending") throw new ConflictError(`This proposal was already ${proposal.status}.`);
-  const { profile, responsibility: duty, source } = proposal.payload;
+  const { profile, responsibility: duty, source, web = null } = proposal.payload;
   // The caps are checked again: the office may have changed since the proposal was made.
   if (store.isNameTaken(profile.name)) throw new ConflictError(`Someone on staff is already called ${profile.name}.`);
   if (SUPERVISOR_LIMIT - store.countActive("supervisor") <= 0) throw new ConflictError(`The office is at its cap of ${SUPERVISOR_LIMIT} supervisors.`);
@@ -115,6 +116,7 @@ export async function approveProposal(office: Office, id: string, options: { sou
     });
     const connection = source && sourcePath ? store.createConnection(connectionFor(source, sourcePath)) : null;
     if (connection) store.grant(agentId, connection.id, ["read"]);
+    if (web) store.setWebGrant(agentId, web);
     const decided = store.decideProposal(id, "approved", `Hired ${profile.name} as ${profile.title}.`)!;
     return { agentId, responsibility, routine, connection, decided };
   });
@@ -139,10 +141,11 @@ export async function approveProposal(office: Office, id: string, options: { sou
       ? ` ${source!.label} is connected: ${connection.detail}.`
       : ` ${source!.label} isn't readable yet: ${connection.detail}`
     : "";
+  const searches = web ? ` ${profile.name} has ${describeWeb(web)}.` : "";
   office.postMessage(
     CHIEF_OF_STAFF_CONVERSATION_ID,
     CHIEF_OF_STAFF_ID,
-    `${profile.name} joined as ${profile.title} and reports in the next morning briefing.${access}`,
+    `${profile.name} joined as ${profile.title} and reports in the next morning briefing.${access}${searches}`,
     null,
     "notice",
     id,

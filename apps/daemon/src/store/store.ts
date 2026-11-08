@@ -23,6 +23,7 @@ import {
   type RunProfile,
   type RunState,
   type SourceConnection,
+  type WebGrant,
   type SourceKind,
   type StaffProfile,
   type StaffReader,
@@ -200,6 +201,7 @@ export class Store {
            AND NOT EXISTS (SELECT 1 FROM responsibilities r WHERE r.owner_id = a.id AND r.status = 'active')
          ) AS unassigned,
          (SELECT group_concat(g.connection_id, ' ') FROM grants g WHERE g.agent_id = a.id AND g.revoked_at IS NULL) AS connection_ids,
+         (SELECT w.sites FROM web_grants w WHERE w.agent_id = a.id) AS web_sites,
          (SELECT COUNT(*) FROM results x WHERE x.agent_id = a.id)
            + (SELECT COUNT(*) FROM items i JOIN responsibilities r ON r.id = i.responsibility_id
               WHERE r.owner_id = a.id AND i.state = 'resolved') AS experience
@@ -213,7 +215,8 @@ export class Store {
       // A run in progress shows first; then missing access; then a supervisor whose responsibility ended.
       const state = (row.run_state as RunState | null) ?? (row.waiting ? "waiting_for_access" : row.unassigned ? "done" : "idle");
       const connectionIds = row.connection_ids ? String(row.connection_ids).split(" ") : [];
-      return { ...agent, experience: Number(row.experience), state, connectionIds };
+      const web = row.web_sites === null || row.web_sites === undefined ? null : { sites: JSON.parse(String(row.web_sites)) as string[] };
+      return { ...agent, experience: Number(row.experience), state, connectionIds, web };
     });
   }
 
@@ -514,7 +517,25 @@ export class Store {
     this.transaction(() => {
       this.db.prepare("UPDATE agents SET status = 'archived' WHERE id = ?").run(id);
       this.db.prepare("UPDATE grants SET revoked_at = ? WHERE agent_id = ? AND revoked_at IS NULL").run(now, id);
+      this.db.prepare("DELETE FROM web_grants WHERE agent_id = ?").run(id);
     });
+  }
+
+  /** The web search a staff member holds, or null. */
+  webGrantOf(agentId: string): WebGrant | null {
+    const row = this.db.prepare("SELECT sites FROM web_grants WHERE agent_id = ?").get(agentId) as Row | undefined;
+    return row ? { sites: JSON.parse(String(row.sites)) as string[] } : null;
+  }
+
+  /** Gives a staff member web search, or with null takes it away. */
+  setWebGrant(agentId: string, grant: WebGrant | null) {
+    if (!grant) {
+      this.db.prepare("DELETE FROM web_grants WHERE agent_id = ?").run(agentId);
+      return;
+    }
+    this.db
+      .prepare("INSERT INTO web_grants (agent_id, sites, granted_at) VALUES (?, ?, ?) ON CONFLICT (agent_id) DO UPDATE SET sites = excluded.sites")
+      .run(agentId, JSON.stringify(grant.sites), this.timestamp());
   }
 
   /** Connections the agent holds an unrevoked grant for. */

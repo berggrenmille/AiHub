@@ -16,6 +16,7 @@ function agent(overrides: Partial<Agent> = {}): Agent {
     hiredAt: "2026-11-07T16:00:00.000Z",
     experience: 0,
     connectionIds: [],
+    web: null,
     role: "chief_of_staff",
     managerId: null,
     profile: "conversation",

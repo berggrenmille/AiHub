@@ -1,5 +1,6 @@
-import type { AgentRole, Responsibility, StaffProfile } from "@aihub/shared";
+import type { AgentRole, Responsibility, StaffProfile, WebGrant } from "@aihub/shared";
 import { NOTES_GUIDANCE } from "../notes/notebook.ts";
+import { webGuidance } from "./web.ts";
 
 // Every run's instructions start with who the agent is, from its editable profile, then its charter.
 
@@ -17,6 +18,7 @@ export function instructionsFor(
   agent: StaffProfile & { role: AgentRole; charter: string },
   responsibility: Responsibility | null = null,
   sources: string[] = [],
+  web: WebGrant | null = null,
 ): string {
   const who = [`You are ${agent.name}, ${agent.title || "a staff member"} in AiHub, a local office of AI staff that works for one person, the operator. ${ROLE_PLACE[agent.role]}`];
   if (agent.description) who.push(`Your job: ${agent.description}`);
@@ -29,5 +31,6 @@ export function instructionsFor(
   }
   // By name, so a read doesn't start with a guess at what a source is called.
   if (sources.length) duty.push(`Your sources, by the names aihub_read_source takes: ${sources.join(", ")}.`);
+  if (web) duty.push(webGuidance(web));
   return [who.join("\n"), duty.join("\n"), agent.charter, NOTES_GUIDANCE].filter(Boolean).join("\n\n");
 }

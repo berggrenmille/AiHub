@@ -218,6 +218,39 @@ describe("Chat with any staff member", () => {
     );
   });
 
+  it("searches the web in cached mode once granted, and counts what follows a search as source data", async () => {
+    const { office, store, runtime, events } = startOffice();
+    const vera = office.setWebGrant(CHIEF_OF_STAFF_ID, { sites: ["https://www.Reuters.com/world", "bbc.com"] });
+    assert.deepEqual(vera.web, { sites: ["www.reuters.com", "bbc.com"] });
+    assert.ok(events.some((event) => event.type === "agent" && event.agent.web?.sites.length === 2));
+    assert.ok(store.recentActivity(5).some((entry) => entry.kind === "web" && entry.summary === "The operator gave Vera web search on www.reuters.com and bbc.com"));
+
+    let written: { ok: boolean } | null = null;
+    runtime.respond = async (_input, options) => {
+      options.onEvent?.({ type: "web", query: null, url: "https://www.bbc.com/news/rates" });
+      written = await options.onToolCall({ name: "aihub_write_note", arguments: { title: "Rates", body: "Held." } });
+      return { status: "completed", text: "The bank held rates.", error: null, usage: null };
+    };
+    await say(office, "What did the bank do?");
+    const [context] = runtime.contexts.values();
+    assert.deepEqual(context!.options.web, { mode: "cached", sites: ["www.reuters.com", "bbc.com"] });
+    assert.match(context!.options.instructions, /You can search the web on these sites only: www\.reuters\.com, bbc\.com\./);
+    assert.deepEqual(written, { ok: true, text: 'Saved "Rates".' });
+    assert.ok(store.recentActivity(10).some((entry) => entry.kind === "web" && entry.summary === "Vera opened https://www.bbc.com/news/rates"));
+    assert.equal(store.messagesAfter(CHAT, 0).at(-1)?.sourceData, true);
+    assert.equal(store.getConversation(CHAT)?.sourceData, true);
+    assert.equal(office.notebook.list().find((note) => note.title === "Rates")?.provenance, "source_data");
+
+    // Taken away: the next turn starts a thread without it.
+    office.setWebGrant(CHIEF_OF_STAFF_ID, null);
+    assert.equal(store.getAgent(CHIEF_OF_STAFF_ID)?.web, null);
+    runtime.respond = async () => ({ status: "completed", text: "Sure.", error: null, usage: null });
+    await say(office, "Thanks");
+    assert.equal(runtime.contexts.size, 2);
+    assert.equal([...runtime.contexts.values()].at(-1)!.options.web, null);
+    assert.throws(() => office.setWebGrant(CHIEF_OF_STAFF_ID, { sites: ["not a site"] }), /isn't a site/);
+  });
+
   it("closes the chat once its staff member has left", () => {
     const { office, store } = withSupervisor();
     const chat = office.openChat("schedule");

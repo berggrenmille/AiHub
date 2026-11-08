@@ -58,6 +58,7 @@ const ACTIVITY_TONES: Record<ActivityKind, Tone> = {
   health: "failed",
   assignment: "working",
   worker: "waiting",
+  web: "idle",
 };
 
 export function activityTone(kind: ActivityKind): Tone {

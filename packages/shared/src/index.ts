@@ -51,6 +51,14 @@ export interface Agent extends StaffProfile {
   state: RunState | "idle";
   /** The connections it may read, through unrevoked grants. */
   connectionIds: string[];
+  /** Web search, when the operator granted it. */
+  web: WebGrant | null;
+}
+
+/** Web search a staff member holds (DESIGN.md › Authority and data boundaries). */
+export interface WebGrant {
+  /** Sites search is limited to, such as "bbc.com". Empty allows any. */
+  sites: string[];
 }
 
 export interface Usage {
@@ -124,7 +132,8 @@ export type ActivityKind =
   | "briefing"
   | "health"
   | "assignment"
-  | "worker";
+  | "worker"
+  | "web";
 
 export interface ActivityEntry {
   id: number;
@@ -269,6 +278,8 @@ export interface RecruitProposal {
   responsibility: { title: string; scope: string; standingInstructions: string; expiresAt: string | null };
   /** The source the supervisor watches. The operator picks the actual file or folder when approving. */
   source: ProposedSource | null;
+  /** Web search, for a supervisor that looks things up instead of, or as well as, reading a source. */
+  web?: WebGrant | null;
   reason: string;
 }
 

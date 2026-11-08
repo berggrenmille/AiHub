@@ -125,6 +125,29 @@ describe("Recruitment", () => {
     );
   });
 
+  it("hires a researcher with web search and no source, and needs one or the other", async () => {
+    const { store, office, runtime, propose } = setUp();
+    const nora = {
+      profile: { name: "Nora", title: "News Supervisor", description: "Briefs the operator on world news.", workingStyle: "" },
+      responsibility: { title: "World news", scope: "Politics and economics.", standingInstructions: "" },
+      source: null,
+      reason: "You asked for a daily news summary.",
+    };
+    assert.match((await propose(nora)).text, /needs something to check: a source on this PC, or web search/);
+    assert.match((await propose({ ...nora, web: { sites: ["a site"] } })).text, /isn't a site/);
+    const outcome = await propose({ ...nora, web: { sites: ["https://www.Reuters.com/world"] } });
+    assert.equal(outcome.ok, true, outcome.text);
+    const [proposal] = store.listProposals();
+    assert.deepEqual(proposal?.payload.web, { sites: ["www.reuters.com"] });
+
+    await approveProposal(office, proposal!.id);
+    assert.deepEqual(store.getAgent("nora")?.web, { sites: ["www.reuters.com"] });
+    assert.deepEqual(store.connectionsOf("nora"), []);
+    assert.match(store.recentMessages(1, CHIEF_OF_STAFF_CONVERSATION_ID)[0]!.body, /Nora joined as News Supervisor and reports in the next morning briefing\. Nora has web search on www\.reuters\.com\./);
+    await office.runTask({ agentId: "nora", kind: "report", title: "Check", instructions: "Check.", input: "Nothing." });
+    assert.deepEqual([...runtime.contexts.values()].at(-1)!.options.web, { mode: "cached", sites: ["www.reuters.com"] });
+  });
+
   it("records a decline once", async () => {
     const { store, office, propose } = setUp();
     await propose();

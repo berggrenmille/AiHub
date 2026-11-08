@@ -46,7 +46,7 @@ export function ProposalCard({ proposal, intro, readers, onPreview, onApprove, o
     );
   }
 
-  const { profile, responsibility, source, reason } = proposal.payload;
+  const { profile, responsibility, source, web, reason } = proposal.payload;
   const pending = proposal.status === "pending";
   const pathNeeded = pending && source !== null;
   const trimmed = path.trim();
@@ -148,8 +148,17 @@ export function ProposalCard({ proposal, intro, readers, onPreview, onApprove, o
         )}
         <div>
           <dt>Source</dt>
-          <dd>{source && described ? `${source.label} (${described.kind})` : "None needed"}</dd>
+          <dd>{source && described ? `${source.label} (${described.kind})` : web ? "None: searches the web instead" : "None needed"}</dd>
         </div>
+        {web && (
+          <div>
+            <dt>Web search</dt>
+            <dd>
+              {web.sites.length ? `Only ${web.sites.join(", ")}` : "Any site"}
+              <span className="block muted">Searches OpenAI's index and opens no live pages, so no site sees what is looked up.</span>
+            </dd>
+          </div>
+        )}
         {source?.kind === "folder" && <BuiltInReaderFact source={source} readers={readers} />}
         <div>
           <dt>Why</dt>

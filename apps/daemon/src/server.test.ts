@@ -255,6 +255,25 @@ describe("HTTP server: profiles and notes", () => {
     assert.equal((await patch("nobody", { name: "X" })).statusCode, 404);
   });
 
+  it("gives and takes away web search, and refuses what isn't a site", async () => {
+    let office: Office;
+    ({ app, office } = await server());
+    const url = "/api/agents/chief-of-staff/web";
+    const given = await app.inject({ method: "PUT", url, headers: PAGE, payload: { sites: ["https://www.Reuters.com/world"] } });
+    assert.equal(given.statusCode, 200);
+    assert.deepEqual(given.json().web, { sites: ["www.reuters.com"] });
+    assert.deepEqual(office.store.webGrantOf("chief-of-staff"), { sites: ["www.reuters.com"] });
+
+    assert.equal((await app.inject({ method: "PUT", url, headers: PAGE, payload: { sites: ["no site"] } })).statusCode, 400);
+    assert.equal((await app.inject({ method: "PUT", url, headers: PAGE, payload: { sites: "bbc.com" } })).statusCode, 400);
+    assert.equal((await app.inject({ method: "PUT", url: "/api/agents/nobody/web", headers: PAGE, payload: { sites: [] } })).statusCode, 404);
+    assert.equal((await app.inject({ method: "PUT", url, headers: { ...PAGE, origin: "http://evil.example" }, payload: { sites: [] } })).statusCode, 403);
+
+    const taken = await app.inject({ method: "DELETE", url, headers: PAGE, payload: {} });
+    assert.equal(taken.statusCode, 200);
+    assert.equal(taken.json().web, null);
+  });
+
   it("reads and writes notes by their vault path", async () => {
     ({ app } = await server());
     const url = `/api/notes/${encodeURIComponent("Office/Operator preferences.md")}`;

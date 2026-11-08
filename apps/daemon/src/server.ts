@@ -50,6 +50,7 @@ const ProfileBody = z
   .refine((profile) => Object.keys(profile).length > 0, "Change at least one field");
 
 const NoteBody = z.object({ body: z.string().max(20_000) }).strict();
+const WebBody = z.object({ sites: z.array(z.string().max(200)).max(50) }).strict();
 const ApproveBody = z.object({ sourcePath: z.string().max(1_000).optional() }).strict();
 const PreviewBody = z.object({ sourcePath: z.string().max(1_000) }).strict();
 const ReasonBody = z.object({ reason: z.string().max(500).optional() }).strict();
@@ -127,6 +128,27 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     if (!body.success) return reply.code(400).send({ error: z.prettifyError(body.error) });
     try {
       const agent: Agent = office.updateProfile(request.params.id, body.data);
+      return agent;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  // Web search is a grant the operator gives (DESIGN.md › Authority and data boundaries).
+  app.put<{ Params: { id: string } }>("/api/agents/:id/web", async (request, reply) => {
+    const body = bodyOf(WebBody, request.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
+    try {
+      const agent: Agent = office.setWebGrant(request.params.id, body.data);
+      return agent;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.delete<{ Params: { id: string } }>("/api/agents/:id/web", async (request, reply) => {
+    try {
+      const agent: Agent = office.setWebGrant(request.params.id, null);
       return agent;
     } catch (error) {
       return sendError(reply, error);

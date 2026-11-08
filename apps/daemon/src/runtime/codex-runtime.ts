@@ -127,7 +127,7 @@ export class CodexRuntime implements AgentRuntime {
   private threadSettings(options: ContextOptions) {
     if (options.profile === "workspace") throw new Error("Workspace runs arrive in Roadmap phase B");
     this.emptyDir ??= mkdtempSync(join(tmpdir(), "aihub-run-"));
-    return { cwd: this.emptyDir, developerInstructions: options.instructions };
+    return { cwd: this.emptyDir, developerInstructions: options.instructions, web: options.web ?? null };
   }
 }
 

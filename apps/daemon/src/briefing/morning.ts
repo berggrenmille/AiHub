@@ -1,9 +1,11 @@
 import type { Office } from "../office.ts";
 import { collect } from "../sources/collect.ts";
+import { describeWeb } from "../staff/web.ts";
 import { runBriefing, type BriefingOutcome, type BriefingSection } from "./briefing.ts";
 
 // The real morning briefing: one section per active supervisor whose routine reports to the
-// briefing, built from its granted source by the collectors.
+// briefing, built from its granted source by the collectors, or researched on the web when it
+// holds web search and no source.
 
 /** Collects every participating responsibility's changes. Runs no model turn. */
 export async function collectSections(office: Office, now = new Date()): Promise<BriefingSection[]> {
@@ -20,9 +22,14 @@ export async function collectSections(office: Office, now = new Date()): Promise
     if (!owner) continue;
 
     const [connection] = store.connectionsOf(owner.id);
+    if (!connection && owner.web) {
+      // Nothing to collect: the supervisor searches the web for what is new.
+      sections.push({ agentId: owner.id, heading: responsibility.title, source: describeWeb(owner.web), changes: [], responsibilityId: responsibility.id, research: true });
+      continue;
+    }
     if (!connection) {
       // Its access was removed, or never granted: say so, without a turn to find out it can't read.
-      const unavailable = `${owner.name} has no source to read: its access was removed. Approve a source for ${owner.name} again, or end the responsibility.`;
+      const unavailable = `${owner.name} has nothing to check: no source, and no web search. Give ${owner.name} web search on the profile card, or end the responsibility.`;
       sections.push({ agentId: owner.id, heading: responsibility.title, source: "No source", changes: [], responsibilityId: responsibility.id, unavailable });
       continue;
     }

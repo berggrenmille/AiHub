@@ -1,5 +1,17 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import type { ActivityEntry, Agent, Assignment, NoteSummary, Responsibility, Routine, Run, SourceConnection, StaffReader, UpdateAgentRequest } from "@aihub/shared";
+import type {
+  ActivityEntry,
+  Agent,
+  Assignment,
+  NoteSummary,
+  Responsibility,
+  Routine,
+  Run,
+  SourceConnection,
+  StaffReader,
+  UpdateAgentRequest,
+  WebGrant,
+} from "@aihub/shared";
 import { errorText } from "../api.ts";
 import { assignmentsOf, teamWaitOf } from "../lib/assignments.ts";
 import { lookFor } from "../lib/avatar.ts";
@@ -42,6 +54,8 @@ interface ProfileCardProps {
   onOpenChat(): Promise<void>;
   onOpenNote(path: string): void;
   onUpdate(changes: UpdateAgentRequest): Promise<void>;
+  /** Gives web search, or with null takes it away. */
+  onSetWeb(web: WebGrant | null): Promise<void>;
   onRunRoutine(routineId: string): Promise<void>;
 }
 
@@ -231,7 +245,7 @@ export function ProfileCard(props: ProfileCardProps) {
           <section className="profile-section" aria-label="Connections">
             <h3>Connections</h3>
             {connections.length === 0 ? (
-              <p className="muted">{agent.name} reads no sources.</p>
+              <p className="muted">{agent.web ? `${agent.name} reads no sources on this PC.` : `${agent.name} reads no sources.`}</p>
             ) : (
               <>
                 {agent.state === "waiting_for_access" && (
@@ -254,6 +268,7 @@ export function ProfileCard(props: ProfileCardProps) {
                 </ul>
               </>
             )}
+            <WebAccess key={agent.id} agent={agent} onSet={props.onSetWeb} />
           </section>
 
           {authored.length > 0 && (
@@ -361,6 +376,104 @@ function ChatButton({ name, onOpen }: { name: string; onOpen(): Promise<void> })
           {error}
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * Web search, which the operator gives and takes away here (DESIGN.md › Authority and data
+ * boundaries). It searches OpenAI's index and opens no live pages, so no site sees what is looked up.
+ */
+function WebAccess({ agent, onSet }: { agent: Agent; onSet(web: WebGrant | null): Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [sites, setSites] = useState(agent.web?.sites.join(", ") ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const id = useId();
+
+  const save = async (web: WebGrant | null) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await onSet(web);
+      setEditing(false);
+    } catch (failure) {
+      setError(errorText(failure));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    void save({ sites: sites.split(/[\s,]+/).filter(Boolean) });
+  };
+  const failure = error && (
+    <p className="form-error small" role="alert">
+      {error}
+    </p>
+  );
+
+  if (editing) {
+    return (
+      <form className="web-access" onSubmit={submit}>
+        <div className="field">
+          <label htmlFor={`${id}-sites`}>
+            Web search for {agent.name} <span className="muted tiny">optional: only these sites</span>
+          </label>
+          <input
+            id={`${id}-sites`}
+            type="text"
+            placeholder="Any site, or such as reuters.com, bbc.com"
+            value={sites}
+            onChange={(event) => setSites(event.target.value)}
+          />
+        </div>
+        <p className="tiny muted">
+          Search answers from OpenAI's index and opens no live pages, so no site sees what {agent.name} looks up. What it finds is treated as untrusted, and every
+          search shows in the activity log.
+        </p>
+        <div className="button-row">
+          <button type="submit" className="button primary" disabled={saving}>
+            {saving ? "Saving…" : agent.web ? "Save sites" : "Give web search"}
+          </button>
+          <button type="button" className="button ghost" disabled={saving} onClick={() => setEditing(false)}>
+            Cancel
+          </button>
+        </div>
+        {failure}
+      </form>
+    );
+  }
+  if (!agent.web) {
+    return (
+      <div className="web-access">
+        <button type="button" className="button ghost" onClick={() => setEditing(true)}>
+          <Icon name="globe" size={16} /> Give web search
+        </button>
+        {failure}
+      </div>
+    );
+  }
+  return (
+    <div className="web-access">
+      <ul className="connection-list">
+        <li>
+          <span className="dot status-connected" aria-hidden="true" />
+          <span>
+            <strong>Web search</strong>
+            <span className="muted small block">{agent.web.sites.length ? `Only ${agent.web.sites.join(", ")}` : "Any site"}. Searches an index, opens no live pages.</span>
+          </span>
+          <span className="button-row">
+            <button type="button" className="button ghost small" disabled={saving} onClick={() => setEditing(true)}>
+              Sites
+            </button>
+            <button type="button" className="button ghost small" disabled={saving} onClick={() => void save(null)}>
+              {saving ? "Turning off…" : "Turn off"}
+            </button>
+          </span>
+        </li>
+      </ul>
+      {failure}
     </div>
   );
 }

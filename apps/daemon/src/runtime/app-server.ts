@@ -14,7 +14,7 @@ import type {
   TurnStartResponse,
 } from "@aihub/codex-protocol/v2";
 import { JsonRpcConnection, type ParamsOf, type ServerRequestReply } from "./json-rpc.ts";
-import type { RunTurnOptions, TurnBlocker, TurnResult, TurnUsage } from "./types.ts";
+import type { RunTurnOptions, TurnBlocker, TurnResult, TurnUsage, WebAccess } from "./types.ts";
 
 // Codex features that give a run a way around the gateway: ChatGPT apps (the codex_apps MCP server,
 // which includes web search), browser and computer use, shell and file-viewing tools, and anything
@@ -45,6 +45,7 @@ export interface AppServerCommand {
 export interface ThreadSettings {
   cwd: string;
   developerInstructions: string;
+  web?: WebAccess | null;
 }
 
 const DEFAULT_TURN_TIMEOUT_MS = 10 * 60_000;
@@ -237,6 +238,11 @@ export class AppServerProcess {
       case "item/completed": {
         const active = this.activeTurns.get(notification.params.threadId);
         if (active) recordItem(active, notification.params.item);
+        if (active && notification.params.item.type === "webSearch") {
+          const { query, action } = notification.params.item;
+          const url = action && "url" in action ? action.url : null;
+          active.options.onEvent?.({ type: "web", query: query || null, url: url ?? null });
+        }
         return;
       }
       case "thread/tokenUsage/updated": {
@@ -270,9 +276,16 @@ function lockedDownThread(settings: ThreadSettings) {
     cwd: settings.cwd,
     sandbox: "read-only",
     approvalPolicy: "untrusted",
-    config: { web_search: "disabled" },
+    config: webConfig(settings.web ?? null),
     developerInstructions: settings.developerInstructions,
   } as const;
+}
+
+/** Codex's own web search, off unless the staff member holds it. */
+export function webConfig(web: WebAccess | null): ParamsOf<"thread/start">["config"] {
+  if (!web) return { web_search: "disabled" };
+  // Codex rejects a tool config with empty fields, so one is sent only to limit the sites.
+  return web.sites.length ? { web_search: web.mode, tools: { web_search: { allowed_domains: web.sites } } } : { web_search: web.mode };
 }
 
 function recordItem(active: ActiveTurn, item: ThreadItem) {

@@ -35,6 +35,7 @@ export function chatPartner(conversation: Conversation, agents: Agent[], lastSee
       experience: 0,
       state: "idle",
       connectionIds: [],
+      web: null,
     },
     present: false,
   };

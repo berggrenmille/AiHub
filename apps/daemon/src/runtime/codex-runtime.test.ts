@@ -77,6 +77,14 @@ describe("CodexRuntime", () => {
     assert.ok(relative(root, String(start.params.cwd)).startsWith(".."));
   });
 
+  it("turns on cached web search only for a run that holds it, limited to its sites when given", async () => {
+    await runtime.startContext({ ...conversation, web: { mode: "cached", sites: [] } });
+    await runtime.startContext({ ...conversation, web: { mode: "cached", sites: ["bbc.com"] } });
+    const [any, limited] = requests("thread/start");
+    assert.deepEqual(any?.params.config, { web_search: "cached" });
+    assert.deepEqual(limited?.params.config, { web_search: "cached", tools: { web_search: { allowed_domains: ["bbc.com"] } } });
+  });
+
   it("streams a reply and reports the turn's token usage", async () => {
     const contextId = await runtime.startContext(conversation);
     const deltas: string[] = [];

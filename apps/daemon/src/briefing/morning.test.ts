@@ -174,7 +174,7 @@ describe("Morning briefing when something is wrong", () => {
     store.revokeGrant("work-schedule", connection.id);
     const outcome = await runMorningBriefing(office, { now: MONDAY });
     assert.equal(outcome.sections[0]?.status, "unavailable");
-    assert.match(outcome.text, /Source unavailable: Elin has no source to read: its access was removed\./);
+    assert.match(outcome.text, /Source unavailable: Elin has nothing to check: no source, and no web search\./);
     assert.equal(reportContexts(runtime), 0, "no report turn");
   });
 
@@ -290,5 +290,97 @@ describe("Morning briefing when something is wrong", () => {
     await scheduler.idle();
     assert.equal(store.getOccurrence(id)?.status, "delivered");
     assert.deepEqual(platform.notifications, [{ path: "/", title: "Your briefing is ready", body: "4 new items.", tag: "briefing" }]);
+  });
+});
+
+describe("Morning briefing from web research", () => {
+  const STORIES = {
+    summit: { title: "Climate summit opens", sourceRef: "https://www.reuters.com/world/summit" },
+    rates: { title: "Central bank holds rates", sourceRef: "https://www.bbc.com/news/rates" },
+    chips: { title: "Chip export rules change", sourceRef: "https://apnews.com/chips" },
+  };
+
+  /** A researcher with web search and no source, alone in the office. The store's clock follows `clock.now`. */
+  function setUpResearch() {
+    const dir = mkdtempSync(join(tmpdir(), "aihub-research-"));
+    dirs.push(dir);
+    const clock = { now: MONDAY };
+    const store = new Store(":memory:", () => clock.now);
+    const runtime = new FakeRuntime();
+    const office = new Office({ store, runtime, vaultDir: join(dir, "vault") });
+    office.start();
+    store.upsertAgent({ id: "nora", name: "Nora", title: "News Supervisor", role: "supervisor", managerId: CHIEF_OF_STAFF_ID, profile: "data", charter: "" });
+    const responsibility = store.createResponsibility({ ownerId: "nora", title: "World news", scope: "Politics and economics.", standingInstructions: "", expiresAt: null });
+    store.createRoutine({ ownerId: "nora", responsibilityId: responsibility.id, title: "World news", trigger: { type: "briefing" }, timezone: "Europe/Stockholm", dailyTurnBudget: 4 });
+    office.setWebGrant("nora", { sites: [] });
+    // The researcher searches once and files what it is told to; the Chief of Staff echoes its input.
+    let filing: Array<{ title: string; sourceRef: string }> = [];
+    runtime.respond = async (input, options) => {
+      if (!input.startsWith("It is now")) return { status: "completed", text: `BRIEFING\n${input}`, error: null, usage };
+      options.onEvent?.({ type: "web", query: "world news today", url: null });
+      const items = filing.map((story) => ({ ...story, detail: "Published this morning.", urgency: "fyi" }));
+      const filed = await options.onToolCall({ name: "aihub_submit_report", arguments: { summary: `${items.length} stories.`, items } });
+      return { status: "completed", text: filed.text, error: null, usage };
+    };
+    const file = (...stories: Array<{ title: string; sourceRef: string }>) => {
+      filing = stories;
+    };
+    const researchContexts = () => [...runtime.contexts.values()].filter((context) => context.options.instructions.includes("search the web for what your responsibility covers"));
+    return { store, runtime, office, responsibility, clock, file, researchContexts };
+  }
+
+  it("runs one search turn with cached web search and keeps items keyed by their address", async () => {
+    const { office, store, responsibility, file, researchContexts } = setUpResearch();
+    file(STORIES.summit, STORIES.rates, { title: "Rumour", sourceRef: "story-3" });
+    const outcome = await runMorningBriefing(office, { now: MONDAY });
+
+    assert.equal(outcome.sections[0]?.status, "reported");
+    const [context] = researchContexts();
+    assert.deepEqual(context?.options.web, { mode: "cached", sites: [] });
+    assert.match(context!.options.instructions, /You can search the web\. Search answers from an index/);
+    assert.match(context!.inputs[0]!, /^It is now Monday, 9 November 2026 at 06:00 \(Europe\/Stockholm\)\.\nThis is your first briefing/);
+    assert.deepEqual(store.itemsOf(responsibility.id, ["open"]).map((item) => item.sourceKey).sort(), [STORIES.rates.sourceRef, STORIES.summit.sourceRef]);
+    const summaries = store.recentActivity(50).map((entry) => entry.summary);
+    assert.ok(summaries.includes('Left out "Rumour": it cites no web address'));
+    assert.ok(summaries.includes('Nora searched the web for "world news today"'));
+    assert.match(outcome.text, /Section 1: World news\nSummary: 3 stories\./);
+  });
+
+  it("doesn't report a story twice, and leaves out yesterday's stories and their lapsing", async () => {
+    const { office, store, responsibility, clock, file, researchContexts } = setUpResearch();
+    file(STORIES.summit, STORIES.rates);
+    await runMorningBriefing(office, { now: MONDAY });
+
+    // Tuesday: the summit again, and one new story. Only the new one is new.
+    const tuesday = new Date(MONDAY.getTime() + 86_400_000);
+    clock.now = tuesday;
+    file(STORIES.summit, STORIES.chips);
+    const second = await runMorningBriefing(office, { now: tuesday });
+    const outcome = second.sections[0]!;
+    assert.equal(outcome.status, "reported");
+    assert.deepEqual(outcome.status === "reported" && outcome.newItems.map((item) => item.title), [STORIES.chips.title]);
+    assert.deepEqual(outcome.carried, [], "yesterday's stories aren't carried over");
+    const input = researchContexts()[1]!.inputs[0]!;
+    assert.match(input, /Your last briefing went out Monday, 9 November 2026 at 06:00/);
+    assert.match(input, /BEGIN REPORTED ITEMS DATA[\s\S]*Climate summit opens[\s\S]*END REPORTED ITEMS DATA/);
+
+    // Thursday: Monday's stories have lapsed, which isn't news.
+    const thursday = new Date(MONDAY.getTime() + 3 * 86_400_000);
+    clock.now = thursday;
+    file();
+    const third = await runMorningBriefing(office, { now: thursday });
+    assert.deepEqual(third.sections[0]?.resolved, []);
+    assert.deepEqual(store.itemsOf(responsibility.id, ["open"]).map((item) => item.title), []);
+    assert.equal(store.itemsOf(responsibility.id, ["resolved"]).length, 3);
+  });
+
+  it("runs no turn for a supervisor without a source or web search, and says what to do", async () => {
+    const { office, runtime, researchContexts } = setUpResearch();
+    office.setWebGrant("nora", null);
+    const outcome = await runMorningBriefing(office, { now: MONDAY });
+    assert.equal(outcome.sections[0]?.status, "unavailable");
+    assert.equal(researchContexts().length, 0);
+    assert.match(outcome.text, /Nora has nothing to check: no source, and no web search\. Give Nora web search on the profile card/);
+    assert.equal(runtime.calls.filter((call) => call.startsWith("turn ")).length, 1, "only the Chief of Staff composes");
   });
 });

@@ -22,6 +22,17 @@ export interface ToolOutcome {
   text: string;
 }
 
+/**
+ * Web search for a run (DESIGN.md › Authority and data boundaries). "indexed" answers from the
+ * search service's own copy of the web and fetches nothing from the sites; "live" fetches pages
+ * from the sites themselves.
+ */
+export interface WebAccess {
+  mode: "cached" | "indexed" | "live";
+  /** Limits search to these sites, such as "bbc.com". Empty allows any. */
+  sites: string[];
+}
+
 export interface ContextOptions {
   profile: RunProfile;
   /** Developer instructions: the agent's charter and standing rules. */
@@ -29,13 +40,17 @@ export interface ContextOptions {
   tools: ToolSpec[];
   /** Working directory. Only workspace runs choose one; other profiles get an empty directory. */
   cwd?: string;
+  /** Web search, when the staff member holds it. Off when left out. */
+  web?: WebAccess | null;
 }
 
 export type TurnEvent =
   | { type: "delta"; text: string }
   | { type: "tool_call"; name: string; arguments: unknown }
   /** The runtime asked for something AiHub never allows, such as running a command. */
-  | { type: "blocked"; what: string };
+  | { type: "blocked"; what: string }
+  /** The run searched the web or opened a page. */
+  | { type: "web"; query: string | null; url: string | null };
 
 export interface TurnUsage {
   inputTokens: number;

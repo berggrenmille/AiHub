@@ -2464,6 +2464,21 @@ summary.hud-chip::-webkit-details-marker {
   min-width: 0;
 }
 
+/* Web search on the profile card: a row like a connection's, or the form that grants it. */
+.web-access {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.web-access .connection-list li {
+  flex-wrap: wrap;
+}
+
+.web-access .connection-list .button-row {
+  flex: none;
+}
+
 .connection-facts {
   display: grid;
   gap: 1px;

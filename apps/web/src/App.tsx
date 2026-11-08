@@ -260,6 +260,7 @@ export function App() {
           onOpenChat={() => openChatWith(profile.id)}
           onOpenNote={openNote}
           onUpdate={(changes) => commands.updateAgent(profile.id, changes)}
+          onSetWeb={(web) => commands.setWeb(profile.id, web)}
           onRunRoutine={commands.runRoutine}
         />
       )}

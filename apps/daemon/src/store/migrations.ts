@@ -271,4 +271,13 @@ export const MIGRATIONS: string[] = [
   UPDATE conversations SET source_data = 1
     WHERE context_id IS NOT NULL AND EXISTS (SELECT 1 FROM messages WHERE messages.conversation_id = conversations.id AND messages.source_data = 1);
   `,
+
+  // v8: web search is a grant the operator gives a staff member, optionally limited to some sites.
+  `
+  CREATE TABLE web_grants (
+    agent_id TEXT PRIMARY KEY REFERENCES agents (id),
+    sites TEXT NOT NULL DEFAULT '[]',
+    granted_at TEXT NOT NULL
+  );
+  `,
 ];

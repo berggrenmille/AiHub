@@ -4,6 +4,7 @@ import { readSource } from "../sources/collect.ts";
 import { STAFF_READER_PREFIX } from "../sources/folder.ts";
 import { BUILT_IN_READERS, isBuiltInReader } from "../sources/readers.ts";
 import { READER_CODE_LIMIT } from "../staff/toolsmith.ts";
+import { MAX_SITES, normalizeSites } from "../staff/web.ts";
 import { defineTool, type GatewayTool } from "./gateway.ts";
 
 // Read-only office tools for Milestone 1. Each tool names who may call it; the gateway enforces that.
@@ -62,7 +63,7 @@ export const ReportInput = z
             title: z.string().trim().min(1).max(200),
             detail: z.string().max(1000).describe("What happened and what it means for the operator."),
             urgency: z.enum(["urgent", "today", "this_week", "fyi"]).describe("urgent: needs action within hours."),
-            sourceRef: z.string().max(200).describe("The id of the source record this item comes from."),
+            sourceRef: z.string().max(500).describe("The id of the source record this item comes from, or for an item found on the web, the page's address."),
           })
           .strict(),
       )
@@ -220,6 +221,18 @@ export const proposeSupervisorTool = defineTool({
         .strict()
         .nullable()
         .describe("What the supervisor reads: a calendar export or a folder of files. The operator picks the file or folder on the card. Null for none."),
+      web: z
+        .object({
+          sites: z
+            .array(z.string().trim().min(1).max(200))
+            .max(MAX_SITES)
+            .default([])
+            .describe('Sites to limit search to, such as "reuters.com". Empty for any site, which suits most research.'),
+        })
+        .strict()
+        .nullable()
+        .default(null)
+        .describe("Web search, for public information such as news or prices. Search answers from an index and opens no live pages. Null for none."),
       reason: z.string().trim().min(1).max(300).describe("Why, in the operator's own terms."),
     })
     .strict(),
@@ -245,7 +258,10 @@ export const proposeSupervisorTool = defineTool({
       }
     }
     if (source?.kind === "ics_file" && (source.reader || source.pattern)) throw new Error("A calendar export takes no reader or pattern.");
-    proposeSupervisor(caller, { profile: input.profile, responsibility: { ...duty, expiresAt }, source, reason: input.reason });
+    // A supervisor reports at every briefing, so it needs something to check.
+    if (!source && !input.web) throw new Error("A supervisor needs something to check: a source on this PC, or web search for public information.");
+    const web = input.web ? { sites: normalizeSites(input.web.sites) } : null;
+    proposeSupervisor(caller, { profile: input.profile, responsibility: { ...duty, expiresAt }, source, web, reason: input.reason });
     const where = source ? ` and picks the ${source.kind === "folder" ? "folder" : "file"} there` : "";
     return `Proposal recorded. The operator sees an approval card in this chat${where}. Tell them in a sentence what you proposed and why.`;
   },

@@ -12,6 +12,7 @@ export type IconName =
   | "moon"
   | "chat"
   | "plug"
+  | "globe"
   | "close"
   | "edit"
   | "check"
@@ -43,6 +44,7 @@ const PATHS: Record<IconName, string> = {
   moon: "M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z",
   chat: "M4 5h16v11H9l-5 4z M8 9.5h8M8 12.5h5",
   plug: "M9 2v5M15 2v5M6 7h12v4a6 6 0 0 1-12 0zM12 17v5",
+  globe: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9M12 3c-2.5 2.6-3.8 5.6-3.8 9s1.3 6.4 3.8 9",
   close: "M6 6l12 12M18 6L6 18",
   edit: "M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4",
   check: "M4.5 12.5l5 5 10-11",
