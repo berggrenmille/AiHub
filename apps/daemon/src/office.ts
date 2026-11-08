@@ -31,6 +31,7 @@ import { ContextUnavailableError, type AgentRuntime, type ContextOptions, type M
 import { describeModel, modelChoiceProblem, resolveModel } from "./staff/models.ts";
 import { DAILY_TURN_LIMIT, SUPERVISOR_LIMIT } from "./limits.ts";
 import { Notebook } from "./notes/notebook.ts";
+import { briefingText, sectionForChat } from "./briefing/briefing.ts";
 import { CHIEF_OF_STAFF, CHIEF_OF_STAFF_CONVERSATION_ID } from "./staff/chief-of-staff.ts";
 import { DIRECT_CHAT_INSTRUCTIONS } from "./staff/supervisor.ts";
 import { instructionsFor } from "./staff/identity.ts";
@@ -326,6 +327,7 @@ export class Office {
 
   snapshot(): StateSnapshot {
     const messages = this.store.recentMessages(50);
+    const briefing = this.store.getBriefing();
     return {
       agents: this.store.listAgents(),
       conversations: this.store.listConversations(),
@@ -342,10 +344,12 @@ export class Office {
       notes: this.notebook.list(),
       policies: this.store.listPolicies(),
       staffChanges: this.store.listStaffChanges(),
-      views: this.store.listViews(messages.map((message) => message.id)),
+      // The briefing's views show on the Today page, even once its message is older than the chat's recent ones.
+      views: this.store.listViews([...messages.map((message) => message.id), ...(briefing ? [briefing.messageId] : [])]),
       services: this.services.list(),
       serviceGrants: this.services.grants(),
       meetings: this.store.listMeetings(),
+      briefing,
       office: this.officeStats(),
       runtime: this.runtimeStatus,
       lastEventId: this.bus.lastEventId,
@@ -792,18 +796,38 @@ ${task.instructions}`,
       .messagesAfter(conversation.id, conversation.seenMessageId)
       .filter((message) => message.author === "agent" && (message.kind === "briefing" || message.kind === "notice" || message.kind === "review"))
       .slice(-POSTED_LIMIT);
-    const sourceData = conversation.sourceData || posted.some((message) => message.sourceData);
-    if (!posted.length) return { input: prompt.text, sourceData, seenMessageId };
+    const section = this.sectionSince(conversation);
+    const sourceData = conversation.sourceData || posted.some((message) => message.sourceData) || section !== null;
+    if (!posted.length && !section) return { input: prompt.text, sourceData, seenMessageId };
     const blocks = posted.map((message) => {
       const what = message.kind === "briefing" ? "The briefing you posted" : message.kind === "review" ? "Your staff review" : "A notice AiHub posted";
-      const body = clip(message.body, 4000);
+      const body = clip(this.postedBody(message), 4000);
       return message.sourceData ? `${what}, written from source data:\nBEGIN SOURCE DATA\n${body}\nEND SOURCE DATA` : `${what}:\n${body}`;
     });
+    if (section) blocks.push(section);
+    const heading = posted.length ? "Posted in this chat since your last reply, for context:" : "For context:";
     return {
-      input: ["Posted in this chat since your last reply, for context:", "", blocks.join("\n\n"), "", prompt.label, prompt.text].join("\n"),
+      input: [heading, "", blocks.join("\n\n"), "", prompt.label, prompt.text].join("\n"),
       sourceData,
       seenMessageId,
     };
+  }
+
+  /** A posted message as a turn reads it. The chat shows a briefing as a link; the turn reads it whole. */
+  private postedBody(message: ChatMessage): string {
+    const briefing = message.kind === "briefing" && message.runId ? this.store.getBriefing(message.runId) : null;
+    return briefing ? briefingText(briefing) : message.body;
+  }
+
+  /**
+   * A supervisor's section of a briefing delivered since its chat's last turn, so that when the
+   * operator asks about it from the Today page, the report is at hand. It was written from source data.
+   */
+  private sectionSince(conversation: ConversationRecord): string | null {
+    if (conversation.kind === "meeting") return null;
+    const briefing = this.store.getBriefing();
+    if (!briefing || briefing.messageId <= conversation.seenMessageId) return null;
+    return sectionForChat(briefing, conversation.agentId);
   }
 
   /** Starts a new thread from the chat's saved messages. It holds source data only if they do. */
@@ -821,8 +845,12 @@ ${task.instructions}`,
       .filter((earlier) => earlier.id !== prompt.messageId)
       .slice(-this.historyLimit);
     const fromSourceData = this.store.sourceDataAmong(history.map((earlier) => earlier.id));
-    this.store.setConversationThread(conversation.id, { sourceData: fromSourceData.size > 0 });
-    if (history.length === 0) return { contextId, input: withMemory(prompt.text), sourceData: false, seenMessageId };
+    const section = this.sectionSince(conversation);
+    const sourceData = fromSourceData.size > 0 || section !== null;
+    this.store.setConversationThread(conversation.id, { sourceData });
+    if (history.length === 0) {
+      return { contextId, input: withMemory(section ? ["For context:", "", section, "", prompt.label, prompt.text].join("\n") : prompt.text), sourceData, seenMessageId };
+    }
 
     this.activity(conversation.agentId, runId, "context_rebuilt", `Restored the chat from ${history.length} saved messages`);
     // A meeting's messages come from several staff, so each is named by its own author.
@@ -830,7 +858,7 @@ ${task.instructions}`,
     const transcript = history
       .map((earlier) => {
         const who = earlier.author === "operator" ? "Operator" : nameOf(earlier.agentId);
-        const body = clip(earlier.body, 2000);
+        const body = clip(this.postedBody(earlier), 2000);
         return fromSourceData.has(earlier.id) ? `${who}, written from source data:\nBEGIN SOURCE DATA\n${body}\nEND SOURCE DATA` : `${who}: ${body}`;
       })
       .join("\n\n");
@@ -841,12 +869,13 @@ ${task.instructions}`,
           "AiHub restored this conversation from its records. The earlier messages, oldest first:",
           "",
           transcript,
+          ...(section ? ["", section] : []),
           "",
           prompt.label,
           prompt.text,
         ].join("\n"),
       ),
-      sourceData: fromSourceData.size > 0,
+      sourceData,
       seenMessageId,
     };
   }

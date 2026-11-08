@@ -8,7 +8,7 @@ After the Milestone 6 proof the operator asked for meetings, a bigger chat, a ca
 
 1. **Layout and notifications.** Done, below.
 2. **Meetings.** Done, below. The meeting room on the floor moves to step 4, which redraws the floor.
-3. **A Today page in place of the Inbox.** What needs the operator first, then the briefing by supervisor, each section with Open source and Discuss. The chat gets one line that links to it, and nothing asks a question before the briefing.
+3. **A Today page in place of the Inbox.** Done, below.
 4. **16 supervisors.** A floor of four by four that scales to fit, with a meeting room where those in a meeting gather, and the day's turn budget as a setting with a higher default.
 
 At any point along the way:
@@ -16,6 +16,26 @@ At any point along the way:
 - Done: the daemon checks a staff member's call against the operation's input schema before calling the service (`argumentProblems` in `services/catalog.ts`). An argument missing, unknown, of the wrong type, or outside its list goes back to the staff member with the operation's input; what a schema leaves open passes, and the service has the last word.
 
 The proof used a ChatGPT app, so what the probe left open about MCP servers is still open: Windows Credential Manager as the store for sign-ins, a real MCP server's sign-in, and how long its refresh token lasts.
+
+## Today (2026-11-08)
+
+The operator wasn't sure the briefing read well as a long message in the chat, or whether it should ask a question first. The answer they took: a page of its own, what needs them first, and no question before it. DESIGN.md › Office experience › Layout and notifications and Scheduling and reporting have the rules as built.
+
+1. **The briefing is kept by section.** Migration v19 adds `briefings`: each delivered briefing's overview and its sections as their supervisors reported them, with the summary, the questions for the operator, new, carried and resolved items as told, the warning, and the report's run for its views. `GET /api/state` has the latest, and a `briefing` event brings the next.
+2. **The Chief of Staff writes an overview, not the whole briefing.** Under 100 words on what matters most across the sections, and any section that is missing. The chat shows the briefing as one line, "Read it on Today", with how much still needs the operator; an earlier briefing folds into a line that opens in place. When the operator next writes, the Chief of Staff reads the whole briefing as text, and a supervisor whose chat opens after a briefing gets its own section, in full and as source data, until its next turn has taken it in.
+3. **The Today page.** Decisions waiting on a card or a meeting's conclusion, then the items that need the operator, with Resolve, Dismiss, Open source, and Discuss. Then the overview and the sections, those that ask something first: questions with Answer, new items with where each stands now, what is still open folded into one line, what was resolved, warnings, and views. Discuss opens the supervisor's chat with a line in the box, unsent. A pod's sign on the floor opens Today at its items, and the briefing's toast opens Today too. The Inbox page is gone; the rail's Today count is what waits for the operator.
+
+### How it was shown
+
+- Tests: `briefing.test.ts` and `morning.test.ts` (the record by section, the Chief of Staff reading the whole briefing, and the supervisor getting its section once), `lib/today.test.ts`, and the reducer in `state.test.ts`.
+- In a browser against the fake office: a briefing run from Vera's profile, read on Today with one section reporting what was still open and four whose sources couldn't be read; the chat's line, an earlier briefing folded; and Discuss on Elin's section, whose reply showed her section in the turn's input.
+
+### Known gaps
+
+- The overview's instructions haven't met real Codex yet. The next weekday briefing is their first run.
+- Today shows the latest briefing only. Earlier ones are in the Chief of Staff's chat, folded.
+- A section's questions count as waiting until the next briefing, even once answered in chat.
+- An item from a section whose source couldn't be read waits under Needs you, but isn't in that section.
 
 ## Meetings (2026-11-08)
 

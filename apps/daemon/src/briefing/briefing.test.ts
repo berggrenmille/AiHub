@@ -51,6 +51,19 @@ describe("runBriefing", () => {
     const [posted] = store.recentMessages(1, CHIEF_OF_STAFF_CONVERSATION_ID);
     assert.equal(posted?.body, outcome.text);
     assert.equal(posted?.runId, outcome.run!.id);
+    // The Today page shows each section as its supervisor reported it.
+    const record = store.getBriefing();
+    assert.equal(record?.id, outcome.run!.id);
+    assert.equal(record?.messageId, posted?.id);
+    assert.equal(record?.overview, outcome.text);
+    assert.deepEqual(record?.sections.map((section) => section.status), ["reported", "reported", "reported", "nothing_new"]);
+    assert.equal(record?.sections[0]?.source, "Work calendar");
+    assert.equal(record?.sections[0]?.summary, "Checked Work calendar.");
+    assert.equal(record?.sections[0]?.runId, outcome.sections[0]?.status === "reported" ? outcome.sections[0].run.id : "");
+    // The sample sections keep no items, so the record holds what the report said.
+    assert.deepEqual(record?.sections[0]?.fresh.map((item) => [item.id, item.title, item.needsOperator]), [[null, "Something", true]]);
+    assert.equal(record?.sections[3]?.summary, null);
+    assert.deepEqual(office.snapshot().briefing, record);
     assert.equal(store.usageSince(new Date(0)).turns, 4);
     assert.equal(store.getAgent(CHIEF_OF_STAFF_ID)?.state, "idle");
   });
@@ -68,7 +81,7 @@ describe("runBriefing", () => {
   });
 
   it("says which section is missing when a supervisor files no report", async () => {
-    const { office, runtime } = setUp();
+    const { office, runtime, store } = setUp();
     runtime.respond = async (input, options) =>
       input.includes("Source: Personal mailbox")
         ? { status: "completed", text: "I looked but filed nothing.", error: null, usage }
@@ -78,6 +91,9 @@ describe("runBriefing", () => {
 
     assert.equal(outcome.sections[2]?.status, "missing");
     assert.match(outcome.text, /Section 3: Personal inbox\nMissing: The supervisor did not file a report/);
+    const missing = store.getBriefing()?.sections[2];
+    assert.equal(missing?.status, "missing");
+    assert.equal(missing?.reason, "The supervisor did not file a report");
   });
 
   it("includes the injected message as data for the supervisor to judge", async () => {

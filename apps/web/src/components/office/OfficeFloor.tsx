@@ -20,7 +20,7 @@ interface OfficeFloorProps {
   now: number;
   onSelectAgent(agentId: string): void;
   onOpenChat(): void;
-  onOpenInbox(responsibilityId?: string): void;
+  onOpenToday(responsibilityId?: string): void;
 }
 
 /** How long walking in or out of the door takes, in ms. Matches the CSS animations. */
@@ -28,7 +28,7 @@ const WALK_MS = 2200;
 const MIN_SCALE = 0.55;
 const MAX_SCALE = 1.35;
 
-export function OfficeFloor({ state, now, onSelectAgent, onOpenChat, onOpenInbox }: OfficeFloorProps) {
+export function OfficeFloor({ state, now, onSelectAgent, onOpenChat, onOpenToday }: OfficeFloorProps) {
   const supervisorLimit = state.office?.supervisorLimit ?? 4;
   const layout = useMemo(() => layoutOffice(state.agents, supervisorLimit), [state.agents, supervisorLimit]);
   const looks = useLooks(state.agents);
@@ -102,8 +102,8 @@ export function OfficeFloor({ state, now, onSelectAgent, onOpenChat, onOpenInbox
                   <button
                     type="button"
                     className={`pod-items urgency-${counts.top}`}
-                    onClick={() => onOpenInbox(responsibility!.id)}
-                    aria-label={`${counts.count} open item${counts.count === 1 ? "" : "s"} for ${label}, most pressing: ${URGENCY_LABELS[counts.top]}. Open the inbox.`}
+                    onClick={() => onOpenToday(responsibility!.id)}
+                    aria-label={`${counts.count} open item${counts.count === 1 ? "" : "s"} for ${label}, most pressing: ${URGENCY_LABELS[counts.top]}. Open Today.`}
                   >
                     {counts.count}
                     {counts.fresh > 0 && <span className="pod-items-new">new</span>}

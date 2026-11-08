@@ -8,7 +8,7 @@ Every staff member is a character: a name, a title, a job description, a working
 
 The core feature is creating a new responsibility at runtime. Work schedules, separate inboxes, and portfolio research are examples of responsibilities that share the same staff model. New responsibilities use available capabilities. A new service or action becomes available through a connector. Over time, staff move from watching and reporting to preparing drafts, working on projects, and acting within limits the operator sets. Bookkeeping, side projects, research, and shopping are examples of what the same staff model can take on.
 
-V1 runs on one Windows PC and covers watching and reporting. The first release validates recruitment, delegation, scheduled reporting, and run isolation with sample data and one real local source. Results arrive in the AiHub inbox. Local state stays on the primary PC. Drafts, project work, approvals from the phone, and spending follow in the phases under Roadmap after V1. Cross-PC sync is deferred.
+V1 runs on one Windows PC and covers watching and reporting. The first release validates recruitment, delegation, scheduled reporting, and run isolation with sample data and one real local source. Results arrive on the AiHub Today page. Local state stays on the primary PC. Drafts, project work, approvals from the phone, and spending follow in the phases under Roadmap after V1. Cross-PC sync is deferred.
 
 ### Design rules
 
@@ -44,11 +44,13 @@ The Chief of Staff proposes new roles or reuses existing ones, identifies the re
 
 ### Layout and notifications
 
-A rail down the left edge holds the pages (the office, the Inbox, Chats, Notes, and Dashboards), the Assignments panel, Access, Policy, and settings, each with a count of what waits there. A slim top bar shows the office's numbers on the office page, the day's energy, one health chip for Codex, the page's connection, and the sources, the time, and the chat button. The roster shows only on the office page.
+A rail down the left edge holds the pages (the office, Today, Chats, Notes, and Dashboards), the Assignments panel, Access, Policy, and settings, each with a count of what waits there. A slim top bar shows the office's numbers on the office page, the day's energy, one health chip for Codex, the page's connection, and the sources, the time, and the chat button. The roster shows only on the office page.
+
+Today is where the operator starts the day. What needs the operator comes first: decisions waiting on a card or a meeting's conclusion, oldest first, each opening where it waits, and then the items that need the operator, most pressing first, each with its source, a button to resolve or dismiss it, and one that opens a chat with its supervisor to discuss it. The latest briefing follows: the Chief of Staff's overview, then one section per supervisor, those that ask something of the operator first. A section shows its supervisor's summary, its questions for the operator, its new items with where each stands now, what is still open from earlier folded into one line, what was resolved, any warning, and its views. Each item opens its source, and each section and question opens the supervisor's chat with a line about it in the box, unsent. Nothing asks the operator a question before the briefing.
 
 A chat opens in a drawer beside any page, or full screen on the Chats page, which lists meetings first, then every staff member's general chat and topics, with their unread counts. A meeting always opens full screen. A topic is named by the operator's first message and can be renamed. Topics share what the staff member knows through records and notes, not what was said in another chat. A card raised in a chat with the Chief of Staff stays in that chat, with its answer beside it; other cards go to the Chief of Staff's general chat.
 
-Toasts show only what needs the operator or went wrong: a failed or blocked run, a proposal, a proposed policy or service, a meeting's conclusion, a problem the health check found, and the morning briefing. A card doesn't toast while the chat it is in is on screen, nor a conclusion while a meeting is. Toasts sit under the top bar, clear of the chat, at most two at a time, and a burst folds into one line that opens the activity log. The ticker and the log carry everything else.
+Toasts show only what needs the operator or went wrong: a failed or blocked run, a proposal, a proposed policy or service, a meeting's conclusion, a problem the health check found, and the morning briefing, whose toast opens Today. A card doesn't toast while the chat it is in is on screen, nor a conclusion while a meeting is. Toasts sit under the top bar, clear of the chat, at most two at a time, and a burst folds into one line that opens the activity log. The ticker and the log carry everything else.
 
 ### Views
 
@@ -57,7 +59,7 @@ Staff answer with interface where it reads better than text: a chart, a table, a
 A view shows in one of three places:
 
 - **Under a chat reply.** The reply's text still says what matters, and a view adds to it.
-- **On a supervisor's section of the morning briefing.** The section's data is written into the program, and the Chief of Staff points to the view instead of repeating its numbers.
+- **On a supervisor's section of the morning briefing.** The section's data is written into the program. It shows under the section on the Today page.
 - **As a dashboard.** The operator asks for one in chat, and it opens from the Dashboards tab. It fetches the office's data each time it opens, so its numbers are current. Saving again under the same title changes it, and the operator can remove it. The office keeps at most 30.
 
 Rules:
@@ -72,7 +74,7 @@ Rules:
 
 ```mermaid
 flowchart LR
-    U["Chief Human Operator"] --> UI["2D office, chat, inbox, and notes"]
+    U["Chief Human Operator"] --> UI["2D office, Today, chat, and notes"]
     UI <--> H["AiHub daemon"]
     H <--> DB[("SQLite")]
     H <--> V[("Notes vault (markdown)")]
@@ -118,7 +120,7 @@ flowchart LR
 | Assignment | Bounded work with an owner, inputs, expected result, and optional parent assignment and review requirement. A question to a colleague is an assignment too. |
 | Run | An execution attempt with status, timestamps, turn and usage counts, the model and reasoning level it ran on, and failure details. |
 | Result | A report for an assignment with source references, freshness, and decisions needed. It references items rather than restating them. |
-| Item | A finding with a stable identity from its source, such as a mail thread ID or a calendar event ID and version. It has a state (new, open, resolved, or dismissed), first-seen and last-reported times, and an owning responsibility. The supervisor says whether it needs the operator: something to do or decide, such as a clash to fix or a charge to check, waits in the Inbox until the operator resolves or dismisses it. Anything else, such as a moved meeting or a news story, is only worth knowing: the briefing tells the operator once, and it lapses after two days, sooner if its source record stops mattering. |
+| Item | A finding with a stable identity from its source, such as a mail thread ID or a calendar event ID and version. It has a state (new, open, resolved, or dismissed), first-seen and last-reported times, and an owning responsibility. The supervisor says whether it needs the operator: something to do or decide, such as a clash to fix or a charge to check, waits on the Today page until the operator resolves or dismisses it. Anything else, such as a moved meeting or a news story, is only worth knowing: the briefing tells the operator once, and it lapses after two days, sooner if its source record stops mattering. |
 | Cursor | The last position a responsibility has checked on a connection, so collectors fetch only what changed. |
 | Proposal | A change that needs operator approval: a new supervisor, responsibility, routine, access request, or reader, or a change to a supervisor from the staff review. |
 | Action | A step outside AiHub's own records, such as a draft to create, a listing to publish, or a purchase. It has an autonomy level, a target connection, a cost if any, evidence, and a status (proposed, approved, done, failed, or declined). |
@@ -135,7 +137,7 @@ Each staff member runs on a model and a reasoning level from the runtime's catal
 
 ### Recruitment and delegation
 
-The Chief of Staff can propose new supervisors or reuse existing ones within standing goals. Each proposal includes a charter, reporting relationship, responsibility, routine, and requested capabilities. Requested capabilities can exceed current access so the office can prepare the role while you connect a service. The operator approves, edits, or declines the proposal from a card in the Chief of Staff inbox. Once a role exists, the Chief of Staff can assign work within it without further approval.
+The Chief of Staff can propose new supervisors or reuse existing ones within standing goals. Each proposal includes a charter, reporting relationship, responsibility, routine, and requested capabilities. Requested capabilities can exceed current access so the office can prepare the role while you connect a service. The operator approves, edits, or declines the proposal from a card in the Chief of Staff's chat, which Today lists among what needs the operator. Once a role exists, the Chief of Staff can assign work within it without further approval.
 
 AiHub caps the number of active supervisors and the daily turn budget. A proposal that would exceed either cap says so. Before proposing a new role, the Chief of Staff checks existing responsibilities for overlap and proposes extending one where it fits.
 
@@ -268,11 +270,12 @@ Every routine runs in two phases. First, collectors fetch changes since the curs
 The briefing runs on weekdays, or every day once the operator turns on weekends for it. Turned on after the day's briefing time, weekends start with the next day, so no briefing runs late. A briefing runs as follows:
 
 1. The scheduler creates a unique occurrence with a delivery time and a cutoff.
-2. One hour before delivery, a health check verifies Codex sign-in, connection status, and remaining usage. A failure posts an actionable alert to the AiHub inbox right away so the operator can fix it before the briefing.
+2. One hour before delivery, a health check verifies Codex sign-in, connection status, and remaining usage. A failure posts an actionable alert to the Chief of Staff's chat right away so the operator can fix it before the briefing.
 3. Collectors fetch changes for each participating responsibility. A responsibility with no changes and no open items reports "checked, nothing new" without a model turn. A responsibility that searches the web instead of reading a source has nothing to collect, so its supervisor runs one turn at every briefing.
 4. Supervisors with changes run one turn each to interpret them against their charter and standing instructions. They create, update, or resolve items. Their results distinguish an unavailable or stale source from a successful check that found nothing. A supervisor that searches the web reports what is new since the last briefing and cites each item's web address, which keys the item, so the same story is never new twice. Such items are only worth knowing, whatever the supervisor says.
-5. The Chief of Staff composes the rundown from the reports those roles can share. New items come first, those that need the operator ahead of those only worth knowing. Open items that need the operator are carried over and summarized rather than repeated; items only worth knowing aren't carried over. Items resolved since the last briefing are noted, but not those that lapsed after being told, and dismissed items are left out. If a section misses the cutoff, the briefing identifies what is missing.
-6. AiHub posts one unread briefing in the Chief of Staff inbox and links each entry to its item, assignment, and sources. Configured polling rules can deliver separate alerts between briefings.
+5. AiHub keeps each section as its supervisor reported it: the summary, the questions for the operator, new items, open items that need the operator carried over, and items resolved since the last briefing, but not those that lapsed after being told. Items only worth knowing aren't carried over, and dismissed items are left out. A section that missed the cutoff, or whose source couldn't be read, says why.
+6. The Chief of Staff writes a short overview on top: what matters most today across the sections, and any section that is missing. A quiet morning, with nothing new anywhere, needs no turn: AiHub says so and lists what is still open.
+7. The briefing goes on the Today page, and the Chief of Staff's chat gets one line that leads there, with how much still needs the operator. The Chief of Staff reads the whole briefing when the operator next writes. A supervisor whose chat the operator opens after a briefing has its own section at hand, as source data. Configured polling rules can deliver separate alerts between briefings.
 
 The standup is a routine too: once the operator turns it on, it calls a meeting on weekdays at 09:00 (see Meetings). It needs no health check, and it waits for a briefing still under way, since that briefing is its news.
 

@@ -3,6 +3,7 @@ import {
   ACTIVE_RUN_STATES,
   type ActivityEntry,
   type Assignment,
+  type Briefing,
   type AssignmentKind,
   type AssignmentStatus,
   type ActivityKind,
@@ -326,6 +327,35 @@ export class Store {
   cardConversation(kind: MessageKind, refId: string): string | null {
     const row = this.db.prepare("SELECT conversation_id FROM messages WHERE kind = ? AND ref_id = ? ORDER BY id LIMIT 1").get(kind, refId) as Row | undefined;
     return row ? String(row.conversation_id) : null;
+  }
+
+  // Briefings ---------------------------------------------------------------
+
+  /** Keeps a delivered briefing by section, for the Today page. */
+  saveBriefing(briefing: Omit<Briefing, "deliveredAt">): Briefing {
+    const deliveredAt = this.timestamp();
+    this.db
+      .prepare("INSERT INTO briefings (id, message_id, overview, source_data, sections, delivered_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(briefing.id, briefing.messageId, briefing.overview, briefing.sourceData ? 1 : 0, JSON.stringify(briefing.sections), deliveredAt);
+    return { ...briefing, deliveredAt };
+  }
+
+  /** The latest delivered briefing, or the one a run delivered. */
+  getBriefing(runId?: string): Briefing | null {
+    const row = (
+      runId
+        ? this.db.prepare("SELECT * FROM briefings WHERE id = ?").get(runId)
+        : this.db.prepare("SELECT * FROM briefings ORDER BY delivered_at DESC, rowid DESC LIMIT 1").get()
+    ) as Row | undefined;
+    if (!row) return null;
+    return {
+      id: String(row.id),
+      messageId: Number(row.message_id),
+      overview: String(row.overview),
+      sourceData: Number(row.source_data) === 1,
+      sections: JSON.parse(String(row.sections)),
+      deliveredAt: String(row.delivered_at),
+    };
   }
 
   // Meetings ----------------------------------------------------------------

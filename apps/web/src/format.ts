@@ -103,6 +103,11 @@ export function formatLongDate(iso: string): string {
   return longDateFormat.format(new Date(iso));
 }
 
+/** Whether a moment falls on the same day as `now`, in the office's time zone. */
+export function isSameDay(iso: string, now: Date = new Date()): boolean {
+  return dayFormat.format(new Date(iso)) === dayFormat.format(now);
+}
+
 /** The time for today, otherwise the day and month, such as 7 Nov. */
 export function formatShortWhen(iso: string, now: Date = new Date()): string {
   const date = new Date(iso);

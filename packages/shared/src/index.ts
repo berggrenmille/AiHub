@@ -630,6 +630,63 @@ export interface Item {
   link: string | null;
 }
 
+/** How a supervisor's section of a briefing went (DESIGN.md › Scheduling and reporting). */
+export type BriefingSectionStatus = "reported" | "nothing_new" | "unavailable" | "missing";
+
+/** An item as a briefing told it. The item itself may have been resolved or changed since. */
+export interface BriefingItem {
+  /** The item, or null for one the briefing didn't keep, such as from a section with no responsibility. */
+  id: number | null;
+  title: string;
+  detail: string;
+  urgency: Urgency;
+  needsOperator: boolean;
+  link: string | null;
+  /** How it was resolved, for an item resolved since the last briefing. */
+  resolution: string | null;
+}
+
+/** One supervisor's section of a delivered briefing, as the Today page shows it. */
+export interface BriefingSectionRecord {
+  agentId: string;
+  /** The responsibility it reports for, such as "Work schedule". */
+  heading: string;
+  /** Where the changes came from, such as "Work calendar", or "Web search". */
+  source: string;
+  responsibilityId: string | null;
+  status: BriefingSectionStatus;
+  /** The supervisor's own summary, when it reported. */
+  summary: string | null;
+  /** Questions only the operator can answer. */
+  decisions: string[];
+  /** Why the section is missing, or its source unavailable. */
+  reason: string | null;
+  /** Why what the source holds may be out of date. */
+  warning: string | null;
+  /** The report's run. Views the supervisor handed in with it show under the section. */
+  runId: string | null;
+  /** New since the last briefing. */
+  fresh: BriefingItem[];
+  /** Reported earlier and still waiting for the operator. */
+  carried: BriefingItem[];
+  /** Resolved since the last briefing. */
+  resolved: BriefingItem[];
+}
+
+/** A delivered briefing: the Chief of Staff's overview, and each section as its supervisor reported it. */
+export interface Briefing {
+  /** The briefing's run. */
+  id: string;
+  /** The Chief of Staff's message in the chat, which links to the Today page. */
+  messageId: number;
+  deliveredAt: string;
+  /** What matters most today, by the Chief of Staff; or AiHub's line on a quiet morning. */
+  overview: string;
+  /** Written from source data: the reports were. */
+  sourceData: boolean;
+  sections: BriefingSectionRecord[];
+}
+
 /** Who wrote a note, and from what kind of run (DESIGN.md › Memory and notes). */
 export type NoteProvenance = "operator" | "aihub" | "conversation" | "source_data";
 
@@ -710,6 +767,8 @@ export interface StateSnapshot {
   serviceGrants: ServiceGrant[];
   /** Meetings under way or waiting, then the most recent closed ones, newest first. */
   meetings: Meeting[];
+  /** The latest delivered briefing, which the Today page shows. Its views are in `views`. */
+  briefing: Briefing | null;
   office: OfficeStats;
   runtime: RuntimeStatus | null;
   /** The last event this snapshot includes. Follow the stream with `/api/events?after=<lastEventId>`. */
@@ -744,6 +803,8 @@ export type DaemonEvent =
   /** A conversation was opened, such as the operator's first chat with a supervisor. */
   | { type: "conversation"; conversation: Conversation }
   | { type: "meeting"; meeting: Meeting }
+  /** A briefing was delivered. */
+  | { type: "briefing"; briefing: Briefing }
   /** A staff member left the office, such as a worker whose task is accepted. Its records stay. */
   | { type: "agent_left"; agentId: string }
   /** The stream can't catch up from the client's last event. Reload `/api/state`, then reconnect. */

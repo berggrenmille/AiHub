@@ -56,6 +56,8 @@ export const demo: Responder = async (input, options) => {
     const outcome = await options.onToolCall({ name: "aihub_submit_report", arguments: { summary: `${records.length} records, ${items.length} worth a look.`, items } });
     return { status: "completed", text: outcome.text, error: null, usage: { inputTokens: 900, cachedInputTokens: 0, outputTokens: 30 } };
   }
+  // The Chief of Staff's overview of the briefing: the sections themselves show on the Today page.
+  if (/^Section 1: /m.test(input)) return { status: "completed", text: overview(input), error: null, usage: { inputTokens: 1500, cachedInputTokens: 0, outputTokens: 40 } };
   const delegated = await delegate(input, options);
   let text = delegated ?? `This is the fake runtime, so nobody is thinking. You said: “${input}”`;
   const lastLine = input.trim().split("\n").at(-1) ?? "";
@@ -85,6 +87,15 @@ The roster tool returned: ${outcome.text}`;
   }
   return { status: "completed", text, error: null, usage: { inputTokens: 1200, cachedInputTokens: 800, outputTokens: 40 } };
 };
+
+/** A short overview from the sections' new items: how many need the operator, and the first of them. */
+function overview(input: string): string {
+  const sections = input.match(/^Section \d+: /gm)?.length ?? 0;
+  const needs = [...input.matchAll(/"title": "([^"]+)",[^}]*?"needsOperator": true/g)].map((match) => match[1]!);
+  const from = `The fake runtime wrote this from ${sections} section${sections === 1 ? "" : "s"}.`;
+  if (!needs.length) return `Nothing new needs you this morning. ${from}`;
+  return `${needs.length} new item${needs.length === 1 ? " needs" : "s need"} you; start with ${needs[0]}. ${from}`;
+}
 
 /**
  * A staff review: proposes narrower standing instructions for the first supervisor a sign names, or

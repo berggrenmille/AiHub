@@ -92,6 +92,7 @@ function snapshot(overrides: Partial<StateSnapshot> = {}): StateSnapshot {
     services: [],
     serviceGrants: [],
     meetings: [],
+    briefing: null,
     office: { turnsToday: 0, dailyTurnLimit: 80, activeSupervisors: 0, supervisorLimit: 8, briefingStreak: 0, staffReviewAt: null },
     runtime: { signedIn: true, detail: "operator@example.com" },
     lastEventId: "boot-0",
@@ -736,6 +737,18 @@ describe("views", () => {
     state = events(state, { type: "view_removed", viewId: "view-1" });
     assert.deepEqual(state.views, {});
     assert.equal(events(state, { type: "view_removed", viewId: "view-1" }), state);
+  });
+});
+
+describe("briefing", () => {
+  const briefing = (id: string, deliveredAt: string) => ({ id, messageId: 9, deliveredAt, overview: "Start with Q4.", sourceData: true, sections: [] });
+
+  it("loads the latest from the snapshot, and takes a newer one from the stream", () => {
+    let state = apply(initialOfficeState, { type: "snapshot", snapshot: snapshot({ briefing: briefing("monday", "2026-11-09T06:00:00.000Z") }) });
+    assert.equal(state.briefing?.id, "monday");
+    state = events(state, { type: "briefing", briefing: briefing("tuesday", "2026-11-10T06:00:00.000Z") });
+    assert.equal(state.briefing?.id, "tuesday");
+    assert.equal(events(state, { type: "briefing", briefing: briefing("monday", "2026-11-09T06:00:00.000Z") }), state, "an older copy changes nothing");
   });
 });
 

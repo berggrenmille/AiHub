@@ -79,16 +79,16 @@ describe("The office's status outside the browser", () => {
       store.upsertItem({ responsibilityId: responsibility.id, sourceKey: key, sourceVersion: "1", title: key, detail: "", urgency, expiresAt: null });
 
     item("library-book", "fyi");
-    assert.deepEqual(status().needs, ["1 item in your inbox"]);
+    assert.deepEqual(status().needs, ["1 item waiting on Today"]);
     assert.equal(status().attention, false, "an ordinary item can wait");
 
     item("double-debit", "urgent");
-    assert.deepEqual(status().needs, ["2 items in your inbox, 1 urgent"]);
+    assert.deepEqual(status().needs, ["2 items waiting on Today, 1 urgent"]);
     assert.equal(status().attention, true);
 
     runtime.signedIn = false;
     await office.refreshRuntimeStatus();
     store.createProposal({ proposedBy: CHIEF_OF_STAFF_ID, runId: null, payload: {} as never });
-    assert.deepEqual(status().needs, ["Codex isn't signed in", "A proposal to approve", "2 items in your inbox, 1 urgent"]);
+    assert.deepEqual(status().needs, ["Codex isn't signed in", "A proposal to approve", "2 items waiting on Today, 1 urgent"]);
   });
 });

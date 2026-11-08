@@ -31,10 +31,15 @@ export function toastWorthy(entry: ActivityEntry, context: ToastContext): boolea
       return entry.summary.startsWith("Health check:");
     // The briefing is in.
     case "run_finished":
-      return entry.runId !== null && context.runKind(entry.runId) === "briefing";
+      return briefingIn(entry, context);
     default:
       return false;
   }
+}
+
+/** The briefing was delivered: its toast leads to the Today page. */
+export function briefingIn(entry: ActivityEntry, context: Pick<ToastContext, "runKind">): boolean {
+  return entry.kind === "run_finished" && entry.runId !== null && context.runKind(entry.runId) === "briefing";
 }
 
 /** At most this many toasts show at once; a burst beyond them folds into one line. */

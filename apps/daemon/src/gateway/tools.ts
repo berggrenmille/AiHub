@@ -71,7 +71,7 @@ export const ReportInput = z
             needsOperator: z
               .boolean()
               .describe(
-                "true if the operator has to do or decide something about it, such as fix a clash, prepare for a meeting, or check a charge: it goes in their Inbox until they resolve it. false if it is only worth knowing, such as a moved or cancelled meeting: the briefing tells them, and it doesn't wait in the Inbox.",
+                "true if the operator has to do or decide something about it, such as fix a clash, prepare for a meeting, or check a charge: it waits on their Today page until they resolve it. false if it is only worth knowing, such as a moved or cancelled meeting: the briefing tells them, and it doesn't wait for them.",
               ),
             sourceRef: z.string().max(500).describe("The id of the source record this item comes from, or for an item found on the web, the page's address."),
           })

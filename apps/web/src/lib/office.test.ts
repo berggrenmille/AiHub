@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Agent, Item, Run } from "@aihub/shared";
 import { forceLayout } from "./graph.ts";
-import { closedItems, groupOpenItems, openCount } from "./inbox.ts";
+import { closedItems, openCount } from "./inbox.ts";
+import { itemsWaiting } from "./today.ts";
 import { STATION, layoutOffice } from "./layout.ts";
 import { DONE_GLOW_MS, FAILED_MARK_MS, bubbleText, currentRun, openItemCounts, presenceOf } from "./presence.ts";
 import { doorOffset, visitOffset, WALKER, walkerAt } from "./walk.ts";
@@ -225,7 +226,7 @@ describe("presence", () => {
   });
 });
 
-describe("inbox", () => {
+describe("items that need the operator", () => {
   const items = [
     item(1, { urgency: "fyi" }),
     item(2, { urgency: "urgent", responsibilityId: "portfolio", state: "new" }),
@@ -235,16 +236,8 @@ describe("inbox", () => {
     item(6, { state: "dismissed", updatedAt: "2026-11-07T18:00:00.000Z" }),
   ];
 
-  it("groups open items by responsibility, most pressing first", () => {
-    const groups = groupOpenItems(items, []);
-    assert.deepEqual(
-      groups.map((g) => [g.responsibilityId, g.items.map((i) => i.id)]),
-      [
-        ["portfolio", [2]],
-        ["schedule", [3, 4, 1]],
-      ],
-    );
-    assert.equal(groups[0]!.responsibility, null);
+  it("lists the items waiting for the operator, most pressing first", () => {
+    assert.deepEqual(itemsWaiting(items).map((i) => i.id), [2, 3, 4, 1]);
   });
 
   it("lists closed items newest first and counts the open ones", () => {
@@ -258,7 +251,7 @@ describe("inbox", () => {
   it("leaves out items that are only worth knowing, open or closed", () => {
     const news = [item(7, { needsOperator: false, urgency: "urgent", responsibilityId: "news", state: "new" }), item(8, { needsOperator: false, responsibilityId: "news", state: "resolved" })];
     const all = [...items, ...news];
-    assert.deepEqual(groupOpenItems(all, []).map((g) => g.responsibilityId), ["portfolio", "schedule"]);
+    assert.deepEqual(itemsWaiting(all).map((i) => i.id), [2, 3, 4, 1]);
     assert.deepEqual(closedItems(all).map((i) => i.id), [6, 5]);
     assert.deepEqual(openCount(all), { open: 4, fresh: 2, urgent: 1 });
     assert.equal(openItemCounts(all).has("news"), false);

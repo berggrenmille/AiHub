@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import type { Agent, ChatMessage, Conversation, Item, Meeting, ModelOption, PolicyVersion, Proposal, Run, Service, SourcePreview, StaffChange, StaffReader, View } from "@aihub/shared";
+import type { Agent, Briefing, ChatMessage, Conversation, Item, Meeting, ModelOption, PolicyVersion, Proposal, Run, Service, SourcePreview, StaffChange, StaffReader, View } from "@aihub/shared";
 import { errorText } from "../api.ts";
 import { lookFor } from "../lib/avatar.ts";
 import { chatName } from "../lib/chat.ts";
 import { MEETING_STATUS_LABELS, meetingStatus } from "../lib/meetings.ts";
+import { briefingAsks } from "../lib/today.ts";
 import { formatClock, formatDateTime, formatLongDate, STATE_LABELS, toneOf } from "../format.ts";
 import type { StreamingReply } from "../state.ts";
 import { Icon } from "./Icon.tsx";
@@ -43,6 +44,9 @@ interface ChatPanelProps {
   unread: ReadonlyMap<string, number>;
   messages: ChatMessage[];
   runs: Record<string, Run>;
+  /** The latest delivered briefing. Its message in the chat is a link to the Today page. */
+  briefing: Briefing | null;
+  onOpenToday(): void;
   streaming: StreamingReply[];
   /** For the cards that link to meetings the Chief of Staff called from the chat. */
   meetings: Meeting[];
@@ -117,6 +121,8 @@ export function ChatPanel(props: ChatPanelProps) {
   }, [prefillKey, prefillText, ask, onPrefilled]);
 
   const { viewActions, items, nameOf } = props;
+  // What the latest briefing still asks of the operator, for its line in the chat.
+  const asks = useMemo(() => (props.briefing ? briefingAsks(props.briefing, new Map(items.map((item) => [item.id, item]))) : 0), [props.briefing, items]);
   const actions = useMemo<ViewActions>(() => ({ ...viewActions, ask: present ? ask : undefined }), [viewActions, present, ask]);
   // A view under a reply carries its own heading. One in the briefing says whose section it is.
   const renderView = useCallback(
@@ -297,6 +303,9 @@ export function ChatPanel(props: ChatPanelProps) {
                 staffChange={message.kind === "staff_change" ? props.staffChanges.find((change) => String(change.id) === message.refId) : undefined}
                 meeting={message.kind === "meeting" ? props.meetings.find((meeting) => meeting.id === message.refId) : undefined}
                 onOpenMeeting={props.onOpenMeeting}
+                briefing={message.kind === "briefing" && props.briefing?.messageId === message.id ? props.briefing : null}
+                briefingAsks={asks}
+                onOpenToday={props.onOpenToday}
                 models={props.models}
                 readers={props.readers}
                 services={props.services}
@@ -456,6 +465,11 @@ interface MessageViewProps {
   staffChange: StaffChange | undefined;
   meeting: Meeting | undefined;
   onOpenMeeting(meetingId: string): void;
+  /** For the latest briefing's message: the briefing, which the Today page shows. */
+  briefing: Briefing | null;
+  /** What that briefing still asks of the operator. */
+  briefingAsks: number;
+  onOpenToday(): void;
   models: ModelOption[] | null;
   readers: StaffReader[];
   services: Service[];
@@ -600,21 +614,41 @@ function MessageView(props: MessageViewProps) {
   }
 
   if (message.kind === "briefing") {
+    const briefing = props.briefing;
+    // The latest briefing is read on the Today page; the chat keeps a line that leads there.
+    if (briefing) {
+      const asks = props.briefingAsks;
+      return (
+        <li className="message message-card">
+          <button type="button" className="card briefing-link" onClick={props.onOpenToday}>
+            <span className="briefing-mark" aria-hidden="true">
+              <Icon name="sun" size={18} />
+            </span>
+            <span className="briefing-link-text">
+              <span className="eyebrow">Morning briefing · {formatLongDate(message.createdAt)}</span>
+              <span className="briefing-link-title">Read it on Today</span>
+            </span>
+            {asks > 0 && <span className="pill today-asks">{asks} for you</span>}
+            <Icon name="chevron" size={16} />
+          </button>
+          <p className="message-meta">{time}</p>
+        </li>
+      );
+    }
+    // An earlier briefing folds away, and opens in place.
     return (
       <li className="message message-card">
-        <article className="morning-paper" aria-label={`Briefing for ${formatLongDate(message.createdAt)}`}>
-          <header className="paper-masthead">
-            <p className="paper-name">The Morning Brief</p>
-            <p className="paper-dateline">
-              <span>{formatLongDate(message.createdAt)}</span>
-              <span>Delivered {formatClock(message.createdAt)}</span>
-            </p>
-          </header>
-          <Markdown source={message.body} className="paper-body" resolveLink={resolveLink} onOpenLink={onOpenLink} />
-          {props.views.length > 0 && (
-            <div className="paper-views">{props.views.map((view) => props.renderView(view, `from ${props.nameOf(view.agentId)}`))}</div>
-          )}
-        </article>
+        <details className="card briefing-earlier">
+          <summary>
+            <span className="briefing-mark" aria-hidden="true">
+              <Icon name="sun" size={16} />
+            </span>
+            <span className="eyebrow">Morning briefing · {formatLongDate(message.createdAt)}</span>
+          </summary>
+          <Markdown source={message.body} className="briefing-earlier-body" resolveLink={resolveLink} onOpenLink={onOpenLink} />
+          {props.views.length > 0 && <div className="message-views">{props.views.map((view) => props.renderView(view, `from ${props.nameOf(view.agentId)}`))}</div>}
+        </details>
+        <p className="message-meta">{time}</p>
       </li>
     );
   }

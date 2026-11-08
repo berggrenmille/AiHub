@@ -138,7 +138,7 @@ describe("Views on briefing sections", () => {
       [`${sections[1]!.source} at a glance`]: "section, ask",
       [`${sections[2]!.source} at a glance`]: "section, load",
     });
-    assert.match(outcome.text, /A view shows under the briefing: ".* at a glance"\. Point to it in a few words/);
+    assert.match(outcome.text, /A view shows under this section on the Today page: ".* at a glance"\. Point to it in a few words/);
   });
 });
 

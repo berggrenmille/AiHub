@@ -323,7 +323,7 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX views_by_run ON views (run_id);
   `,
 
-  // v12: whether an item needs the operator. Only those go in the Inbox; the rest are worth knowing.
+  // v12: whether an item needs the operator. Only those wait for the operator; the rest are worth knowing.
   // Stories found on the web, keyed by their address, never need the operator.
   `
   ALTER TABLE items ADD COLUMN needs_operator INTEGER NOT NULL DEFAULT 1;
@@ -450,5 +450,18 @@ export const MIGRATIONS: string[] = [
   // v18: routines have a kind: the briefing and its sections, or the standup meeting.
   `
   ALTER TABLE routines ADD COLUMN kind TEXT NOT NULL DEFAULT 'briefing' CHECK (kind IN ('briefing', 'standup'));
+  `,
+
+  // v19: a delivered briefing keeps its sections, so the Today page can show each supervisor's.
+  `
+  CREATE TABLE briefings (
+    id TEXT PRIMARY KEY REFERENCES runs (id),
+    message_id INTEGER NOT NULL REFERENCES messages (id),
+    overview TEXT NOT NULL,
+    source_data INTEGER NOT NULL DEFAULT 0,
+    sections TEXT NOT NULL,
+    delivered_at TEXT NOT NULL
+  );
+  CREATE INDEX briefings_by_delivery ON briefings (delivered_at);
   `,
 ];

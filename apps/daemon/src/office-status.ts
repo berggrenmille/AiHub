@@ -33,11 +33,11 @@ export function officeStatus(office: Office, now = new Date()): OfficeStatus {
     attention = true;
   }
 
-  // Only what needs the operator waits in the Inbox.
+  // Only what needs the operator waits on the Today page.
   const open = store.listItems().filter((item) => item.needsOperator && (item.state === "new" || item.state === "open"));
   const urgent = open.filter((item) => item.urgency === "urgent").length;
   if (open.length) {
-    needs.push(`${open.length} item${open.length === 1 ? "" : "s"} in your inbox${urgent ? `, ${urgent} urgent` : ""}`);
+    needs.push(`${open.length} item${open.length === 1 ? "" : "s"} waiting on Today${urgent ? `, ${urgent} urgent` : ""}`);
     if (urgent) attention = true;
   }
 

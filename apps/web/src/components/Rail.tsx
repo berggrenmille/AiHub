@@ -4,13 +4,14 @@ import { Popover } from "./Popover.tsx";
 // The office's navigation, down the left edge: the pages first, then the panels that open beside
 // them, and the operator's own settings at the bottom.
 
-export type Page = "office" | "inbox" | "chats" | "notes" | "dashboards";
+export type Page = "office" | "today" | "chats" | "notes" | "dashboards";
 export type Theme = "dark" | "light";
 
 interface RailProps {
   page: Page;
   onPage(page: Page): void;
-  inbox: { open: number; urgent: number };
+  /** What waits for the operator on the Today page: items and decisions, and whether any item is urgent. */
+  today: { waiting: number; urgent: boolean };
   /** Staff messages the operator hasn't seen, across every chat. */
   unread: number;
   /** Open and waiting assignments. */
@@ -30,7 +31,7 @@ interface RailProps {
 }
 
 export function Rail(props: RailProps) {
-  const { page, onPage, inbox } = props;
+  const { page, onPage, today } = props;
   const link = (target: Page, icon: IconName, label: string, badge?: Badge) => (
     <li>
       <button type="button" className="rail-item" aria-current={page === target ? "page" : undefined} onClick={() => onPage(target)} title={label}>
@@ -58,7 +59,7 @@ export function Rail(props: RailProps) {
       </div>
       <ul className="rail-group">
         {link("office", "office", "Office")}
-        {link("inbox", "inbox", "Inbox", { count: inbox.open, tone: inbox.urgent > 0 ? "urgent" : undefined, label: `${inbox.open} open${inbox.urgent ? `, ${inbox.urgent} urgent` : ""}` })}
+        {link("today", "sun", "Today", { count: today.waiting, tone: today.urgent ? "urgent" : "open", label: `${today.waiting} need${today.waiting === 1 ? "s" : ""} you${today.urgent ? ", some urgent" : ""}` })}
         {link("chats", "chats", "Chats", { count: props.unread, tone: "accent", label: `${props.unread} unread` })}
         {panel(props.assignmentsOpen, props.onToggleAssignments, "task", "Assignments", "Assignments: questions and tasks between staff", {
           count: props.assignments,

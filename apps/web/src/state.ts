@@ -6,6 +6,7 @@ import {
   type ActivityEntry,
   type Agent,
   type Assignment,
+  type Briefing,
   type ChatMessage,
   type ChatResponse,
   type Conversation,
@@ -86,6 +87,8 @@ export interface OfficeState {
   serviceGrants: ServiceGrant[];
   /** Newest first. */
   meetings: Meeting[];
+  /** The latest delivered briefing, which the Today page shows. */
+  briefing: Briefing | null;
 }
 
 export type OfficeAction =
@@ -129,6 +132,7 @@ export const initialOfficeState: OfficeState = {
   services: [],
   serviceGrants: [],
   meetings: [],
+  briefing: null,
 };
 
 export function isActive(run: Run): boolean {
@@ -207,6 +211,7 @@ function applySnapshot(state: OfficeState, snapshot: StateSnapshot): OfficeState
     services: [...(snapshot.services ?? [])].sort(newestFirst),
     serviceGrants: snapshot.serviceGrants ?? [],
     meetings: [...(snapshot.meetings ?? [])].sort(newestMeetingFirst),
+    briefing: snapshot.briefing ?? null,
   };
 }
 
@@ -308,6 +313,10 @@ function applyEvent(state: OfficeState, event: DaemonEvent): OfficeState {
       if (existing?.state === "closed" && event.meeting.state !== "closed") return state;
       return { ...state, meetings: upsert(state.meetings, event.meeting, (meeting) => meeting.id).sort(newestMeetingFirst) };
     }
+    case "briefing":
+      // Only a newer briefing replaces the one shown.
+      if (state.briefing && state.briefing.deliveredAt > event.briefing.deliveredAt) return state;
+      return { ...state, briefing: event.briefing };
     case "view_removed":
       if (!state.views[event.viewId]) return state;
       return { ...state, views: without(state.views, event.viewId) };

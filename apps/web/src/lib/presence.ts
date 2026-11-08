@@ -61,7 +61,7 @@ export function bubbleText(text: string, limit = 140): string {
 
 export const URGENCY_ORDER: Record<Urgency, number> = { urgent: 0, today: 1, this_week: 2, fyi: 3 };
 
-/** Items waiting in the Inbox per responsibility, with the most pressing urgency among them. */
+/** Items waiting for the operator per responsibility, with the most pressing urgency among them. */
 export function openItemCounts(items: Item[]): Map<string, { count: number; fresh: number; top: Urgency }> {
   const counts = new Map<string, { count: number; fresh: number; top: Urgency }>();
   for (const item of items) {

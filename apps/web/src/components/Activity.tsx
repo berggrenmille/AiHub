@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ActivityEntry } from "@aihub/shared";
 import { activityLine, activityTone, formatDateTime, formatFeedTime } from "../format.ts";
-import { MAX_TOASTS, toastWorthy, type ToastContext } from "../lib/toasts.ts";
+import { briefingIn, MAX_TOASTS, toastWorthy, type ToastContext } from "../lib/toasts.ts";
 import { Icon } from "./Icon.tsx";
 
 // Activity as a ticker along the bottom, toasts for what needs the operator, and the full log on demand.
@@ -86,7 +86,16 @@ const TOAST_MS = 6000;
  * Entries already there on load don't count. A burst shows the newest and folds the rest into a line
  * that opens the log.
  */
-export function Toasts({ entries, loaded, agentName, context, onOpenLog }: { entries: ActivityEntry[]; loaded: boolean; agentName(agentId: string | null): string; context: ToastContext; onOpenLog(): void }) {
+interface ToastsProps {
+  entries: ActivityEntry[];
+  loaded: boolean;
+  agentName(agentId: string | null): string;
+  context: ToastContext;
+  onOpenLog(): void;
+  onOpenToday(): void;
+}
+
+export function Toasts({ entries, loaded, agentName, context, onOpenLog, onOpenToday }: ToastsProps) {
   const seen = useRef<number | null>(null);
   const [toasts, setToasts] = useState<ActivityEntry[]>([]);
   // What is on screen changes often; the filter reads it as of each new entry.
@@ -136,6 +145,21 @@ export function Toasts({ entries, loaded, agentName, context, onOpenLog }: { ent
             <span className="feed-marker" aria-hidden="true" />
             <p>
               {line.who && <strong>{line.who}</strong>} {line.text}
+              {briefingIn(toast, context) && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => {
+                      setToasts((current) => current.filter((other) => other !== toast));
+                      onOpenToday();
+                    }}
+                  >
+                    Read it on Today
+                  </button>
+                </>
+              )}
             </p>
             <button type="button" className="icon-button small" onClick={() => setToasts((current) => current.filter((other) => other !== toast))} title="Dismiss">
               <Icon name="close" size={14} />

@@ -90,6 +90,47 @@ describe("Morning briefing", () => {
     assert.equal(store.recentMessages(1, CHIEF_OF_STAFF_CONVERSATION_ID)[0]?.body, second.text);
   });
 
+  it("keeps each delivered briefing by section, and gives the supervisor its section when the operator asks about it", async () => {
+    const { office, store, runtime, responsibility } = await setUp();
+    // The Chief of Staff writes a short overview; the sections are on the Today page.
+    runtime.respond = async (input, options) =>
+      input.includes("BEGIN SOURCE DATA") ? respond(input, options) : { status: "completed", text: "Start with Q4 planning.", error: null, usage };
+
+    const first = await runMorningBriefing(office, { now: MONDAY });
+    const record = store.getBriefing()!;
+    assert.equal(record.overview, "Start with Q4 planning.");
+    assert.equal(record.id, first.run!.id);
+    const [section] = record.sections;
+    assert.equal(section?.heading, "Work schedule");
+    assert.equal(section?.source, "Work calendar");
+    assert.equal(section?.responsibilityId, responsibility.id);
+    assert.equal(section?.summary, "8 changes.");
+    const open = store.itemsOf(responsibility.id, ["open"]);
+    assert.deepEqual(section?.fresh.map((item) => item.id).sort(), open.map((item) => item.id).sort());
+    assert.ok(section?.fresh.every((item) => item.needsOperator && item.detail));
+
+    runtime.respond = async () => ({ status: "completed", text: "Noted.", error: null, usage });
+    const lastInput = (text: string) => [...runtime.contexts.values()].find((context) => context.inputs.some((input) => input.includes(text)))!.inputs.at(-1)!;
+
+    // The chat shows the briefing as a link, and the Chief of Staff reads it whole.
+    assert.equal(store.recentMessages(1, CHIEF_OF_STAFF_CONVERSATION_ID)[0]?.body, "Start with Q4 planning.");
+    office.chat(CHIEF_OF_STAFF_CONVERSATION_ID, "What's first?");
+    await office.queue.idle();
+    assert.match(lastInput("What's first?"), /BEGIN SOURCE DATA\nStart with Q4 planning\.\n\nWork schedule \(Work calendar\)\n8 changes\.\n- .* \(needs the operator\): /);
+
+    // Asked about it in a new chat, Elin has her own section at hand, as data.
+    const elin = office.openChat("work-schedule");
+    office.chat(elin.id, 'About "Q4 planning (new)" in today\'s briefing: can it move?');
+    await office.queue.idle();
+    assert.match(lastInput("can it move?"), /^For context:\n\nYour section of the briefing delivered .*, written from source data:\nBEGIN SOURCE DATA\nWork schedule \(Work calendar\)\n8 changes\.[\s\S]*END SOURCE DATA/);
+    assert.equal(store.getConversation(elin.id)?.sourceData, true);
+
+    // Her next turn has taken it in.
+    office.chat(elin.id, "Thanks.");
+    await office.queue.idle();
+    assert.doesNotMatch(lastInput("Thanks."), /Your section of the briefing/);
+  });
+
   it("tells what is only worth knowing once: it isn't carried over, and lapses without a word", async () => {
     const clock = { now: MONDAY };
     const { office, store, runtime, responsibility } = await setUp(clock);

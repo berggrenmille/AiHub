@@ -7,7 +7,6 @@ import { CallMeeting } from "./components/CallMeeting.tsx";
 import { ChatPanel } from "./components/ChatPanel.tsx";
 import { ChatsPage } from "./components/ChatsPage.tsx";
 import { Dashboards } from "./components/Dashboards.tsx";
-import { Inbox } from "./components/Inbox.tsx";
 import { MeetingPanel } from "./components/MeetingPanel.tsx";
 import { NotesView } from "./components/NotesView.tsx";
 import { PolicyDrawer } from "./components/PolicyDrawer.tsx";
@@ -15,6 +14,7 @@ import { OfficeFloor } from "./components/office/OfficeFloor.tsx";
 import { ProfileCard } from "./components/ProfileCard.tsx";
 import { Rail, type Page, type Theme } from "./components/Rail.tsx";
 import { Roster } from "./components/Roster.tsx";
+import { Today } from "./components/Today.tsx";
 import { TopBar } from "./components/TopBar.tsx";
 import { nameOf, openAssignmentCount } from "./lib/assignments.ts";
 import { chatPartner, chatScope, chatsOf, shownConversation } from "./lib/chat.ts";
@@ -22,6 +22,7 @@ import { openCount } from "./lib/inbox.ts";
 import { runningMeeting } from "./lib/meetings.ts";
 import { unsafeRows } from "./lib/access.ts";
 import { resolveWikilink } from "./lib/notes.ts";
+import { decisionsWaiting, itemsWaiting, type Decision } from "./lib/today.ts";
 import { pendingPolicy } from "./lib/policy.ts";
 import type { ToastContext } from "./lib/toasts.ts";
 import { dashboardsOf, viewsByMessage } from "./lib/views.ts";
@@ -50,7 +51,8 @@ export function App() {
   const [rosterOpen, setRosterOpen] = useState(() => window.innerWidth >= 1400);
   const [notePath, setNotePath] = useState<string | null>(null);
   const [notesTab, setNotesTab] = useState<"note" | "graph">("note");
-  const [inboxFocus, setInboxFocus] = useState<string | null>(null);
+  // A responsibility the Today page opens at, from a pod's sign.
+  const [todayFocus, setTodayFocus] = useState<string | null>(null);
   // The staff member the Access panel shows alone, from a profile card's link.
   const [accessFocus, setAccessFocus] = useState<string | null>(null);
   // A message a dashboard's button puts in a chat box, for the operator to edit or send.
@@ -82,6 +84,16 @@ export function App() {
   const chiefOpen = drawerChatOpen && chat !== null && chat.kind !== "meeting" && chat.agentId === chief?.id;
   const partnerChats = useMemo(() => (partner ? chatsOf(partner.agent.id, state.conversations, state.messages) : []), [partner, state.conversations, state.messages]);
   const inbox = useMemo(() => openCount(state.items), [state.items]);
+  const waiting = useMemo(() => itemsWaiting(state.items), [state.items]);
+  const { meetings, proposals, staffChanges, policies, services, messages } = state;
+  const decisions = useMemo(
+    () => decisionsWaiting({ meetings, proposals, staffChanges, policies, services, messages }, models),
+    [meetings, proposals, staffChanges, policies, services, messages, models],
+  );
+  const briefingViews = useMemo(
+    () => (state.briefing ? Object.values(state.views).filter((view) => view.messageId === state.briefing!.messageId) : []),
+    [state.views, state.briefing],
+  );
   const openAssignments = useMemo(() => openAssignmentCount(state.assignments), [state.assignments]);
   const profile = state.agents.find((agent) => agent.id === profileId) ?? null;
   // A staff review in progress, from its run.
@@ -117,7 +129,7 @@ export function App() {
 
   const goTo = useCallback((next: Page) => {
     setPage(next);
-    if (next !== "inbox") setInboxFocus(null);
+    if (next !== "today") setTodayFocus(null);
     // The Chats page shows the chat the drawer had; one place is enough.
     if (next === "chats") setDrawer((current) => (current === "chat" ? null : current));
   }, []);
@@ -145,6 +157,15 @@ export function App() {
   );
 
   const openChiefChat = useCallback(() => showChat(null), [showChat]);
+
+  /** Opens where a decision waits: the meeting, the policy drawer, or the chat with its card. */
+  const openDecision = useCallback(
+    (decision: Decision) => {
+      if (decision.kind === "policy") setDrawer("policy");
+      else showChat(decision.conversationId);
+    },
+    [showChat],
+  );
 
   /** Opens the operator's general chat with anyone on staff, starting it if there is none yet. */
   const openChatWith = useCallback(
@@ -260,6 +281,11 @@ export function App() {
         streaming={streaming}
         meetings={state.meetings}
         onOpenMeeting={showChat}
+        briefing={state.briefing}
+        onOpenToday={() => {
+          setDrawer(null);
+          goTo("today");
+        }}
         proposals={state.proposals}
         policies={state.policies}
         staffChanges={state.staffChanges}
@@ -309,7 +335,7 @@ export function App() {
       <Rail
         page={page}
         onPage={goTo}
-        inbox={inbox}
+        today={{ waiting: waiting.length + decisions.length, urgent: inbox.urgent > 0 }}
         unread={totalUnread}
         assignments={openAssignments}
         assignmentsOpen={drawer === "assignments"}
@@ -357,21 +383,30 @@ export function App() {
                 now={now}
                 onSelectAgent={setProfileId}
                 onOpenChat={openChiefChat}
-                onOpenInbox={(responsibilityId) => {
-                  goTo("inbox");
-                  setInboxFocus(responsibilityId ?? null);
+                onOpenToday={(responsibilityId) => {
+                  goTo("today");
+                  setTodayFocus(responsibilityId ?? null);
                 }}
               />
             )}
-            {page === "inbox" && (
-              <Inbox
+            {page === "today" && (
+              <Today
                 items={state.items}
+                waiting={waiting}
+                decisions={decisions}
                 responsibilities={state.responsibilities}
                 agents={state.agents}
+                chief={chief}
+                briefing={state.briefing}
+                views={briefingViews}
+                routines={state.routines}
                 now={now}
-                focus={inboxFocus}
+                focus={todayFocus}
+                nameOf={agentName}
                 onDismiss={commands.dismiss}
                 onResolve={commands.resolve}
+                onDiscuss={askStaff}
+                onOpenDecision={openDecision}
                 onSelectAgent={setProfileId}
               />
             )}
@@ -469,7 +504,7 @@ export function App() {
 
         <ActivityTicker entries={state.activity} agentName={agentName} onOpenLog={() => setDrawer("activity")} />
       </div>
-      <Toasts entries={state.activity} loaded={state.loaded} agentName={agentName} context={toastContext} onOpenLog={() => setDrawer("activity")} />
+      <Toasts entries={state.activity} loaded={state.loaded} agentName={agentName} context={toastContext} onOpenLog={() => setDrawer("activity")} onOpenToday={() => goTo("today")} />
 
       {profile && (
         <ProfileCard
