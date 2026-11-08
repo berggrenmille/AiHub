@@ -292,6 +292,31 @@ describe("HTTP server: profiles and notes", () => {
     assert.equal((await app.inject({ method: "PATCH", url: "/api/routines/nope", headers: PAGE, payload: { weekends: true } })).statusCode, 404);
   });
 
+  it("writes the office policy, and approves or declines proposals for it", async () => {
+    let office: Office;
+    ({ app, office } = await server());
+    const put = (payload: object) => app!.inject({ method: "PUT", url: "/api/policy", headers: PAGE, payload });
+    const written = await put({ body: "- Write in English." });
+    assert.equal(written.statusCode, 200);
+    assert.deepEqual([written.json().status, written.json().authorId], ["approved", null]);
+    assert.equal((await put({ body: "- Write in English." })).statusCode, 400);
+    assert.equal((await put({ text: "x" })).statusCode, 400);
+    assert.equal((await app.inject({ method: "PUT", url: "/api/policy", headers: { ...PAGE, origin: "http://evil.example" }, payload: { body: "x" } })).statusCode, 403);
+
+    const basedOn = written.json().id;
+    const pending = () => office.store.addPolicy({ body: `- Rule ${Math.random()}`, authorId: "chief-of-staff", reason: "Asked", basedOn, status: "pending", fromSourceData: false });
+    const first = pending();
+    const approved = await app.inject({ method: "POST", url: `/api/policy/${first.id}/approve`, headers: PAGE });
+    assert.equal(approved.json().status, "approved");
+    assert.equal((await app.inject({ method: "POST", url: `/api/policy/${first.id}/approve`, headers: PAGE })).statusCode, 409);
+
+    const second = pending();
+    const declined = await app.inject({ method: "POST", url: `/api/policy/${second.id}/decline`, headers: PAGE, payload: { reason: "Later" } });
+    assert.deepEqual([declined.json().status, declined.json().outcome], ["declined", "Later"]);
+    assert.equal((await app.inject({ method: "POST", url: "/api/policy/abc/approve", headers: PAGE })).statusCode, 404);
+    assert.equal((await app.inject({ url: "/api/state", headers: PAGE })).json().policies.length, 3);
+  });
+
   it("reads and writes notes by their vault path", async () => {
     ({ app } = await server());
     const url = `/api/notes/${encodeURIComponent("Office/Operator preferences.md")}`;

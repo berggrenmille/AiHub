@@ -3860,3 +3860,111 @@ button.wikilink:hover {
     transform: none;
   }
 }
+
+/* The office policy: its drawer, and the card for a proposed change in the Chief of Staff's chat. */
+.policy-drawer {
+  width: min(520px, 94vw);
+}
+
+.policy-body {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.policy-text {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.policy-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.policy-editor textarea {
+  width: 100%;
+  min-height: 240px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.policy-history summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.policy-history ol {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.policy-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  border-color: var(--border-strong);
+  background: linear-gradient(180deg, var(--accent-soft), transparent 140px), var(--surface);
+}
+
+.policy-card.status-pending {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-sm);
+}
+
+.policy-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.policy-card-head .eyebrow {
+  flex: 1;
+  margin: 0;
+}
+
+.policy-diff {
+  display: grid;
+  margin: 0;
+  padding: 8px 0;
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 13px;
+  line-height: 1.45;
+  list-style: none;
+}
+
+.policy-diff li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  padding: 1px 10px 1px 0;
+}
+
+.policy-diff .diff-mark {
+  text-align: center;
+  font-weight: 700;
+}
+
+.policy-diff .diff-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.policy-diff .diff-added {
+  background: var(--done-bg);
+  color: var(--done-fg);
+}
+
+.policy-diff .diff-removed {
+  background: var(--failed-bg);
+  color: var(--failed-fg);
+}
+
+.policy-diff .diff-removed .diff-text {
+  text-decoration: line-through;
+}

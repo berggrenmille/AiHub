@@ -13,6 +13,7 @@ import {
   type Item,
   type NoteSummary,
   type OfficeStats,
+  type PolicyVersion,
   type Proposal,
   type Responsibility,
   type Routine,
@@ -59,6 +60,8 @@ export interface OfficeState {
   assignments: Assignment[];
   /** Readers staff wrote, newest first. */
   readers: StaffReader[];
+  /** The office policy's versions and proposals, newest first. */
+  policies: PolicyVersion[];
   /**
    * Staff who left since the last snapshot, such as workers whose results were accepted. A late
    * update for one of them doesn't bring them back.
@@ -100,6 +103,7 @@ export const initialOfficeState: OfficeState = {
   items: [],
   assignments: [],
   readers: [],
+  policies: [],
   departed: [],
   notes: [],
   office: null,
@@ -160,6 +164,7 @@ function applySnapshot(state: OfficeState, snapshot: StateSnapshot): OfficeState
     items: snapshot.items ?? [],
     assignments: keepAssignments(snapshot.assignments ?? []),
     readers: [...(snapshot.readers ?? [])].sort(newestFirst),
+    policies: [...(snapshot.policies ?? [])].sort((a, b) => b.id - a.id),
     departed: [],
     notes: snapshot.notes ?? [],
     office: snapshot.office ?? null,
@@ -219,6 +224,12 @@ function applyEvent(state: OfficeState, event: DaemonEvent): OfficeState {
       const existing = state.items.find((item) => item.id === event.item.id);
       if (existing && existing.updatedAt > event.item.updatedAt) return state;
       return { ...state, items: upsert(state.items, event.item, (item) => item.id) };
+    }
+    case "policy": {
+      // A decided version never goes back to waiting, so a late copy of the proposal is older.
+      const known = state.policies.find((policy) => policy.id === event.policy.id);
+      if (known && known.status !== "pending" && event.policy.status === "pending") return state;
+      return { ...state, policies: upsert(state.policies, event.policy, (policy) => policy.id).sort((a, b) => b.id - a.id) };
     }
     case "reader": {
       const existing = state.readers.find((reader) => reader.id === event.reader.id);

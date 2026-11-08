@@ -8,6 +8,7 @@ import type {
   Note,
   NoteSummary,
   OpenChatResponse,
+  PolicyVersion,
   Proposal,
   ResolveItemRequest,
   Routine,
@@ -144,6 +145,19 @@ export function dismissItem(itemId: number): Promise<Item> {
 
 export function resolveItem(itemId: number, body: ResolveItemRequest): Promise<Item> {
   return request<Item>(`/api/items/${itemId}/resolve`, json("POST", body));
+}
+
+/** Writes the office policy. The same text as now answers 400. */
+export function writePolicy(body: string): Promise<PolicyVersion> {
+  return request<PolicyVersion>("/api/policy", json("PUT", { body }));
+}
+
+export function approvePolicy(policyId: number): Promise<PolicyVersion> {
+  return request<PolicyVersion>(`/api/policy/${policyId}/approve`, json("POST", {}));
+}
+
+export function declinePolicy(policyId: number): Promise<PolicyVersion> {
+  return request<PolicyVersion>(`/api/policy/${policyId}/decline`, json("POST", {}));
 }
 
 /** Has a scheduled routine run on weekends too, or on weekdays only. */

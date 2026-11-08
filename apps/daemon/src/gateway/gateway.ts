@@ -1,4 +1,4 @@
-import type { AgentRole, Assignment, Proposal, RecruitProposal, RunKind, RunProfile, StaffReader } from "@aihub/shared";
+import type { AgentRole, Assignment, PolicyVersion, Proposal, RecruitProposal, RunKind, RunProfile, StaffReader } from "@aihub/shared";
 import type { ReaderFile } from "../sources/reader.ts";
 import { z } from "zod";
 import type { Notebook } from "../notes/notebook.ts";
@@ -36,6 +36,8 @@ export interface OfficeServices {
   notebook: Notebook | null;
   /** Records a recruitment proposal and shows it to the operator as an approval card. */
   proposeSupervisor: ((caller: Caller, proposal: RecruitProposal) => Proposal) | null;
+  /** Records a proposed office policy and shows it to the operator as an approval card. */
+  proposePolicy: ((caller: Caller, input: { body: string; reason: string }) => PolicyVersion) | null;
   delegation: DelegationService | null;
   toolsmith: ToolsmithService | null;
   /** What source adapters need from the office for a read. */
@@ -118,6 +120,7 @@ export class Gateway {
       const services = {
         notebook: this.services.notebook ?? null,
         proposeSupervisor: this.services.proposeSupervisor ?? null,
+        proposePolicy: this.services.proposePolicy ?? null,
         delegation: this.services.delegation ?? null,
         toolsmith: this.services.toolsmith ?? null,
         sourceContext: this.services.sourceContext ?? null,

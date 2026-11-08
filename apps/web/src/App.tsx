@@ -6,6 +6,7 @@ import { ChatDrawer } from "./components/ChatDrawer.tsx";
 import { Hud, type View } from "./components/Hud.tsx";
 import { Inbox } from "./components/Inbox.tsx";
 import { NotesView } from "./components/NotesView.tsx";
+import { PolicyDrawer } from "./components/PolicyDrawer.tsx";
 import { OfficeFloor } from "./components/office/OfficeFloor.tsx";
 import { ProfileCard } from "./components/ProfileCard.tsx";
 import { Roster } from "./components/Roster.tsx";
@@ -13,11 +14,12 @@ import { nameOf, openAssignmentCount } from "./lib/assignments.ts";
 import { chatPartner, chatScope, shownConversation } from "./lib/chat.ts";
 import { openCount } from "./lib/inbox.ts";
 import { resolveWikilink } from "./lib/notes.ts";
+import { pendingPolicy } from "./lib/policy.ts";
 import { rosterOrder } from "./state.ts";
 import { useOffice } from "./useOffice.ts";
 
 type Theme = "dark" | "light";
-type Drawer = "chat" | "activity" | "assignments" | null;
+type Drawer = "chat" | "activity" | "assignments" | "policy" | null;
 
 export function App() {
   const { state, commands } = useOffice();
@@ -144,6 +146,9 @@ export function App() {
         unread={unread}
         assignments={openAssignments}
         assignmentsOpen={drawer === "assignments"}
+        policyPending={pendingPolicy(state.policies) !== null}
+        policyOpen={drawer === "policy"}
+        onTogglePolicy={() => setDrawer((current) => (current === "policy" ? null : "policy"))}
         chatOpen={chiefOpen}
         rosterOpen={rosterOpen}
         theme={theme}
@@ -215,6 +220,7 @@ export function App() {
               runs={state.runs}
               streaming={streaming}
               proposals={state.proposals}
+              policies={state.policies}
               readers={state.readers}
               scope={chatScope(partner.agent)}
               back={chief && chiefChat && chat.id !== chiefChat.id ? { name: chief.name, unread } : null}
@@ -223,6 +229,8 @@ export function App() {
               onPreview={commands.preview}
               onApprove={commands.approve}
               onDecline={commands.decline}
+              onApprovePolicy={commands.approvePolicy}
+              onDeclinePolicy={commands.declinePolicy}
               onClose={() => setDrawer(null)}
               onOpenProfile={() => setProfileId(partner.agent.id)}
               resolveLink={resolveChatLink}
@@ -234,6 +242,9 @@ export function App() {
             </aside>
           ))}
         {drawer === "activity" && <ActivityLog entries={state.activity} agentName={agentName} onClose={() => setDrawer(null)} />}
+        {drawer === "policy" && (
+          <PolicyDrawer policies={state.policies} agentName={agentName} onSave={commands.savePolicy} onOpenProposal={openChiefChat} onClose={() => setDrawer(null)} />
+        )}
         {drawer === "assignments" && (
           <AssignmentsDrawer assignments={state.assignments} agents={state.agents} now={now} onSelectAgent={setProfileId} onClose={() => setDrawer(null)} />
         )}

@@ -310,3 +310,22 @@ Search results come back as input, so a research report takes four to eight time
 ## Weekend briefings (2026-11-08)
 
 The operator asked for weekend briefings, for Nora's news. The briefing routine's trigger can now be `daily` as well as `weekdays`, switched with Weekends too on the Chief of Staff's profile card (`PATCH /api/routines/:id`). Everything that followed weekdays now follows the routine's days: the health check, the wake timer, the next run the UI and the tray show, and catching up later the same day. Turned on after the day's briefing time on a weekend, that day's briefing is skipped rather than run late. A weekend with a briefing adds to the streak, and one without never breaks it. Tests: `scheduler.test.ts` and `server.test.ts`.
+
+## Office policy (2026-11-08)
+
+The operator asked for a company policy like a root AGENTS.md, for the whole staff, that only the operator and the Chief of Staff can edit. The operator chose "She proposes, I approve": an injected instruction in a source Vera read could otherwise become a rule for every staff member. The policy is versioned in `policy_versions`, and the current one is the newest approved. It enters every run's instructions (`staff/identity.ts`). The operator writes it in the Policy panel (`PUT /api/policy`). Vera proposes with `aihub_propose_policy`, only in chat, and the card in her chat approves or declines it (`POST /api/policy/:id/approve|decline`). Tests: `staff/policy.test.ts`, `server.test.ts`, and `lib/policy.test.ts` and `state.test.ts` on the web side.
+
+### How it was shown
+
+In a throwaway office on real Codex, the operator told Vera "A rule for the whole staff from now on: always write to me in English, and anything about money counts as urgent the same day." She proposed both rules with the tool in one turn, and the card showed them as added lines. After approval, the operator asked her to drop the English rule and add one about notes. Her proposal kept the money rule word for word, so she read the current policy from her instructions, and the card showed the removed line struck through. Declining it, editing the policy in the panel, and the earlier versions list all worked. The installed office has no policy yet; the operator writes the first one.
+
+### Usage measured
+
+Each proposal was one chat turn: 37,376 tokens for the first and 24,915 for the change. The policy adds its own length to every run's instructions, about 1,000 tokens at the 4,000 character limit.
+
+### Known gaps
+
+- Only Vera proposes. Other staff who notice a rule worth having would tell her or the operator.
+- Declining from the card gives no reason, though the API takes one.
+- A proposal from a chat that read source data is marked on the card, not blocked.
+- The policy lives in the database, not the vault, so Obsidian doesn't show it.

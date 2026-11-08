@@ -280,4 +280,20 @@ export const MIGRATIONS: string[] = [
     granted_at TEXT NOT NULL
   );
   `,
+
+  // v9: the office policy, in versions. The operator writes one, or approves the Chief of Staff's.
+  `
+  CREATE TABLE policy_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    body TEXT NOT NULL,
+    author_id TEXT REFERENCES agents (id),
+    reason TEXT,
+    based_on INTEGER REFERENCES policy_versions (id),
+    status TEXT NOT NULL,
+    from_source_data INTEGER NOT NULL DEFAULT 0,
+    outcome TEXT,
+    created_at TEXT NOT NULL,
+    decided_at TEXT
+  );
+  `,
 ];

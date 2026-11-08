@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from "react";
-import type { Agent, ChatMessage, Conversation, Proposal, Run, SourcePreview, StaffReader } from "@aihub/shared";
+import type { Agent, ChatMessage, Conversation, PolicyVersion, Proposal, Run, SourcePreview, StaffReader } from "@aihub/shared";
 import { errorText } from "../api.ts";
 import { lookFor } from "../lib/avatar.ts";
 import { formatClock, formatDateTime, formatLongDate, STATE_LABELS, toneOf } from "../format.ts";
@@ -8,6 +8,8 @@ import { Icon } from "./Icon.tsx";
 import { Markdown, type WikilinkTarget } from "./Markdown.tsx";
 import { Portrait } from "./office/Figure.tsx";
 import { ProposalCard } from "./ProposalCard.tsx";
+import { PolicyCard } from "./PolicyCard.tsx";
+import { baseOf } from "../lib/policy.ts";
 import { StateBadge } from "./StateBadge.tsx";
 
 /** The daemon rejects longer messages. */
@@ -24,6 +26,7 @@ interface ChatDrawerProps {
   runs: Record<string, Run>;
   streaming: StreamingReply[];
   proposals: Proposal[];
+  policies: PolicyVersion[];
   readers: StaffReader[];
   /** What the staff member answers from, for anyone but the Chief of Staff. */
   scope: string | null;
@@ -34,6 +37,8 @@ interface ChatDrawerProps {
   onPreview(proposalId: string, sourcePath: string): Promise<SourcePreview>;
   onApprove(proposalId: string, sourcePath?: string): Promise<void>;
   onDecline(proposalId: string): Promise<void>;
+  onApprovePolicy(policyId: number): Promise<void>;
+  onDeclinePolicy(policyId: number): Promise<void>;
   onClose(): void;
   onOpenProfile(): void;
   resolveLink(target: string): WikilinkTarget;
@@ -55,7 +60,7 @@ export function ChatDrawer(props: ChatDrawerProps) {
   useLayoutEffect(() => {
     const scroller = scrollRef.current;
     if (scroller && following.current) scroller.scrollTop = scroller.scrollHeight;
-  }, [messages, streaming, runs, props.proposals]);
+  }, [messages, streaming, runs, props.proposals, props.policies]);
 
   // Stay at the bottom when the panel itself changes size, such as when the input grows.
   useEffect(() => {
@@ -152,10 +157,14 @@ export function ChatDrawer(props: ChatDrawerProps) {
               agentName={agent.name}
               run={message.runId ? runs[message.runId] : undefined}
               proposal={message.kind === "proposal" ? props.proposals.find((proposal) => proposal.id === message.refId) : undefined}
+              policy={message.kind === "policy" ? props.policies.find((policy) => String(policy.id) === message.refId) : undefined}
+              policies={props.policies}
               readers={props.readers}
               onPreview={props.onPreview}
               onApprove={props.onApprove}
               onDecline={props.onDecline}
+              onApprovePolicy={props.onApprovePolicy}
+              onDeclinePolicy={props.onDeclinePolicy}
               resolveLink={props.resolveLink}
               onOpenLink={props.onOpenLink}
             />
@@ -220,15 +229,20 @@ interface MessageViewProps {
   agentName: string;
   run: Run | undefined;
   proposal: Proposal | undefined;
+  policy: PolicyVersion | undefined;
+  policies: PolicyVersion[];
   readers: StaffReader[];
   onPreview(proposalId: string, sourcePath: string): Promise<SourcePreview>;
   onApprove(proposalId: string, sourcePath?: string): Promise<void>;
   onDecline(proposalId: string): Promise<void>;
+  onApprovePolicy(policyId: number): Promise<void>;
+  onDeclinePolicy(policyId: number): Promise<void>;
   resolveLink(target: string): WikilinkTarget;
   onOpenLink(target: string): void;
 }
 
-function MessageView({ message, agentName, run, proposal, readers, onPreview, onApprove, onDecline, resolveLink, onOpenLink }: MessageViewProps) {
+function MessageView(props: MessageViewProps) {
+  const { message, agentName, run, proposal, policy, readers, onPreview, onApprove, onDecline, resolveLink, onOpenLink } = props;
   const time = (
     <time dateTime={message.createdAt} title={formatDateTime(message.createdAt)}>
       {formatClock(message.createdAt)}
@@ -256,6 +270,22 @@ function MessageView({ message, agentName, run, proposal, readers, onPreview, on
           onPreview={(sourcePath) => onPreview(message.refId ?? "", sourcePath)}
           onApprove={(sourcePath) => onApprove(message.refId ?? "", sourcePath)}
           onDecline={() => onDecline(message.refId ?? "")}
+        />
+        <p className="message-meta">{time}</p>
+      </li>
+    );
+  }
+
+  if (message.kind === "policy") {
+    return (
+      <li className="message message-card">
+        <PolicyCard
+          policy={policy}
+          intro={message.body}
+          base={policy ? baseOf(policy, props.policies) : null}
+          authorName={agentName}
+          onApprove={() => props.onApprovePolicy(Number(message.refId))}
+          onDecline={() => props.onDeclinePolicy(Number(message.refId))}
         />
         <p className="message-meta">{time}</p>
       </li>

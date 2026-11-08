@@ -35,6 +35,7 @@ import { describeWeb, normalizeSites, webAccessOf } from "./staff/web.ts";
 import { Delegation } from "./staff/delegation.ts";
 import { Toolsmith } from "./staff/toolsmith.ts";
 import { proposeSupervisor } from "./staff/proposals.ts";
+import { proposePolicy } from "./staff/policy.ts";
 import type { SourceContext } from "./sources/source.ts";
 import type { Scheduler } from "./scheduler.ts";
 import { NO_PLATFORM, type Platform } from "./platform.ts";
@@ -161,6 +162,7 @@ export class Office {
     this.gateway = new Gateway(this.store, options.tools ?? OFFICE_TOOLS, (entry) => this.bus.publish({ type: "activity", entry }), {
       notebook: this.notebook,
       proposeSupervisor: (caller, proposal) => proposeSupervisor(this, caller, proposal),
+      proposePolicy: (caller, input) => proposePolicy(this, caller, input),
       delegation: this.delegation,
       toolsmith: this.toolsmith,
       sourceContext: () => this.sourceContext(),
@@ -287,6 +289,7 @@ export class Office {
       assignments: this.store.listAssignments(),
       readers: this.store.listReaders(),
       notes: this.notebook.list(),
+      policies: this.store.listPolicies(),
       office: this.officeStats(),
       runtime: this.runtimeStatus,
       lastEventId: this.bus.lastEventId,
@@ -399,7 +402,12 @@ export class Office {
     // A data run's chat reads its sources, so everything it writes counts as source data.
     const caller = { agentId: agent.id, runId, profile: agent.profile, sourceData: prompt.sourceData || agent.profile === "data" };
     const web = this.store.webGrantOf(agent.id);
-    const charter = instructionsFor(agent, this.store.activeResponsibilityOf(agent.id), this.sourceNamesOf(agent.id), web);
+    const charter = instructionsFor(agent, {
+      responsibility: this.store.activeResponsibilityOf(agent.id),
+      sources: this.sourceNamesOf(agent.id),
+      web,
+      policy: this.store.currentPolicy()?.body,
+    });
     // Every turn of a thread is offered the same tools, so a follow-up doesn't restart the thread.
     const options: ContextOptions = {
       profile: agent.profile,
@@ -540,7 +548,7 @@ export class Office {
       const web = this.store.webGrantOf(agent.id);
       const contextId = await this.runtime.startContext({
         profile: agent.profile,
-        instructions: `${instructionsFor(agent, responsibility, this.sourceNamesOf(agent.id), web)}
+        instructions: `${instructionsFor(agent, { responsibility, sources: this.sourceNamesOf(agent.id), web, policy: this.store.currentPolicy()?.body })}
 
 ${task.instructions}`,
         tools: this.gateway.specsFor(caller),

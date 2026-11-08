@@ -17,6 +17,7 @@ import {
   type RecruitProposal,
   type Responsibility,
   type Routine,
+  type PolicyVersion,
   type RoutineTrigger,
   type Run,
   type RunKind,
@@ -519,6 +520,48 @@ export class Store {
       this.db.prepare("UPDATE grants SET revoked_at = ? WHERE agent_id = ? AND revoked_at IS NULL").run(now, id);
       this.db.prepare("DELETE FROM web_grants WHERE agent_id = ?").run(id);
     });
+  }
+
+  // The office policy -------------------------------------------------------
+
+  /** The policy staff work under: the newest approved version. */
+  currentPolicy(): PolicyVersion | null {
+    const row = this.db.prepare("SELECT * FROM policy_versions WHERE status = 'approved' ORDER BY decided_at DESC, id DESC LIMIT 1").get() as Row | undefined;
+    return row ? toPolicy(row) : null;
+  }
+
+  getPolicy(id: number): PolicyVersion | null {
+    const row = this.db.prepare("SELECT * FROM policy_versions WHERE id = ?").get(id) as Row | undefined;
+    return row ? toPolicy(row) : null;
+  }
+
+  /** Versions and proposals, newest first. */
+  listPolicies(limit = 20): PolicyVersion[] {
+    return (this.db.prepare("SELECT * FROM policy_versions ORDER BY id DESC LIMIT ?").all(limit) as Row[]).map(toPolicy);
+  }
+
+  pendingPolicies(): PolicyVersion[] {
+    return (this.db.prepare("SELECT * FROM policy_versions WHERE status = 'pending' ORDER BY id").all() as Row[]).map(toPolicy);
+  }
+
+  /** Records a version: approved when the operator wrote it, pending when proposed. */
+  addPolicy(input: { body: string; authorId: string | null; reason: string | null; basedOn: number | null; status: "approved" | "pending"; fromSourceData: boolean }): PolicyVersion {
+    const at = this.timestamp();
+    const { lastInsertRowid } = this.db
+      .prepare(
+        `INSERT INTO policy_versions (body, author_id, reason, based_on, status, from_source_data, created_at, decided_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(input.body, input.authorId, input.reason, input.basedOn, input.status, input.fromSourceData ? 1 : 0, at, input.status === "approved" ? at : null);
+    return this.getPolicy(Number(lastInsertRowid))!;
+  }
+
+  /** Decides a pending proposal. Returns null if it was no longer pending. */
+  decidePolicy(id: number, status: "approved" | "declined" | "withdrawn", outcome: string | null): PolicyVersion | null {
+    const { changes } = this.db
+      .prepare("UPDATE policy_versions SET status = ?, outcome = ?, decided_at = ? WHERE id = ? AND status = 'pending'")
+      .run(status, outcome, this.timestamp(), id);
+    return changes ? this.getPolicy(id) : null;
   }
 
   /** The web search a staff member holds, or null. */
@@ -1106,6 +1149,21 @@ function toConnection(row: Row): SourceConnection {
     status: row.status as SourceConnection["status"],
     detail: row.detail as string | null,
     verifiedAt: row.verified_at as string | null,
+  };
+}
+
+function toPolicy(row: Row): PolicyVersion {
+  return {
+    id: Number(row.id),
+    body: String(row.body),
+    authorId: row.author_id as string | null,
+    reason: row.reason as string | null,
+    basedOn: row.based_on === null ? null : Number(row.based_on),
+    status: String(row.status) as PolicyVersion["status"],
+    fromSourceData: Number(row.from_source_data) === 1,
+    outcome: row.outcome as string | null,
+    createdAt: String(row.created_at),
+    decidedAt: row.decided_at as string | null,
   };
 }
 

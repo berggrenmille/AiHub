@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { ActivityEntry, Agent, Assignment, ChatMessage, DaemonEvent, Item, NoteSummary, Proposal, Responsibility, Run, StaffReader, StateSnapshot } from "@aihub/shared";
+import type { ActivityEntry, Agent, Assignment, ChatMessage, DaemonEvent, Item, NoteSummary, PolicyVersion, Proposal, Responsibility, Run, StaffReader, StateSnapshot } from "@aihub/shared";
 import { ACTIVITY_LIMIT, initialOfficeState, officeReducer, rosterOrder, SETTLED_ASSIGNMENT_LIMIT, type OfficeAction, type OfficeState } from "./state.ts";
 
 const CHAT = "chief-of-staff";
@@ -81,6 +81,7 @@ function snapshot(overrides: Partial<StateSnapshot> = {}): StateSnapshot {
     items: [],
     assignments: [],
     readers: [],
+    policies: [],
     notes: [],
     office: { turnsToday: 0, dailyTurnLimit: 80, activeSupervisors: 0, supervisorLimit: 8, briefingStreak: 0 },
     runtime: { signedIn: true, detail: "operator@example.com" },
@@ -558,6 +559,41 @@ describe("readers", () => {
 
     state = events(state, { type: "reader", reader: staffReader({ id: "reader-2", name: "Payslips", createdAt: "2026-11-07T17:00:00.000Z" }) });
     assert.deepEqual(state.readers.map((r) => r.id), ["reader-2", "reader-1"]);
+  });
+});
+
+function policyVersion(overrides: Partial<PolicyVersion> = {}): PolicyVersion {
+  return {
+    id: 1,
+    body: "- Write to me in English.",
+    authorId: "chief-of-staff",
+    reason: "You asked for English.",
+    basedOn: null,
+    status: "pending",
+    fromSourceData: false,
+    outcome: null,
+    createdAt: "2026-11-08T10:00:00.000Z",
+    decidedAt: null,
+    ...overrides,
+  };
+}
+
+describe("the office policy", () => {
+  it("loads its versions from the snapshot, newest first", () => {
+    const state = apply(initialOfficeState, { type: "snapshot", snapshot: snapshot({ policies: [policyVersion({ id: 1 }), policyVersion({ id: 2 })] }) });
+    assert.deepEqual(state.policies.map((p) => p.id), [2, 1]);
+  });
+
+  it("upserts versions as they are decided, and keeps a decision over a late copy of the proposal", () => {
+    let state = events(loaded(), { type: "policy", policy: policyVersion() });
+    const approved = policyVersion({ status: "approved", decidedAt: "2026-11-08T10:05:00.000Z" });
+    state = events(state, { type: "policy", policy: approved });
+    assert.deepEqual(state.policies.map((p) => [p.id, p.status]), [[1, "approved"]]);
+
+    assert.equal(events(state, { type: "policy", policy: policyVersion() }), state);
+
+    state = events(state, { type: "policy", policy: policyVersion({ id: 2, basedOn: 1 }) });
+    assert.deepEqual(state.policies.map((p) => p.id), [2, 1]);
   });
 });
 

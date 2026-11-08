@@ -88,3 +88,7 @@ In the fake office, try "watch my reading list" or "write a reader for my bank e
 ## Staff notes
 
 Staff keep their notes in a vault of markdown files at `data/vault/`, one folder per staff member under `Staff/` plus a shared `Office/` folder. Open the folder in Obsidian to browse the notes and their graph, or point `AIHUB_VAULT_DIR` at a folder inside an existing vault. AiHub picks up notes you edit there. Profile notes follow each staff card, so edit profiles in AiHub instead.
+
+## Office policy
+
+The Policy button in the top bar holds the rules every staff member works under, such as the language to write in, what always counts as urgent, or what never goes in notes. They go into each staff member's instructions from their next run. Write them yourself in the panel, or tell the Chief of Staff in chat; she proposes the whole new policy on a card that shows what changes, and nothing applies until you approve it. The badge on the button shows a proposal is waiting. Earlier versions stay listed in the panel. The policy can't give anyone access they don't have.

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import fastifyStatic from "@fastify/static";
-import type { Agent, ChatResponse, HealthResponse, Note, NoteSummary, OpenChatResponse, SourcePreview, StateSnapshot } from "@aihub/shared";
+import type { Agent, ChatResponse, HealthResponse, Note, NoteSummary, OpenChatResponse, PolicyVersion, SourcePreview, StateSnapshot } from "@aihub/shared";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyServerOptions } from "fastify";
 import { z } from "zod";
 import type { SequencedEvent } from "./events.ts";
@@ -10,6 +10,7 @@ import { checkNotePath } from "./notes/vault.ts";
 import { ConflictError, InvalidRequestError, NotFoundError } from "./errors.ts";
 import type { Office } from "./office.ts";
 import { approveProposal, declineProposal, previewProposal } from "./staff/proposals.ts";
+import { approvePolicy, declinePolicy, writePolicy } from "./staff/policy.ts";
 import { registerLoopbackGuards } from "./security.ts";
 
 export interface ServerOptions {
@@ -52,6 +53,7 @@ const ProfileBody = z
 const NoteBody = z.object({ body: z.string().max(20_000) }).strict();
 const WebBody = z.object({ sites: z.array(z.string().max(200)).max(50) }).strict();
 const RoutineBody = z.object({ weekends: z.boolean() }).strict();
+const PolicyBody = z.object({ body: z.string().max(20_000) }).strict();
 const ApproveBody = z.object({ sourcePath: z.string().max(1_000).optional() }).strict();
 const PreviewBody = z.object({ sourcePath: z.string().max(1_000) }).strict();
 const ReasonBody = z.object({ reason: z.string().max(500).optional() }).strict();
@@ -69,6 +71,13 @@ function sendError(reply: FastifyReply, error: unknown) {
   if (error instanceof ConflictError || error instanceof NoteRefusal) return reply.code(409).send({ error: error.message });
   if (error instanceof InvalidRequestError) return reply.code(400).send({ error: error.message });
   throw error;
+}
+
+/** A policy version's id from the URL. Anything else names no version. */
+function policyId(raw: string): number {
+  const id = Number(raw);
+  if (!Number.isSafeInteger(id) || id <= 0) throw new NotFoundError(`No policy proposal ${raw}`);
+  return id;
 }
 
 function notePath(raw: string): string | null {
@@ -208,6 +217,38 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   app.post<{ Params: { id: string } }>("/api/responsibilities/:id/end", async (request, reply) => {
     try {
       return office.endResponsibility(request.params.id);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  // The office policy: the operator writes it, or approves or declines the Chief of Staff's proposal.
+  app.put("/api/policy", async (request, reply) => {
+    const body = bodyOf(PolicyBody, request.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
+    try {
+      const policy: PolicyVersion = writePolicy(office, body.data.body);
+      return policy;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/policy/:id/approve", async (request, reply) => {
+    try {
+      const policy: PolicyVersion = approvePolicy(office, policyId(request.params.id));
+      return policy;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/policy/:id/decline", async (request, reply) => {
+    const body = bodyOf(ReasonBody, request.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
+    try {
+      const policy: PolicyVersion = declinePolicy(office, policyId(request.params.id), body.data.reason?.trim() || null);
+      return policy;
     } catch (error) {
       return sendError(reply, error);
     }

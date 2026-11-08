@@ -78,6 +78,7 @@ describe("Office", () => {
       "aihub_get_roster",
       "aihub_list_activity",
       "aihub_propose_supervisor",
+      "aihub_propose_policy",
       "aihub_ask_colleague",
       "aihub_assign_task",
       "aihub_commission_reader",

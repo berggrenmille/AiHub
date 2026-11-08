@@ -59,6 +59,7 @@ const ACTIVITY_TONES: Record<ActivityKind, Tone> = {
   assignment: "working",
   worker: "waiting",
   web: "idle",
+  policy: "waiting",
 };
 
 export function activityTone(kind: ActivityKind): Tone {

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import type { Conversation, DaemonEvent, SourcePreview, UpdateAgentRequest, WebGrant } from "@aihub/shared";
 import {
+  approvePolicy,
   approveProposal,
   connectOffice,
+  declinePolicy,
   declineProposal,
   dismissItem,
   openChat,
@@ -14,6 +16,7 @@ import {
   setWebGrant,
   updateAgent,
   updateRoutine,
+  writePolicy,
 } from "./api.ts";
 import { initialOfficeState, officeReducer } from "./state.ts";
 
@@ -25,6 +28,9 @@ export interface OfficeCommands {
   updateAgent(agentId: string, changes: UpdateAgentRequest): Promise<void>;
   setWeb(agentId: string, web: WebGrant | null): Promise<void>;
   setWeekends(routineId: string, weekends: boolean): Promise<void>;
+  savePolicy(body: string): Promise<void>;
+  approvePolicy(policyId: number): Promise<void>;
+  declinePolicy(policyId: number): Promise<void>;
   /** What a proposal's source would read at a path. Changes nothing. */
   preview(proposalId: string, sourcePath: string): Promise<SourcePreview>;
   approve(proposalId: string, sourcePath?: string): Promise<void>;
@@ -69,6 +75,9 @@ export function useOffice() {
       updateAgent: async (agentId, changes) => apply({ type: "agent", agent: await updateAgent(agentId, changes) }),
       setWeb: async (agentId, web) => apply({ type: "agent", agent: await setWebGrant(agentId, web) }),
       setWeekends: async (routineId, weekends) => apply({ type: "routine", routine: await updateRoutine(routineId, { weekends }) }),
+      savePolicy: async (body) => apply({ type: "policy", policy: await writePolicy(body) }),
+      approvePolicy: async (policyId) => apply({ type: "policy", policy: await approvePolicy(policyId) }),
+      declinePolicy: async (policyId) => apply({ type: "policy", policy: await declinePolicy(policyId) }),
       preview: (proposalId, sourcePath) => previewProposal(proposalId, { sourcePath }),
       approve: async (proposalId, sourcePath) =>
         apply({ type: "proposal", proposal: await approveProposal(proposalId, sourcePath ? { sourcePath } : {}) }),

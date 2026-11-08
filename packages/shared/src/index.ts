@@ -93,7 +93,7 @@ export interface Run {
 }
 
 /** chat: a conversation turn. briefing: a delivered briefing. proposal: a card for `refId`. notice: AiHub's own note. */
-export type MessageKind = "chat" | "briefing" | "proposal" | "notice";
+export type MessageKind = "chat" | "briefing" | "proposal" | "notice" | "policy";
 
 export interface ChatMessage {
   id: number;
@@ -133,7 +133,8 @@ export type ActivityKind =
   | "health"
   | "assignment"
   | "worker"
-  | "web";
+  | "web"
+  | "policy";
 
 export interface ActivityEntry {
   id: number;
@@ -381,6 +382,8 @@ export interface StateSnapshot {
   /** Readers staff wrote, newest first. */
   readers: StaffReader[];
   notes: NoteSummary[];
+  /** The office policy's versions and proposals, newest first. */
+  policies: PolicyVersion[];
   office: OfficeStats;
   runtime: RuntimeStatus | null;
   /** The last event this snapshot includes. Follow the stream with `/api/events?after=<lastEventId>`. */
@@ -404,6 +407,7 @@ export type DaemonEvent =
   | { type: "office"; office: OfficeStats }
   | { type: "assignment"; assignment: Assignment }
   | { type: "reader"; reader: StaffReader }
+  | { type: "policy"; policy: PolicyVersion }
   /** A conversation was opened, such as the operator's first chat with a supervisor. */
   | { type: "conversation"; conversation: Conversation }
   /** A staff member left the office, such as a worker whose task is accepted. Its records stay. */
@@ -457,6 +461,35 @@ export interface RunRoutineResponse {
 
 /** `PATCH /api/agents/:id`: the operator edits a staff member's profile. */
 export type UpdateAgentRequest = Partial<StaffProfile>;
+
+/**
+ * A version of the office policy: the operator's rules that every staff member works under
+ * (DESIGN.md › Memory and notes). The operator writes one directly; the Chief of Staff proposes one,
+ * which applies only once the operator approves it. The current policy is the newest approved one.
+ */
+export interface PolicyVersion {
+  id: number;
+  /** The whole policy, in plain text or markdown. */
+  body: string;
+  /** Who proposed it, or null when the operator wrote it. */
+  authorId: string | null;
+  /** Why the change, from the proposal. */
+  reason: string | null;
+  /** The approved version it changes, or null for the first. */
+  basedOn: number | null;
+  status: "pending" | "approved" | "declined" | "withdrawn";
+  /** Drafted in a run that had taken in source data, such as a briefing or a web search. */
+  fromSourceData: boolean;
+  /** Why it was declined or withdrawn. */
+  outcome: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+}
+
+/** `PUT /api/policy`: the operator writes the policy. */
+export interface WritePolicyRequest {
+  body: string;
+}
 
 /** `PATCH /api/routines/:id`: a scheduled routine runs on weekends too, or on weekdays only. */
 export interface UpdateRoutineRequest {

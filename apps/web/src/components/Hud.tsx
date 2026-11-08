@@ -19,6 +19,10 @@ interface HudProps {
   /** Open and waiting assignments. */
   assignments: number;
   assignmentsOpen: boolean;
+  /** A change to the office policy waits for the operator. */
+  policyPending: boolean;
+  policyOpen: boolean;
+  onTogglePolicy(): void;
   chatOpen: boolean;
   rosterOpen: boolean;
   theme: "dark" | "light";
@@ -71,7 +75,7 @@ export function Hud(props: HudProps) {
           label="Streak"
           value={office ? `${office.briefingStreak}` : "–"}
           suffix={office?.briefingStreak === 1 ? "day" : "days"}
-          title="Weekdays in a row with a briefing delivered"
+          title="Days in a row with a briefing delivered. A weekend without one doesn't break it."
           hot={(office?.briefingStreak ?? 0) >= 3}
         />
       </div>
@@ -114,6 +118,22 @@ export function Hud(props: HudProps) {
             <span className="count-badge tone-open">
               <span aria-hidden="true">{props.assignments}</span>
               <span className="visually-hidden">, {props.assignments} open</span>
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
+          className="hud-button"
+          aria-pressed={props.policyOpen}
+          onClick={props.onTogglePolicy}
+          title="The office policy: rules every staff member works under"
+        >
+          <Icon name="policy" />
+          <span>Policy</span>
+          {props.policyPending && (
+            <span className="count-badge tone-open">
+              <span aria-hidden="true">1</span>
+              <span className="visually-hidden">, a proposed change waits for you</span>
             </span>
           )}
         </button>

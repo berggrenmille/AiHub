@@ -5,6 +5,7 @@ import { STAFF_READER_PREFIX } from "../sources/folder.ts";
 import { BUILT_IN_READERS, isBuiltInReader } from "../sources/readers.ts";
 import { READER_CODE_LIMIT } from "../staff/toolsmith.ts";
 import { MAX_SITES, normalizeSites } from "../staff/web.ts";
+import { POLICY_LIMIT } from "../staff/policy.ts";
 import { defineTool, type GatewayTool } from "./gateway.ts";
 
 // Read-only office tools for Milestone 1. Each tool names who may call it; the gateway enforces that.
@@ -267,6 +268,28 @@ export const proposeSupervisorTool = defineTool({
   },
 });
 
+// The office policy (DESIGN.md › Memory and notes): the Chief of Staff proposes, the operator approves.
+export const proposePolicyTool = defineTool({
+  name: "aihub_propose_policy",
+  description:
+    "Propose a new version of the office policy: the operator's rules that every staff member works under, shown in your instructions. Give the whole new policy, not only the change. Nothing changes until the operator approves the card this puts in the chat. Propose only rules the operator asked for or agreed to.",
+  input: z
+    .object({
+      policy: z.string().max(POLICY_LIMIT).describe("The whole new policy: short, specific rules in markdown."),
+      reason: z.string().trim().min(1).max(300).describe("What changes and why, in the operator's terms."),
+    })
+    .strict(),
+  roles: ["chief_of_staff"],
+  profiles: ["conversation"],
+  // Only while talking with the operator: never from a follow-up that brings in colleagues' answers.
+  kinds: ["chat"],
+  run: (input, { caller, proposePolicy }) => {
+    if (!proposePolicy) throw new Error("The office policy isn't available in this office");
+    proposePolicy(caller, { body: input.policy, reason: input.reason });
+    return "Proposal recorded. The operator sees a card in this chat showing the change. Tell them in a sentence what you proposed.";
+  },
+});
+
 // Asking colleagues and handing out tasks (DESIGN.md › Recruitment and delegation, Asking colleagues).
 // Each records an assignment and the asking turn ends; the result arrives in a new turn. A run that
 // answers a question, or follows up on results, can do neither, so nothing nests or loops.
@@ -478,6 +501,7 @@ export const OFFICE_TOOLS: GatewayTool[] = [
   getRoster,
   listActivity,
   proposeSupervisorTool,
+  proposePolicyTool,
   askColleague,
   assignTask,
   recruitWorker,
