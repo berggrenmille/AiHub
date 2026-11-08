@@ -99,4 +99,10 @@ describe("Topics", () => {
     assert.deepEqual([...unreadCounts([chiefChat, travel, inesChat], messages, seen, null)], [["chief-of-staff", 1], ["topic-travel", 1]]);
     assert.deepEqual([...unreadCounts([chiefChat, travel], messages, seen, "topic-travel")], [["chief-of-staff", 1]]);
   });
+
+  it("doesn't count a pass in a meeting as news", () => {
+    const room = { id: "meeting-1", agentId: "chief", title: "Plan the week", kind: "meeting" as const, createdAt: "2026-11-08T08:00:00.000Z" };
+    const messages = { "meeting-1": [{ ...message(1, "meeting-1", "agent"), kind: "pass" as const }, message(2, "meeting-1", "agent")] };
+    assert.deepEqual([...unreadCounts([room], messages, new Map(), null)], [["meeting-1", 1]]);
+  });
 });

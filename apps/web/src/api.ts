@@ -4,10 +4,12 @@ import type {
   ApproveProposalRequest,
   ApproveServiceRequest,
   ChatRequest,
+  ChatMessage,
   ChatResponse,
   CloseItemRequest,
   DaemonEvent,
   Item,
+  Meeting,
   ModelChoice,
   ModelsResponse,
   Note,
@@ -152,6 +154,26 @@ export function startTopic(agentId: string, title?: string): Promise<OpenChatRes
 
 export function renameTopic(conversationId: string, title: string): Promise<OpenChatResponse> {
   return request<OpenChatResponse>(`/api/conversations/${encodeURIComponent(conversationId)}`, json("PATCH", { title }));
+}
+
+/** Calls a meeting the Chief of Staff chairs. Without participants, every supervisor comes. */
+export function callMeeting(agenda: string, participantIds?: string[]): Promise<Meeting> {
+  return request<Meeting>("/api/meetings", json("POST", participantIds ? { agenda, participantIds } : { agenda }));
+}
+
+/** The operator speaks in a meeting. After a conclusion, it sets the conclusion aside. */
+export async function sayInMeeting(meetingId: string, text: string): Promise<ChatMessage> {
+  return (await request<{ message: ChatMessage }>(`/api/meetings/${encodeURIComponent(meetingId)}/messages`, json("POST", { text }))).message;
+}
+
+/** Approves a meeting's conclusion: its tasks start, and the meeting ends. */
+export function approveMeeting(meetingId: string, outcomeId: number): Promise<Meeting> {
+  return request<Meeting>(`/api/meetings/${encodeURIComponent(meetingId)}/approve`, json("POST", { outcomeId }));
+}
+
+/** Ends a meeting without approving anything. */
+export function endMeeting(meetingId: string): Promise<Meeting> {
+  return request<Meeting>(`/api/meetings/${encodeURIComponent(meetingId)}/end`, json("POST", {}));
 }
 
 /** What a proposed source would read at a path. Nothing is created; a 400 says why it can't be read. */

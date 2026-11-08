@@ -93,6 +93,8 @@ export type OfficeAction =
   | { type: "event"; event: DaemonEvent }
   /** The response to `POST /api/chat`. */
   | { type: "sent"; response: ChatResponse }
+  /** The response to `POST /api/meetings`: the meeting and its conversation, unless the stream brought them first. */
+  | { type: "meeting_called"; meeting: Meeting }
   | { type: "connection"; status: ConnectionStatus; error: string | null };
 
 /** How many activity entries the feed keeps. */
@@ -146,6 +148,14 @@ export function officeReducer(state: OfficeState, action: OfficeAction): OfficeS
       const withMessage = addMessage(state, message);
       if (state.runs[run.id]) return withMessage;
       return { ...withMessage, runs: { ...withMessage.runs, [run.id]: run } };
+    }
+    case "meeting_called": {
+      const { meeting } = action;
+      // The stream may already have moved the meeting on, so only add what isn't there yet.
+      const conversation: Conversation = { id: meeting.id, agentId: meeting.chairId, title: meeting.title, kind: "meeting", createdAt: meeting.createdAt };
+      const conversations = state.conversations.some((existing) => existing.id === meeting.id) ? state.conversations : [...state.conversations, conversation];
+      const meetings = state.meetings.some((existing) => existing.id === meeting.id) ? state.meetings : [meeting, ...state.meetings].sort(newestMeetingFirst);
+      return conversations === state.conversations && meetings === state.meetings ? state : { ...state, conversations, meetings };
     }
     case "connection":
       if (state.connection === action.status && state.error === action.error) return state;
@@ -292,8 +302,12 @@ function applyEvent(state: OfficeState, event: DaemonEvent): OfficeState {
       return { ...state, services: upsert(state.services, event.service, (service) => service.id).sort(newestFirst) };
     case "service_grants":
       return { ...state, serviceGrants: event.grants };
-    case "meeting":
+    case "meeting": {
+      // An ended meeting stays ended: an older copy, such as a late HTTP response, can't reopen it.
+      const existing = state.meetings.find((meeting) => meeting.id === event.meeting.id);
+      if (existing?.state === "closed" && event.meeting.state !== "closed") return state;
       return { ...state, meetings: upsert(state.meetings, event.meeting, (meeting) => meeting.id).sort(newestMeetingFirst) };
+    }
     case "view_removed":
       if (!state.views[event.viewId]) return state;
       return { ...state, views: without(state.views, event.viewId) };

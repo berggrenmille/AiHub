@@ -2269,6 +2269,307 @@ summary.hud-chip::-webkit-details-marker {
   flex-basis: 100%;
 }
 
+/* Meetings: the Chief of Staff chairs, the supervisors invited speak in turn (DESIGN.md › Meetings). */
+
+.chats-meetings {
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chats-meetings h2 {
+  margin: 0;
+  font-size: inherit;
+}
+
+.chats-meetings-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.chats-more {
+  font-size: 12.5px;
+}
+
+.pill.small {
+  padding: 0 7px;
+  font-size: 10.5px;
+}
+
+.pill.meeting-status-live {
+  background: var(--working-bg);
+  color: var(--working-fg);
+}
+
+.pill.meeting-status-needs_you,
+.pill.meeting-outcome-proposed {
+  background: var(--waiting-bg);
+  color: var(--waiting-fg);
+}
+
+.pill.meeting-status-paused {
+  background: var(--queued-bg);
+  color: var(--queued-fg);
+}
+
+.pill.meeting-outcome-approved {
+  background: var(--done-bg);
+  color: var(--done-fg);
+}
+
+.meeting-page {
+  border-top-color: var(--accent);
+}
+
+.meeting-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.meeting-end-confirm {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.meeting-room {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.meeting-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.meeting-person-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 2px 2px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.meeting-person-button:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.meeting-person.has-floor .meeting-person-button {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.meeting-floor {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.meeting-byline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 3px 2px;
+  font-size: 12px;
+}
+
+.meeting-byline-name {
+  font-weight: 700;
+}
+
+.meeting-pass {
+  align-self: flex-start;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.meeting-pass p {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.meeting-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  border-color: var(--border-strong);
+  background: linear-gradient(180deg, var(--accent-soft), transparent 140px), var(--surface);
+}
+
+.meeting-card.status-proposed {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-sm);
+}
+
+.meeting-card.status-superseded,
+.meeting-card.status-declined {
+  opacity: 0.75;
+}
+
+.meeting-card-section {
+  display: grid;
+  gap: 4px;
+}
+
+.meeting-card-section h3 {
+  margin: 0;
+}
+
+.meeting-decisions,
+.meeting-tasks {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.meeting-decisions li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.meeting-decisions .icon {
+  flex: none;
+  color: var(--done-fg);
+}
+
+.meeting-tasks li {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.meeting-tasks p {
+  margin: 0;
+}
+
+.meeting-tasks .pill {
+  margin-left: 8px;
+}
+
+.meeting-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  color: inherit;
+}
+
+.meeting-link:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.meeting-link .meeting-mark {
+  width: 34px;
+  height: 34px;
+}
+
+.meeting-link-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+
+.meeting-link-text .eyebrow {
+  margin: 0;
+}
+
+.meeting-link-title {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.call-meeting-form {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 8px 0;
+}
+
+.field-label {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.call-meeting-invite {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.call-meeting-invite ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.call-meeting-person {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  cursor: pointer;
+}
+
+.call-meeting-person:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.call-meeting-cost {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+}
+
+.call-meeting-cost .icon {
+  flex: none;
+  color: var(--accent);
+}
+
 /* Proposal card */
 
 .proposal-card {

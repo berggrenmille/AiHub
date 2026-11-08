@@ -26,7 +26,8 @@ export const echo: Responder = async (input, options) => {
  */
 export const demo: Responder = async (input, options) => {
   if (/^Today is \S+\. The numbers cover the \d+ days/.test(input)) return review(input, options);
-  if (/^A meeting .* called: /.test(input)) return meetingTurn(input, options);
+  // Staff notes come first in the input, so the meeting setting is found on its own line.
+  if (/^A meeting .* called: /m.test(input)) return meetingTurn(input, options);
   // A briefing section: file a plain report from the collected records, so the office gets items.
   // A chat can quote source data too, such as a preview, so only a JSON block counts.
   const records = parseRecords(/BEGIN SOURCE DATA\n([\s\S]*?)\nEND SOURCE DATA/.exec(input)?.[1]);
@@ -121,7 +122,10 @@ async function meetingTurn(input: string, options: RunTurnOptions): Promise<Turn
     }
     return { status: "completed", text, error: null, usage };
   };
-  const speaker = /It's your turn, ([^.]+)\./.exec(input)?.[1];
+  // What was said earlier can quote either line, so the last one decides whose turn this is.
+  const turnAt = input.lastIndexOf("It's your turn, ");
+  const chairAt = Math.max(input.lastIndexOf(" just ended."), input.lastIndexOf("so it is set aside"));
+  const speaker = turnAt > chairAt ? /It's your turn, ([^.]+)\./.exec(input.slice(turnAt))?.[1] : undefined;
   if (speaker) {
     const items = /BEGIN OPEN ITEMS DATA\n([\s\S]*?)\nEND OPEN ITEMS DATA/.exec(input)?.[1];
     const first = items ? (JSON.parse(items) as Array<{ title: string }>)[0] : undefined;

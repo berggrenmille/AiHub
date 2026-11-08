@@ -104,7 +104,7 @@ describe("Meetings", () => {
     });
 
     const called = office.meetings.call({ agenda: AGENDA, calledBy: "operator" });
-    assert.equal(called.title, "Thursday is too full Two reviews clash. What do we move?");
+    assert.equal(called.title, "Thursday is too full");
     assert.deepEqual([called.state, called.round, called.participantIds, called.queue], ["running", 1, ["elin", "nils"], ["elin", "nils", CHIEF]]);
     assert.equal(store.getConversation(called.id)!.kind, "meeting");
     // Said while the rounds run: those who speak after hear it.
@@ -128,7 +128,7 @@ describe("Meetings", () => {
         ["Vera", "chat", "Elin, which one could move?"],
         ["Elin", "chat", "Moving the design review frees Thursday afternoon."],
         ["Vera", "chat", "Thanks, both."],
-        ["Vera", "meeting", 'Conclusion of "Thursday is too full Two reviews clash. What do we move?"'],
+        ["Vera", "meeting", 'Conclusion of "Thursday is too full"'],
       ],
     );
     assert.equal(messages(called.id).at(-1)!.refId, String(outcome!.id));
@@ -230,18 +230,25 @@ describe("Meetings", () => {
     await settle();
 
     const [meeting] = store.listMeetings();
-    assert.deepEqual([meeting!.calledBy, meeting!.title, meeting!.participantIds, meeting!.state], ["chief_of_staff", "Welcome to the team The operator is glad to have you all.", ["elin"], "waiting"]);
+    assert.deepEqual([meeting!.calledBy, meeting!.title, meeting!.participantIds, meeting!.state], ["chief_of_staff", "Welcome to the team", ["elin"], "waiting"]);
     assert.deepEqual(
       messages(meeting!.id).map((message) => [message.agentId, message.kind, message.body]),
       [
         [CHIEF, "chat", "Welcome to the team\nThe operator is glad to have you all."],
         ["elin", "chat", "Glad to be here."],
         [CHIEF, "chat", "Welcome, Elin."],
-        [CHIEF, "meeting", 'Conclusion of "Welcome to the team The operator is glad to have you all."'],
+        [CHIEF, "meeting", 'Conclusion of "Welcome to the team"'],
       ],
     );
     assert.deepEqual(meeting!.outcomes.map((outcome) => [outcome.summary, outcome.decisions, outcome.tasks]), [["Welcome, Elin.", [], []]]);
-    assert.equal(store.recentMessages(10, CHAT).at(-1)!.body, "I've called a meeting with Elin.");
+    // The chat links to the meeting, and Vera says so.
+    assert.deepEqual(
+      store.recentMessages(10, CHAT).slice(-2).map((message) => [message.kind, message.refId, message.body]),
+      [
+        ["meeting", meeting!.id, 'Called the meeting "Welcome to the team"'],
+        ["chat", null, "I've called a meeting with Elin."],
+      ],
+    );
   });
 
   it("keeps to its rules: supervisors only, one meeting at a time, and a last round", async () => {

@@ -87,7 +87,8 @@ export function unreadCounts(
   for (const conversation of conversations) {
     if (conversation.id === visibleId) continue;
     const after = seen.get(conversation.id) ?? 0;
-    const unread = (messages[conversation.id] ?? []).filter((message) => message.author === "agent" && message.id > after).length;
+    // A pass in a meeting says nothing, so it isn't news.
+    const unread = (messages[conversation.id] ?? []).filter((message) => message.author === "agent" && message.kind !== "pass" && message.id > after).length;
     if (unread > 0) counts.set(conversation.id, unread);
   }
   return counts;

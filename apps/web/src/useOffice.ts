@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { Conversation, DaemonEvent, ModelChoice, ModelOption, SourcePreview, UpdateAgentRequest, WebGrant } from "@aihub/shared";
+import type { Conversation, DaemonEvent, Meeting, ModelChoice, ModelOption, SourcePreview, UpdateAgentRequest, WebGrant } from "@aihub/shared";
 import {
   approvePolicy,
   approveProposal,
   approveService,
   approveStaffChange,
+  approveMeeting,
+  callMeeting,
+  endMeeting,
+  sayInMeeting,
   declineService,
   refreshService,
   removeService,
@@ -44,6 +48,11 @@ export interface OfficeCommands {
   /** Starts a chat on a topic with a staff member and returns it. */
   startTopic(agentId: string, title?: string): Promise<Conversation>;
   renameTopic(conversationId: string, title: string): Promise<void>;
+  /** Calls a meeting and returns it. Without participants, every supervisor comes. */
+  callMeeting(agenda: string, participantIds?: string[]): Promise<Meeting>;
+  sayInMeeting(meetingId: string, text: string): Promise<void>;
+  approveMeeting(meetingId: string, outcomeId: number): Promise<void>;
+  endMeeting(meetingId: string): Promise<void>;
   updateAgent(agentId: string, changes: UpdateAgentRequest): Promise<void>;
   setWeb(agentId: string, web: WebGrant | null): Promise<void>;
   /** Loads the models Codex offers into `models`. */
@@ -122,6 +131,14 @@ export function useOffice() {
         const { conversation } = await renameTopic(conversationId, title);
         apply({ type: "conversation", conversation });
       },
+      callMeeting: async (agenda, participantIds) => {
+        const meeting = await callMeeting(agenda, participantIds);
+        dispatch({ type: "meeting_called", meeting });
+        return meeting;
+      },
+      sayInMeeting: async (meetingId, text) => apply({ type: "message", message: await sayInMeeting(meetingId, text) }),
+      approveMeeting: async (meetingId, outcomeId) => apply({ type: "meeting", meeting: await approveMeeting(meetingId, outcomeId) }),
+      endMeeting: async (meetingId) => apply({ type: "meeting", meeting: await endMeeting(meetingId) }),
       updateAgent: async (agentId, changes) => apply({ type: "agent", agent: await updateAgent(agentId, changes) }),
       setWeb: async (agentId, web) => apply({ type: "agent", agent: await setWebGrant(agentId, web) }),
       loadModels: async () => {

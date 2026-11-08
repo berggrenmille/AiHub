@@ -30,8 +30,8 @@ export const READERS_DRAFTING_LIMIT = 2;
 /** Runs a toolsmith's task may use. It tests as often as it likes within the one run. */
 export const READER_RUNS = 1;
 
-/** Rounds a meeting may have: every speaker once in the first, then those the chair names. */
-export const MEETING_ROUNDS = 3;
+/** Rounds a meeting may have. The UI shows it too, so it lives with the shared types. */
+export { MEETING_ROUNDS } from "@aihub/shared";
 
 /** Tasks one meeting's conclusion may hand out. */
 export const MEETING_TASKS = 4;

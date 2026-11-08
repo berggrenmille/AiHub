@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import type { Agent, ChatMessage, Conversation, Item, ModelOption, PolicyVersion, Proposal, Run, Service, SourcePreview, StaffChange, StaffReader, View } from "@aihub/shared";
+import type { Agent, ChatMessage, Conversation, Item, Meeting, ModelOption, PolicyVersion, Proposal, Run, Service, SourcePreview, StaffChange, StaffReader, View } from "@aihub/shared";
 import { errorText } from "../api.ts";
 import { lookFor } from "../lib/avatar.ts";
 import { chatName } from "../lib/chat.ts";
+import { MEETING_STATUS_LABELS, meetingStatus } from "../lib/meetings.ts";
 import { formatClock, formatDateTime, formatLongDate, STATE_LABELS, toneOf } from "../format.ts";
 import type { StreamingReply } from "../state.ts";
 import { Icon } from "./Icon.tsx";
@@ -43,6 +44,9 @@ interface ChatPanelProps {
   messages: ChatMessage[];
   runs: Record<string, Run>;
   streaming: StreamingReply[];
+  /** For the cards that link to meetings the Chief of Staff called from the chat. */
+  meetings: Meeting[];
+  onOpenMeeting(meetingId: string): void;
   proposals: Proposal[];
   policies: PolicyVersion[];
   staffChanges: StaffChange[];
@@ -291,6 +295,8 @@ export function ChatPanel(props: ChatPanelProps) {
                 policy={message.kind === "policy" ? props.policies.find((policy) => String(policy.id) === message.refId) : undefined}
                 policies={props.policies}
                 staffChange={message.kind === "staff_change" ? props.staffChanges.find((change) => String(change.id) === message.refId) : undefined}
+                meeting={message.kind === "meeting" ? props.meetings.find((meeting) => meeting.id === message.refId) : undefined}
+                onOpenMeeting={props.onOpenMeeting}
                 models={props.models}
                 readers={props.readers}
                 services={props.services}
@@ -448,6 +454,8 @@ interface MessageViewProps {
   policy: PolicyVersion | undefined;
   policies: PolicyVersion[];
   staffChange: StaffChange | undefined;
+  meeting: Meeting | undefined;
+  onOpenMeeting(meetingId: string): void;
   models: ModelOption[] | null;
   readers: StaffReader[];
   services: Service[];
@@ -550,6 +558,27 @@ function MessageView(props: MessageViewProps) {
           onApprove={(unsafe) => props.onApproveStaffChange(Number(message.refId), unsafe)}
           onDecline={() => props.onDeclineStaffChange(Number(message.refId))}
         />
+        <p className="message-meta">{time}</p>
+      </li>
+    );
+  }
+
+  if (message.kind === "meeting") {
+    const meeting = props.meeting;
+    const status = meeting ? meetingStatus(meeting) : "ended";
+    return (
+      <li className="message message-card">
+        <button type="button" className="card meeting-link" onClick={() => props.onOpenMeeting(message.refId ?? "")} disabled={!meeting}>
+          <span className="meeting-mark" aria-hidden="true">
+            <Icon name="team" size={18} />
+          </span>
+          <span className="meeting-link-text">
+            <span className="eyebrow">Meeting</span>
+            <span className="meeting-link-title">{meeting?.title ?? message.body}</span>
+          </span>
+          <span className={`pill meeting-status-${status}`}>{MEETING_STATUS_LABELS[status]}</span>
+          {meeting && <Icon name="chevron" size={16} />}
+        </button>
         <p className="message-meta">{time}</p>
       </li>
     );

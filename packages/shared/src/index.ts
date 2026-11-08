@@ -268,7 +268,10 @@ export interface ChatMessage {
   kind: MessageKind;
   body: string;
   runId: string | null;
-  /** The record a proposal message is about, such as the proposal's ID. */
+  /**
+   * The record a card is about, such as a proposal's ID. A meeting card in a meeting names its
+   * conclusion; one in a chat names the meeting it called.
+   */
   refId: string | null;
   createdAt: string;
 }
@@ -323,6 +326,9 @@ export interface MeetingOutcome {
   createdAt: string;
   decidedAt: string | null;
 }
+
+/** Rounds a meeting may have: every speaker once in the first, then those the chair names. */
+export const MEETING_ROUNDS = 3;
 
 /**
  * Several staff discuss one topic with the operator (DESIGN.md › Meetings). The Chief of Staff

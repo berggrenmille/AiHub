@@ -3,10 +3,12 @@ import type { Agent } from "@aihub/shared";
 import { ActivityLog, ActivityTicker, Toasts } from "./components/Activity.tsx";
 import { AssignmentsDrawer } from "./components/Assignments.tsx";
 import { AccessPanel } from "./components/AccessPanel.tsx";
+import { CallMeeting } from "./components/CallMeeting.tsx";
 import { ChatPanel } from "./components/ChatPanel.tsx";
 import { ChatsPage } from "./components/ChatsPage.tsx";
 import { Dashboards } from "./components/Dashboards.tsx";
 import { Inbox } from "./components/Inbox.tsx";
+import { MeetingPanel } from "./components/MeetingPanel.tsx";
 import { NotesView } from "./components/NotesView.tsx";
 import { PolicyDrawer } from "./components/PolicyDrawer.tsx";
 import { OfficeFloor } from "./components/office/OfficeFloor.tsx";
@@ -17,6 +19,7 @@ import { TopBar } from "./components/TopBar.tsx";
 import { nameOf, openAssignmentCount } from "./lib/assignments.ts";
 import { chatPartner, chatScope, chatsOf, shownConversation } from "./lib/chat.ts";
 import { openCount } from "./lib/inbox.ts";
+import { runningMeeting } from "./lib/meetings.ts";
 import { unsafeRows } from "./lib/access.ts";
 import { resolveWikilink } from "./lib/notes.ts";
 import { pendingPolicy } from "./lib/policy.ts";
@@ -41,6 +44,8 @@ export function App() {
   const [drawer, setDrawer] = useState<Drawer>(null);
   // The chat the drawer or the Chats page shows. Null shows the Chief of Staff's general chat.
   const [chatId, setChatId] = useState<string | null>(null);
+  // The Chats page shows the form for calling a meeting in place of a chat.
+  const [calling, setCalling] = useState(false);
   const [profileId, setProfileId] = useState<string | null>(null);
   const [rosterOpen, setRosterOpen] = useState(() => window.innerWidth >= 1400);
   const [notePath, setNotePath] = useState<string | null>(null);
@@ -63,15 +68,18 @@ export function App() {
   const streaming = useMemo(() => Object.values(state.streaming).filter((reply) => reply.conversationId === chat?.id), [state.streaming, chat?.id]);
   const onChatsPage = page === "chats";
   const drawerChatOpen = drawer === "chat" && !onChatsPage;
-  const visibleChat = (drawerChatOpen || onChatsPage) && chat ? chat : null;
+  const visibleChat = (drawerChatOpen || (onChatsPage && !calling)) && chat ? chat : null;
   const unread = useUnread(state.conversations, state.messages, visibleChat?.id ?? null);
   const totalUnread = useMemo(() => [...unread.values()].reduce((sum, count) => sum + count, 0), [unread]);
-  // Briefings, proposals and notices arrive in the Chief of Staff's chats.
+  // Briefings, proposals and notices arrive in the Chief of Staff's chats. Meetings she chairs count on the Chats page.
   const chiefUnread = useMemo(
-    () => state.conversations.filter((conversation) => conversation.agentId === chief?.id).reduce((sum, conversation) => sum + (unread.get(conversation.id) ?? 0), 0),
+    () =>
+      state.conversations
+        .filter((conversation) => conversation.agentId === chief?.id && conversation.kind !== "meeting")
+        .reduce((sum, conversation) => sum + (unread.get(conversation.id) ?? 0), 0),
     [state.conversations, chief?.id, unread],
   );
-  const chiefOpen = drawerChatOpen && chat !== null && chat.agentId === chief?.id;
+  const chiefOpen = drawerChatOpen && chat !== null && chat.kind !== "meeting" && chat.agentId === chief?.id;
   const partnerChats = useMemo(() => (partner ? chatsOf(partner.agent.id, state.conversations, state.messages) : []), [partner, state.conversations, state.messages]);
   const inbox = useMemo(() => openCount(state.items), [state.items]);
   const openAssignments = useMemo(() => openAssignmentCount(state.assignments), [state.assignments]);
@@ -124,14 +132,16 @@ export function App() {
     [goTo],
   );
 
-  /** Shows a chat where chats are on screen: the Chats page if it is open, else the drawer. */
+  /** Shows a chat where chats are on screen: the Chats page if it is open, else the drawer. A meeting opens full screen. */
   const showChat = useCallback(
     (conversationId: string | null) => {
       setChatId(conversationId);
       setProfileId(null);
-      if (!onChatsPage) setDrawer("chat");
+      setCalling(false);
+      if (conversationId?.startsWith("meeting-")) goTo("chats");
+      else if (!onChatsPage) setDrawer("chat");
     },
-    [onChatsPage],
+    [onChatsPage, goTo],
   );
 
   const openChiefChat = useCallback(() => showChat(null), [showChat]);
@@ -218,8 +228,25 @@ export function App() {
   }
 
   const togglePanel = (panel: Exclude<Drawer, "chat" | null>) => setDrawer((current) => (current === panel ? null : panel));
+  const personOf = (agentId: string) => state.agents.find((agent) => agent.id === agentId) ?? lastSeen.get(agentId) ?? null;
   const chatPanel = (variant: "drawer" | "page") =>
-    chat && partner ? (
+    chat?.kind === "meeting" ? (
+      <MeetingPanel
+        key={chat.id}
+        conversation={chat}
+        meeting={state.meetings.find((meeting) => meeting.id === chat.id) ?? null}
+        messages={chatMessages}
+        runs={state.runs}
+        streaming={streaming}
+        personOf={personOf}
+        onSay={(text) => commands.sayInMeeting(chat.id, text)}
+        onApprove={(outcomeId) => commands.approveMeeting(chat.id, outcomeId)}
+        onEnd={() => commands.endMeeting(chat.id)}
+        onOpenProfile={setProfileId}
+        resolveLink={resolveChatLink}
+        onOpenLink={openChatLink}
+      />
+    ) : chat && partner ? (
       <ChatPanel
         key={chat.id}
         variant={variant}
@@ -231,6 +258,8 @@ export function App() {
         messages={chatMessages}
         runs={state.runs}
         streaming={streaming}
+        meetings={state.meetings}
+        onOpenMeeting={showChat}
         proposals={state.proposals}
         policies={state.policies}
         staffChanges={state.staffChanges}
@@ -351,14 +380,33 @@ export function App() {
                 staff={roster.map((entry) => entry.agent)}
                 departed={departed}
                 conversations={state.conversations}
+                meetings={state.meetings}
                 messages={state.messages}
                 unread={unread}
-                selectedId={chat?.id ?? null}
-                onSelect={setChatId}
+                selectedId={calling ? null : (chat?.id ?? null)}
+                onSelect={(conversationId) => {
+                  setCalling(false);
+                  setChatId(conversationId);
+                }}
+                calling={calling}
+                onCallMeeting={() => setCalling(true)}
                 onOpenGeneral={(agentId) => void openChatWith(agentId).catch(() => undefined)}
                 onNewTopic={(agentId) => void startTopic(agentId).catch(() => undefined)}
               >
-                {chatPanel("page")}
+                {calling ? (
+                  <CallMeeting
+                    supervisors={roster.map((entry) => entry.agent).filter((agent) => agent.role === "supervisor")}
+                    chief={chief}
+                    running={runningMeeting(state.meetings)}
+                    office={state.office}
+                    onCall={commands.callMeeting}
+                    onCalled={(meeting) => showChat(meeting.id)}
+                    onOpenRunning={showChat}
+                    onCancel={() => setCalling(false)}
+                  />
+                ) : (
+                  chatPanel("page")
+                )}
               </ChatsPage>
             )}
             {page === "dashboards" && (
@@ -389,7 +437,7 @@ export function App() {
             )}
           </main>
 
-          {drawerChatOpen && chatPanel("drawer")}
+          {drawerChatOpen && chat?.kind !== "meeting" && chatPanel("drawer")}
           {drawer === "activity" && <ActivityLog entries={state.activity} agentName={agentName} onClose={() => setDrawer(null)} />}
           {drawer === "policy" && (
             <PolicyDrawer policies={state.policies} agentName={agentName} onSave={commands.savePolicy} onOpenProposal={openChiefChat} onClose={() => setDrawer(null)} />

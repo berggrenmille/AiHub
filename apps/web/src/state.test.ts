@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { ActivityEntry, Agent, Assignment, ChatMessage, DaemonEvent, Item, NoteSummary, PolicyVersion, Proposal, Responsibility, Run, StaffChange, StaffReader, StateSnapshot, View } from "@aihub/shared";
+import type { ActivityEntry, Agent, Assignment, ChatMessage, DaemonEvent, Item, Meeting, NoteSummary, PolicyVersion, Proposal, Responsibility, Run, StaffChange, StaffReader, StateSnapshot, View } from "@aihub/shared";
 import { ACTIVITY_LIMIT, initialOfficeState, officeReducer, rosterOrder, SETTLED_ASSIGNMENT_LIMIT, type OfficeAction, type OfficeState } from "./state.ts";
 
 const CHAT = "chief-of-staff";
@@ -667,6 +667,45 @@ describe("conversations", () => {
     assert.ok(!state.agents.some((a) => a.id === "ada"));
     assert.ok(state.conversations.some((c) => c.id === chat.id));
     assert.deepEqual(state.messages[chat.id]?.map((m) => m.id), [11]);
+  });
+});
+
+describe("meetings", () => {
+  const meeting = (overrides: Partial<Meeting> = {}): Meeting => ({
+    id: "meeting-1",
+    title: "Plan the week",
+    agenda: "Plan the week",
+    calledBy: "operator",
+    chairId: "chief-of-staff",
+    participantIds: ["nora"],
+    state: "running",
+    round: 1,
+    queue: ["nora", "chief-of-staff"],
+    outcomes: [],
+    createdAt: "2026-11-08T09:00:00.000Z",
+    endedAt: null,
+    ...overrides,
+  });
+
+  it("adds a called meeting and its conversation, unless the stream brought them first", () => {
+    const state = apply(loaded(), { type: "meeting_called", meeting: meeting() });
+    assert.deepEqual(state.meetings.map((m) => m.id), ["meeting-1"]);
+    assert.deepEqual(state.conversations.at(-1), { id: "meeting-1", agentId: "chief-of-staff", title: "Plan the week", kind: "meeting", createdAt: "2026-11-08T09:00:00.000Z" });
+
+    const moved = events(loaded(), { type: "meeting", meeting: meeting({ state: "waiting", queue: [] }) });
+    const after = apply(moved, { type: "meeting_called", meeting: meeting() });
+    assert.equal(after.meetings[0]?.state, "waiting", "the stream had moved it on");
+  });
+
+  it("keeps them newest first, and never reopens an ended one", () => {
+    let state = events(
+      loaded(),
+      { type: "meeting", meeting: meeting() },
+      { type: "meeting", meeting: meeting({ id: "meeting-2", createdAt: "2026-11-08T10:00:00.000Z" }) },
+    );
+    assert.deepEqual(state.meetings.map((m) => m.id), ["meeting-2", "meeting-1"]);
+    state = events(state, { type: "meeting", meeting: meeting({ state: "closed", queue: [], endedAt: "2026-11-08T09:30:00.000Z" }) });
+    assert.equal(events(state, { type: "meeting", meeting: meeting({ state: "waiting" }) }), state);
   });
 });
 

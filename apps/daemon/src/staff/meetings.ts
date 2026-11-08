@@ -61,7 +61,7 @@ export class Meetings {
 
   /**
    * Calls a meeting and queues its first round: every supervisor invited speaks, then the chair.
-   * Without a list, every supervisor is invited.
+   * Without a list, every supervisor is invited. The agenda's first line names it.
    */
   call(input: { agenda: string; participantIds?: string[]; calledBy: MeetingCaller; runId?: string | null; sourceData?: boolean }): Meeting {
     const { store, bus } = this.office;
@@ -73,7 +73,7 @@ export class Meetings {
     const chair = store.getAgentRecord(CHIEF_OF_STAFF.id)!;
     const id = `meeting-${crypto.randomUUID()}`;
     const meeting = store.transaction(() => {
-      store.ensureConversation({ id, agentId: chair.id, title: topicTitle(agenda) ?? "Meeting", kind: "meeting" });
+      store.ensureConversation({ id, agentId: chair.id, title: topicTitle(agenda.split("\n", 1)[0]!) ?? "Meeting", kind: "meeting" });
       return store.createMeeting({ id, agenda, calledBy: input.calledBy, chairId: chair.id, participantIds, queue: [...participantIds, chair.id] });
     });
     bus.publish({ type: "conversation", conversation: store.conversation(id)! });
@@ -167,7 +167,10 @@ export class Meetings {
     const run = this.office.store.getRun(caller.runId);
     if (run?.kind !== "chat") throw new Error("Call a meeting from a chat with the operator.");
     const participantIds = input.participants?.length ? input.participants.map((name) => this.supervisorNamed(name).id) : undefined;
-    return this.call({ agenda: input.agenda, participantIds, calledBy: "chief_of_staff", runId: caller.runId, sourceData: caller.sourceData });
+    const meeting = this.call({ agenda: input.agenda, participantIds, calledBy: "chief_of_staff", runId: caller.runId, sourceData: caller.sourceData });
+    // The chat it was called from links to it, so the operator can follow it there.
+    this.office.postMessage(this.office.cardChat(caller.runId), meeting.chairId, `Called the meeting "${meeting.title}"`, caller.runId, "meeting", meeting.id);
+    return meeting;
   }
 
   pass(caller: Caller): string {
