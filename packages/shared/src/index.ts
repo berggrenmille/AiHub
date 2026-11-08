@@ -53,6 +53,40 @@ export interface Agent extends StaffProfile {
   connectionIds: string[];
   /** Web search, when the operator granted it. */
   web: WebGrant | null;
+  /** The model it runs on. Null follows the office default. */
+  model: string | null;
+  /** Its reasoning level. Null follows the model's default. */
+  effort: string | null;
+}
+
+/** A model staff can run on, from the runtime's catalog (DESIGN.md › Staff and work model). */
+export interface ModelOption {
+  id: string;
+  name: string;
+  description: string;
+  /** The reasoning levels it offers, lightest first. */
+  efforts: Array<{ effort: string; description: string }>;
+  defaultEffort: string;
+  /** The office default, for staff with no choice of their own. */
+  isDefault: boolean;
+}
+
+/** A staff member's model and reasoning level. Null follows the default. */
+export interface ModelChoice {
+  model: string | null;
+  effort: string | null;
+}
+
+export interface ModelsResponse {
+  models: ModelOption[];
+}
+
+/** The model and reasoning level the Chief of Staff picked for a supervisor she proposes. */
+export interface ProposedModel {
+  id: string;
+  effort: string;
+  /** Why it fits the work. */
+  why: string;
 }
 
 /** Web search a staff member holds (DESIGN.md › Authority and data boundaries). */
@@ -90,6 +124,10 @@ export interface Run {
   queuedAt: string;
   startedAt: string | null;
   finishedAt: string | null;
+  /** The model its last turn ran on, as the runtime reported it. */
+  model: string | null;
+  /** That turn's reasoning level, when the runtime named one. */
+  effort: string | null;
 }
 
 /** chat: a conversation turn. briefing: a delivered briefing. proposal: a card for `refId`. notice: AiHub's own note. */
@@ -134,7 +172,8 @@ export type ActivityKind =
   | "assignment"
   | "worker"
   | "web"
-  | "policy";
+  | "policy"
+  | "model";
 
 export interface ActivityEntry {
   id: number;
@@ -283,6 +322,8 @@ export interface RecruitProposal {
   source: ProposedSource | null;
   /** Web search, for a supervisor that looks things up instead of, or as well as, reading a source. */
   web?: WebGrant | null;
+  /** What the supervisor runs on. Proposals from before the choice existed have none. */
+  model?: ProposedModel | null;
   reason: string;
 }
 

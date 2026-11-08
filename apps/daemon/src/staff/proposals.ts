@@ -1,3 +1,4 @@
+import { describeModel } from "./models.ts";
 import type { Proposal, RecruitProposal, SourcePreview } from "@aihub/shared";
 import type { Caller } from "../gateway/gateway.ts";
 import { SUPERVISOR_LIMIT } from "../limits.ts";
@@ -76,7 +77,7 @@ export async function approveProposal(office: Office, id: string, options: { sou
   const proposal = store.getProposal(id);
   if (!proposal) throw new NotFoundError(`No proposal ${id}`);
   if (proposal.status !== "pending") throw new ConflictError(`This proposal was already ${proposal.status}.`);
-  const { profile, responsibility: duty, source, web = null } = proposal.payload;
+  const { profile, responsibility: duty, source, web = null, model = null } = proposal.payload;
   // The caps are checked again: the office may have changed since the proposal was made.
   if (store.isNameTaken(profile.name)) throw new ConflictError(`Someone on staff is already called ${profile.name}.`);
   if (SUPERVISOR_LIMIT - store.countActive("supervisor") <= 0) throw new ConflictError(`The office is at its cap of ${SUPERVISOR_LIMIT} supervisors.`);
@@ -104,7 +105,17 @@ export async function approveProposal(office: Office, id: string, options: { sou
   const hired = store.transaction(() => {
     const agentId = store.freeAgentId(profile.name);
     // The card showed a look seeded from the proposed name, so the hire keeps that look.
-    store.upsertAgent({ id: agentId, ...profile, avatar: profile.name, role: "supervisor", managerId: CHIEF_OF_STAFF_ID, profile: "data", charter: SUPERVISOR_CHARTER });
+    store.upsertAgent({
+      id: agentId,
+      ...profile,
+      avatar: profile.name,
+      role: "supervisor",
+      managerId: CHIEF_OF_STAFF_ID,
+      profile: "data",
+      charter: SUPERVISOR_CHARTER,
+      model: model?.id ?? null,
+      effort: model?.effort ?? null,
+    });
     const responsibility = store.createResponsibility({ ownerId: agentId, ...duty });
     const routine = store.createRoutine({
       ownerId: agentId,
@@ -142,10 +153,11 @@ export async function approveProposal(office: Office, id: string, options: { sou
       : ` ${source!.label} isn't readable yet: ${connection.detail}`
     : "";
   const searches = web ? ` ${profile.name} has ${describeWeb(web)}.` : "";
+  const runsOn = model ? ` ${profile.name} runs on ${describeModel({ model: model.id, effort: model.effort }, office.knownModels())}.` : "";
   office.postMessage(
     CHIEF_OF_STAFF_CONVERSATION_ID,
     CHIEF_OF_STAFF_ID,
-    `${profile.name} joined as ${profile.title} and reports in the next morning briefing.${access}${searches}`,
+    `${profile.name} joined as ${profile.title} and reports in the next morning briefing.${access}${searches}${runsOn}`,
     null,
     "notice",
     id,

@@ -329,3 +329,22 @@ Each proposal was one chat turn: 37,376 tokens for the first and 24,915 for the 
 - Declining from the card gives no reason, though the API takes one.
 - A proposal from a chat that read source data is marked on the card, not blocked.
 - The policy lives in the database, not the vault, so Obsidian doesn't show it.
+
+## Models and reasoning (2026-11-08)
+
+The operator found no way to see which model and reasoning level staff run on, and asked for it to be configurable, observable, and for the Chief of Staff to pick a fitting one for each supervisor. Until now AiHub never named a model, so every run used Codex's default: GPT-6.1-Sol at its default, low reasoning. Agents now hold an optional model and level, and runs record what they ran on (migration v10). The office reads the catalog with Codex's `model/list`, keeps it for an hour, and names the resolved model and level on every `turn/start`. The profile card shows and changes them (`GET /api/models`, `PUT /api/agents/:id/model`). Vera's `aihub_propose_supervisor` requires a model, checked against the catalog, and `aihub_list_models` lists it for her. Tests: `staff/models.test.ts`, `codex-runtime.test.ts`, `office.test.ts`, `proposals.test.ts`, `server.test.ts`, and `lib/models.test.ts` on the web side.
+
+### How it was shown
+
+The sign-in offers eight models, from GPT-6.1-Sol (the default, low reasoning) and GPT-6-Astra (frontier, medium) to GPT-6-Luna (fast, medium) and older 5.6 models, each with low to max reasoning, plus ultra on most. A probe also showed that Codex accepts a model it doesn't offer at `thread/start`, so AiHub checks every choice against the catalog itself. In a throwaway office on real Codex, the operator set Vera to GPT-6-Luna at low reasoning on her profile card and asked for someone to brief them on Swedish electricity prices. Vera listed the models, proposed Elsa with web search on GPT-6-Luna at low reasoning ("routine daily price lookup and concise scheduling recommendations suit the fast, low-reasoning model"), and the card showed it. Codex's own saved session for that turn records `gpt-6-luna` at `low`. After approval Elsa runs on the same, and the notice says so.
+
+### Usage measured
+
+The hiring turn on GPT-6-Luna at low reasoning was one turn of 49,337 tokens, including the model list and the proposal. The installed office keeps every staff member on the default until the operator changes one, so its usage doesn't change.
+
+### Known gaps
+
+- The approval card shows Vera's pick but doesn't change it; the operator changes it on the profile card after hiring.
+- There is no office-wide default of AiHub's own: the office default is whatever Codex marks as its default.
+- Fast service tiers, which Codex offers for most models at more usage, aren't offered.
+- A worker starts on its manager's choice; the supervisor doesn't pick for it.

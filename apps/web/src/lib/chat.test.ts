@@ -15,6 +15,8 @@ function agent(id: string, overrides: Partial<Agent> = {}): Agent {
     experience: 0,
     connectionIds: [],
     web: null,
+    model: null,
+    effort: null,
     role: "supervisor",
     managerId: "chief",
     profile: "data",

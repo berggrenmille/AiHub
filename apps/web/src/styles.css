@@ -552,6 +552,7 @@ a {
 
 input[type="text"],
 input[type="search"],
+.field select,
 textarea {
   width: 100%;
   padding: 8px 11px;
@@ -563,6 +564,7 @@ textarea {
 
 input[type="text"]:focus,
 input[type="search"]:focus,
+.field select:focus,
 textarea:focus {
   outline: none;
   border-color: var(--accent);
@@ -3967,4 +3969,25 @@ button.wikilink:hover {
 
 .policy-diff .diff-removed .diff-text {
   text-decoration: line-through;
+}
+
+/* What a staff member runs on, on the profile card: the model and level, or the form that changes them. */
+.model-setting {
+  display: grid;
+  gap: 6px;
+}
+
+.model-setting p {
+  margin: 0;
+}
+
+.model-current {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.model-current .pill {
+  margin-left: 8px;
 }

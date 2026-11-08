@@ -7,6 +7,7 @@ import {
   ContextUnavailableError,
   type AgentRuntime,
   type ContextOptions,
+  type ModelOption,
   type RunProfile,
   type RunTurnOptions,
   type RuntimeAccount,
@@ -85,6 +86,10 @@ export class CodexRuntime implements AgentRuntime {
     const server = await this.process(context.group);
     if (context.loadedIn !== server) await this.resumeContext(contextId, context.options);
     return server.runTurn(contextId, options);
+  }
+
+  async models(): Promise<ModelOption[]> {
+    return (await this.process("conversation")).models();
   }
 
   async account(): Promise<RuntimeAccount> {

@@ -17,6 +17,8 @@ function agent(overrides: Partial<Agent> = {}): Agent {
     experience: 0,
     connectionIds: [],
     web: null,
+    model: null,
+    effort: null,
     role: "chief_of_staff",
     managerId: null,
     profile: "conversation",
@@ -40,6 +42,8 @@ function run(overrides: Partial<Run> = {}): Run {
     queuedAt: "2026-11-07T16:00:00.000Z",
     startedAt: null,
     finishedAt: null,
+    model: null,
+    effort: null,
     ...overrides,
   };
 }

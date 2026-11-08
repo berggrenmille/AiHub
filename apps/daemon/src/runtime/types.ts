@@ -1,8 +1,14 @@
 // The runtime interface (DESIGN.md › Architecture). The staff engine talks only to AgentRuntime,
 // so Codex can be replaced for some or all runs without changing anything above this layer.
-import type { RunProfile } from "@aihub/shared";
+import type { ModelOption, RunProfile } from "@aihub/shared";
 
-export type { RunProfile };
+export type { ModelOption, RunProfile };
+
+/** The model and reasoning level for a turn. */
+export interface ModelSetting {
+  model: string;
+  effort: string;
+}
 
 /** A gateway tool offered to the model. `inputSchema` is a JSON Schema object. */
 export interface ToolSpec {
@@ -72,6 +78,8 @@ export interface TurnResult {
   usage: TurnUsage | null;
   /** Set when the turn failed for a reason waiting may fix. */
   blocker?: TurnBlocker | null;
+  /** What the turn ran on, when the runtime says. A null effort is the model's default. */
+  model?: { model: string; effort: string | null } | null;
 }
 
 export interface RunTurnOptions {
@@ -79,6 +87,8 @@ export interface RunTurnOptions {
   onToolCall: (call: ToolCall) => Promise<ToolOutcome>;
   onEvent?: (event: TurnEvent) => void;
   timeoutMs?: number;
+  /** The model and reasoning level for this turn. The runtime's default when left out. */
+  model?: ModelSetting | null;
 }
 
 export interface RuntimeAccount {
@@ -102,6 +112,8 @@ export interface AgentRuntime {
   /** Resumes a saved context. Throws ContextUnavailableError when it cannot. */
   resumeContext(contextId: string, options: ContextOptions): Promise<void>;
   runTurn(contextId: string, options: RunTurnOptions): Promise<TurnResult>;
+  /** The models runs can use. */
+  models(): Promise<ModelOption[]>;
   account(): Promise<RuntimeAccount>;
   usageLimits(): Promise<UsageLimits | null>;
   close(): Promise<void>;

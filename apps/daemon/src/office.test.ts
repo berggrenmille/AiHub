@@ -21,6 +21,44 @@ async function say(office: Office, text: string) {
   return office.store.getRun(response.run.id)!;
 }
 
+describe("What staff run on", () => {
+  it("runs each staff member on its model and records what every run used", async () => {
+    const { office, store, events } = startOffice();
+    // No choice yet: the office default, at its default reasoning, named on the turn.
+    let run = await say(office, "Good morning");
+    assert.deepEqual([run.model, run.effort], ["fake-standard", "low"]);
+    const finished = store.recentActivity(10).find((entry) => entry.runId === run.id && entry.kind === "run_finished");
+    assert.match(finished!.summary, /done, 1 turn, 12 tokens, on Fake Standard, low reasoning$/);
+
+    // The operator picks a model; a null level follows that model's default.
+    const vera = await office.setModel(CHIEF_OF_STAFF_ID, { model: "fake-light", effort: null });
+    assert.deepEqual([vera.model, vera.effort], ["fake-light", null]);
+    assert.ok(events.some((event) => event.type === "activity" && event.entry.summary === "The operator set Vera to run on Fake Light, medium reasoning"));
+    run = await say(office, "And now?");
+    assert.deepEqual([run.model, run.effort], ["fake-light", "medium"]);
+
+    await assert.rejects(() => office.setModel(CHIEF_OF_STAFF_ID, { model: "fake-light", effort: "high" }), /Fake Light has no "high" reasoning/);
+    await assert.rejects(() => office.setModel(CHIEF_OF_STAFF_ID, { model: "gpt-9", effort: null }), /There is no model "gpt-9"/);
+    await office.setModel(CHIEF_OF_STAFF_ID, { model: null, effort: "high" });
+    run = await say(office, "Think harder.");
+    assert.deepEqual([run.model, run.effort], ["fake-standard", "high"]);
+  });
+
+  it("follows the default when a chosen model is gone, and leaves it to the runtime without a list", async () => {
+    const { office, store } = startOffice();
+    store.setAgentModel(CHIEF_OF_STAFF_ID, { model: "fake-retired", effort: "high" });
+    let run = await say(office, "Hello");
+    assert.deepEqual([run.model, run.effort], ["fake-standard", "high"]);
+
+    const offline = new FakeRuntime();
+    offline.models = () => Promise.reject(new Error("offline"));
+    const other = startOffice(new Store(":memory:"), offline);
+    run = await say(other.office, "Hello");
+    assert.equal(run.state, "done");
+    assert.deepEqual([run.model, run.effort], ["fake-standard", null], "what the runtime said it used");
+  });
+});
+
 describe("Office", () => {
   it("starts with the Chief of Staff and its chat", () => {
     const { office } = startOffice();
@@ -77,6 +115,7 @@ describe("Office", () => {
     assert.deepEqual(context!.options.tools.map((tool) => tool.name), [
       "aihub_get_roster",
       "aihub_list_activity",
+      "aihub_list_models",
       "aihub_propose_supervisor",
       "aihub_propose_policy",
       "aihub_ask_colleague",

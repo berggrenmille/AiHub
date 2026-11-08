@@ -296,4 +296,12 @@ export const MIGRATIONS: string[] = [
     decided_at TEXT
   );
   `,
+
+  // v10: the model and reasoning level each staff member runs on, and what each run used.
+  `
+  ALTER TABLE agents ADD COLUMN model TEXT;
+  ALTER TABLE agents ADD COLUMN effort TEXT;
+  ALTER TABLE runs ADD COLUMN model TEXT;
+  ALTER TABLE runs ADD COLUMN effort TEXT;
+  `,
 ];

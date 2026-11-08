@@ -22,8 +22,12 @@ type Theme = "dark" | "light";
 type Drawer = "chat" | "activity" | "assignments" | "policy" | null;
 
 export function App() {
-  const { state, commands } = useOffice();
+  const { state, commands, models } = useOffice();
   const now = useNow(1000);
+  // The hiring card and the profile card name models, so ask for the list once. The profile card asks again if this fails.
+  useEffect(() => {
+    commands.loadModels().catch(() => undefined);
+  }, [commands]);
   const [view, setView] = useState<View>("office");
   const [drawer, setDrawer] = useState<Drawer>(null);
   // The chat the drawer shows. Null shows the Chief of Staff's.
@@ -221,6 +225,7 @@ export function App() {
               streaming={streaming}
               proposals={state.proposals}
               policies={state.policies}
+              models={models}
               readers={state.readers}
               scope={chatScope(partner.agent)}
               back={chief && chiefChat && chat.id !== chiefChat.id ? { name: chief.name, unread } : null}
@@ -272,6 +277,9 @@ export function App() {
           onOpenNote={openNote}
           onUpdate={(changes) => commands.updateAgent(profile.id, changes)}
           onSetWeb={(web) => commands.setWeb(profile.id, web)}
+          models={models}
+          onLoadModels={commands.loadModels}
+          onSetModel={(choice) => commands.setModel(profile.id, choice)}
           onRunRoutine={commands.runRoutine}
           onSetWeekends={commands.setWeekends}
         />

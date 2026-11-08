@@ -10,22 +10,25 @@ import type {
   Conversation,
   Item,
   MessageKind,
+  ModelChoice,
+  ModelOption,
   OfficeStats,
+  Responsibility,
   Run,
   RunKind,
-  Responsibility,
   RunState,
   RuntimeStatus,
   StaffProfile,
   StateSnapshot,
   WebGrant,
 } from "@aihub/shared";
-import { ConflictError, NotFoundError } from "./errors.ts";
+import { ConflictError, InvalidRequestError, NotFoundError } from "./errors.ts";
 import { EventBus } from "./events.ts";
 import { Gateway, type GatewayTool } from "./gateway/gateway.ts";
 import { OFFICE_TOOLS } from "./gateway/tools.ts";
 import { RunQueue } from "./queue.ts";
-import { ContextUnavailableError, type AgentRuntime, type ContextOptions, type TurnBlocker, type TurnResult } from "./runtime/types.ts";
+import { ContextUnavailableError, type AgentRuntime, type ContextOptions, type ModelSetting, type TurnBlocker, type TurnResult } from "./runtime/types.ts";
+import { describeModel, modelChoiceProblem, resolveModel } from "./staff/models.ts";
 import { DAILY_TURN_LIMIT, SUPERVISOR_LIMIT } from "./limits.ts";
 import { Notebook } from "./notes/notebook.ts";
 import { CHIEF_OF_STAFF, CHIEF_OF_STAFF_CONVERSATION_ID } from "./staff/chief-of-staff.ts";
@@ -39,7 +42,7 @@ import { proposePolicy } from "./staff/policy.ts";
 import type { SourceContext } from "./sources/source.ts";
 import type { Scheduler } from "./scheduler.ts";
 import { NO_PLATFORM, type Platform } from "./platform.ts";
-import type { ConversationRecord, Store } from "./store/store.ts";
+import type { AgentRecord, ConversationRecord, Store } from "./store/store.ts";
 import { addDays, isWeekday, localDate, scheduledTime, TIMEZONE, zonedInstant } from "./time.ts";
 
 export { ConflictError, InvalidRequestError, NotFoundError } from "./errors.ts";
@@ -87,6 +90,8 @@ interface ThreadInput {
 
 /** At most this many posted messages are brought into a turn at once. */
 const POSTED_LIMIT = 5;
+/** How long the runtime's list of models is kept before it is read again. */
+const MODEL_CATALOG_TTL_MS = 60 * 60_000;
 
 export interface TaskOutcome {
   run: Run;
@@ -141,6 +146,8 @@ export class Office {
   private readonly turnTimeoutMs: number | undefined;
   /** Contexts started or resumed by this daemon process, so they need no resume before a turn. */
   private readonly liveContexts = new Set<string>();
+  private catalog: { models: ModelOption[]; at: number } | null = null;
+  private catalogLoading: Promise<ModelOption[]> | null = null;
   private runtimeStatus: RuntimeStatus | null = null;
   /** Set by the daemon once it schedules routines. */
   scheduler: Scheduler | null = null;
@@ -163,6 +170,7 @@ export class Office {
       notebook: this.notebook,
       proposeSupervisor: (caller, proposal) => proposeSupervisor(this, caller, proposal),
       proposePolicy: (caller, input) => proposePolicy(this, caller, input),
+      models: () => this.models(),
       delegation: this.delegation,
       toolsmith: this.toolsmith,
       sourceContext: () => this.sourceContext(),
@@ -418,9 +426,11 @@ export class Office {
     this.setRunState(runId, "working");
     this.activity(agent.id, runId, "run_started", run.kind === "chat" ? `${agent.name} is replying in chat` : `${agent.name}: ${run.title}`);
 
+    const model = await this.modelFor(agent);
     const turn = (contextId: string, input: string): Promise<TurnResult> =>
       this.runtime.runTurn(contextId, {
         input,
+        model,
         timeoutMs: this.turnTimeoutMs,
         onToolCall: (call) => this.gateway.call(caller, call),
         onEvent: (event) => {
@@ -455,7 +465,7 @@ export class Office {
         context = taken(await this.rebuildContext(conversation, options, prompt, runId));
         result = await turn(context.contextId, context.input);
       }
-      this.publishRun(this.store.addTurn(runId, result.usage));
+      this.publishRun(this.store.addTurn(runId, result.usage, result.model));
       text = result.text;
       blocker = result.blocker ?? null;
       // The thread now holds what the turn took in, even if the turn failed partway.
@@ -530,6 +540,52 @@ export class Office {
     return agent;
   }
 
+  /** The models staff can run on, from the runtime. Read again after an hour. */
+  async models(): Promise<ModelOption[]> {
+    if (this.catalog && Date.now() - this.catalog.at < MODEL_CATALOG_TTL_MS) return this.catalog.models;
+    this.catalogLoading ??= this.runtime
+      .models()
+      .then((models) => {
+        this.catalog = { models, at: Date.now() };
+        return models;
+      })
+      .finally(() => (this.catalogLoading = null));
+    return this.catalogLoading;
+  }
+
+  /** The catalog as last read, for wording that can't wait for the runtime. */
+  knownModels(): ModelOption[] {
+    return this.catalog?.models ?? [];
+  }
+
+  /** The operator picks what a staff member runs on. Null follows the default. */
+  async setModel(agentId: string, choice: ModelChoice): Promise<Agent> {
+    const record = this.store.getAgentRecord(agentId);
+    if (!record || record.status !== "active") throw new NotFoundError(`No staff member ${agentId}`);
+    let catalog: ModelOption[];
+    try {
+      catalog = await this.models();
+    } catch (error) {
+      throw new ConflictError(`Codex's list of models isn't available right now: ${errorText(error)}`);
+    }
+    const problem = modelChoiceProblem(catalog, choice);
+    if (problem) throw new InvalidRequestError(problem);
+    this.store.setAgentModel(agentId, choice);
+    const agent = this.store.getAgent(agentId)!;
+    this.bus.publish({ type: "agent", agent });
+    const setting = resolveModel(choice, catalog)!;
+    const what = `${choice.model === null ? "the default model, " : ""}${describeModel(setting, catalog)}`;
+    this.activity(agentId, null, "model", `The operator set ${agent.name} to run on ${what}`);
+    this.notebook.journal(agentId, `The operator set me to run on ${what}.`);
+    return agent;
+  }
+
+  /** What an agent runs on, or null to leave it to the runtime when its catalog can't be read. */
+  private async modelFor(agent: AgentRecord): Promise<ModelSetting | null> {
+    const catalog = await this.models().catch(() => this.knownModels());
+    return resolveModel(agent, catalog);
+  }
+
   private sourceNamesOf(agentId: string): string[] {
     return this.store.connectionsOf(agentId).map((connection) => connection.label);
   }
@@ -558,6 +614,7 @@ ${task.instructions}`,
       const memory = this.notebook.memoryFor(agent.id);
       const result = await this.runtime.runTurn(contextId, {
         input: memory ? `${memory}\n\n${task.input}` : task.input,
+        model: await this.modelFor(agent),
         timeoutMs: task.timeoutMs ?? this.turnTimeoutMs,
         onToolCall: (call) => this.gateway.call(caller, call),
         onEvent: (event) => {
@@ -568,7 +625,7 @@ ${task.instructions}`,
           }
         },
       });
-      this.publishRun(this.store.addTurn(runId, result.usage));
+      this.publishRun(this.store.addTurn(runId, result.usage, result.model));
       text = result.text;
       blocker = result.blocker ?? null;
       if (result.status === "completed") this.finishRun(runId, "done");
@@ -672,8 +729,9 @@ ${task.instructions}`,
     const run = this.store.getRun(runId)!;
     this.notebook.journal(run.agentId, `${journal ?? `${run.title}.`}${state === "failed" ? " It failed." : ""}`, runId);
     const tokens = run.usage.inputTokens + run.usage.outputTokens;
+    const on = run.model ? `, on ${describeModel({ model: run.model, effort: run.effort }, this.knownModels())}` : "";
     const summary =
-      state === "done" ? `${run.title}: done, ${run.turns} turn${run.turns === 1 ? "" : "s"}, ${tokens} tokens` : `${run.title}: failed. ${error}`;
+      state === "done" ? `${run.title}: done, ${run.turns} turn${run.turns === 1 ? "" : "s"}, ${tokens} tokens${on}` : `${run.title}: failed. ${error}`;
     this.activity(run.agentId, runId, state === "done" ? "run_finished" : "run_failed", summary);
   }
 

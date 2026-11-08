@@ -22,6 +22,7 @@ const RUT = {
   profile: { name: "Rut", title: "Calendar Supervisor", description: "Watches the family calendar.", workingStyle: "Brief." },
   responsibility: { title: "Family calendar", scope: "School and activities.", standingInstructions: "Always flag pickups after 17:00." },
   source: { kind: "ics_file", label: "Family calendar" },
+  model: { id: "fake-light", effort: "low", why: "Reading one calendar is light work." },
   reason: "You asked for help with the family calendar.",
 };
 
@@ -87,14 +88,33 @@ describe("Recruitment", () => {
     assert.match(office.notebook.read("Staff/chief-of-staff/Vera.md")!.body, /Team: \[\[Rut\]\]/);
     const notice = store.recentMessages(1, CHIEF_OF_STAFF_CONVERSATION_ID)[0]!;
     assert.equal(notice.kind, "notice");
-    assert.match(notice.body, /Rut joined as Calendar Supervisor[\s\S]*Family calendar is connected/);
+    assert.match(notice.body, /Rut joined as Calendar Supervisor[\s\S]*Family calendar is connected[\s\S]*Rut runs on Fake Light, low reasoning\./);
+    assert.deepEqual([rut.model, rut.effort], ["fake-light", "low"], "what Vera picked");
 
-    // Rut's runs start from the profile and the operator's standing instructions.
-    await office.runTask({ agentId: "rut", kind: "report", title: "Check", instructions: "Check.", input: "Nothing." });
+    // Rut's runs start from the profile and the operator's standing instructions, on Rut's model.
+    const checked = await office.runTask({ agentId: "rut", kind: "report", title: "Check", instructions: "Check.", input: "Nothing." });
+    assert.deepEqual([checked.run.model, checked.run.effort], ["fake-light", "low"]);
     const context = [...runtime.contexts.values()].at(-1)!;
     assert.match(context.options.instructions, /^You are Rut, Calendar Supervisor[\s\S]*Your responsibility: Family calendar\. School and activities\.\nStanding instructions from the operator: Always flag pickups after 17:00\.\nYour sources, by the names aihub_read_source takes: Family calendar\./);
 
     await assert.rejects(() => approveProposal(office, proposal!.id, { sourcePath: CALENDAR }), ConflictError);
+  });
+
+  it("has Vera pick a model and reasoning level Codex offers", async () => {
+    const { store, office, propose } = setUp();
+    const caller = { agentId: CHIEF_OF_STAFF_ID, runId: store.createRun({ agentId: CHIEF_OF_STAFF_ID, kind: "chat", title: "Hire" }).id, profile: "conversation" as const };
+    const listed = await office.gateway.call(caller, { name: "aihub_list_models", arguments: {} });
+    assert.match(listed.text, /- fake-standard \(Fake Standard, the office default\): The everyday model\. Reasoning: low \(its default\), medium, high\./);
+    assert.match(listed.text, /- fake-light \(Fake Light\): .* Reasoning: low, medium \(its default\)\./);
+
+    assert.match((await propose({ ...RUT, model: { ...RUT.model, id: "gpt-9" } })).text, /There is no model "gpt-9"\. The models: fake-standard, fake-light\. See aihub_list_models\./);
+    assert.match((await propose({ ...RUT, model: { ...RUT.model, effort: "high" } })).text, /Fake Light has no "high" reasoning\. It has: low, medium\./);
+    const { model: _model, ...unpicked } = RUT;
+    assert.equal((await propose(unpicked)).ok, false, "a supervisor needs a model picked");
+    assert.equal(store.listProposals().length, 0);
+
+    assert.equal((await propose()).ok, true);
+    assert.deepEqual(store.listProposals()[0]?.payload.model, RUT.model);
   });
 
   it("hires for a folder of notes, reading the folder before anyone joins", async () => {
@@ -131,6 +151,7 @@ describe("Recruitment", () => {
       profile: { name: "Nora", title: "News Supervisor", description: "Briefs the operator on world news.", workingStyle: "" },
       responsibility: { title: "World news", scope: "Politics and economics.", standingInstructions: "" },
       source: null,
+      model: { id: "fake-standard", effort: "medium", why: "Weighing the news takes some judgment." },
       reason: "You asked for a daily news summary.",
     };
     assert.match((await propose(nora)).text, /needs something to check: a source on this PC, or web search/);
@@ -142,6 +163,7 @@ describe("Recruitment", () => {
 
     await approveProposal(office, proposal!.id);
     assert.deepEqual(store.getAgent("nora")?.web, { sites: ["www.reuters.com"] });
+    assert.deepEqual([store.getAgent("nora")?.model, store.getAgent("nora")?.effort], ["fake-standard", "medium"]);
     assert.deepEqual(store.connectionsOf("nora"), []);
     assert.match(store.recentMessages(1, CHIEF_OF_STAFF_CONVERSATION_ID)[0]!.body, /Nora joined as News Supervisor and reports in the next morning briefing\. Nora has web search on www\.reuters\.com\./);
     await office.runTask({ agentId: "nora", kind: "report", title: "Check", instructions: "Check.", input: "Nothing." });

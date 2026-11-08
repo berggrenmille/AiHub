@@ -317,6 +317,23 @@ describe("HTTP server: profiles and notes", () => {
     assert.equal((await app.inject({ url: "/api/state", headers: PAGE })).json().policies.length, 3);
   });
 
+  it("lists the models and sets what a staff member runs on", async () => {
+    ({ app } = await server());
+    const models = await app.inject({ url: "/api/models", headers: PAGE });
+    assert.deepEqual(models.json().models.map((model: { id: string }) => model.id), ["fake-standard", "fake-light"]);
+
+    const put = (payload: object, id = "chief-of-staff") => app!.inject({ method: "PUT", url: `/api/agents/${id}/model`, headers: PAGE, payload });
+    const set = await put({ model: "fake-light", effort: "low" });
+    assert.equal(set.statusCode, 200);
+    assert.deepEqual([set.json().model, set.json().effort], ["fake-light", "low"]);
+    assert.equal((await put({ model: "fake-light", effort: "high" })).statusCode, 400);
+    assert.equal((await put({ model: "fake-light" })).statusCode, 400, "both fields, so a choice is never half-made");
+    assert.equal((await put({ model: null, effort: null }, "nobody")).statusCode, 404);
+    assert.equal((await app.inject({ method: "PUT", url: "/api/agents/chief-of-staff/model", headers: { ...PAGE, origin: "http://evil.example" }, payload: { model: null, effort: null } })).statusCode, 403);
+    const reset = await put({ model: null, effort: null });
+    assert.deepEqual([reset.json().model, reset.json().effort], [null, null]);
+  });
+
   it("reads and writes notes by their vault path", async () => {
     ({ app } = await server());
     const url = `/api/notes/${encodeURIComponent("Office/Operator preferences.md")}`;

@@ -6,6 +6,8 @@ import type {
   DynamicToolCallResponse,
   GetAccountRateLimitsResponse,
   GetAccountResponse,
+  Model,
+  ModelListResponse,
   ThreadItem,
   ThreadResumeResponse,
   ThreadStartResponse,
@@ -14,7 +16,7 @@ import type {
   TurnStartResponse,
 } from "@aihub/codex-protocol/v2";
 import { JsonRpcConnection, type ParamsOf, type ServerRequestReply } from "./json-rpc.ts";
-import type { RunTurnOptions, TurnBlocker, TurnResult, TurnUsage, WebAccess } from "./types.ts";
+import type { ModelOption, RunTurnOptions, TurnBlocker, TurnResult, TurnUsage, WebAccess } from "./types.ts";
 
 // Codex features that give a run a way around the gateway: ChatGPT apps (the codex_apps MCP server,
 // which includes web search), browser and computer use, shell and file-viewing tools, and anything
@@ -37,6 +39,10 @@ export const LOCKED_DOWN_FEATURES = [
   "view_image",
 ];
 
+// "ultra" reasoning hands work to sub-agents Codex starts itself. AiHub turns that off (multi_agent
+// above) and delegates through its own staff, so it never offers the level.
+const LEVELS_NOT_OFFERED = ["ultra"];
+
 export interface AppServerCommand {
   command: string;
   args: string[];
@@ -58,6 +64,8 @@ interface ActiveTurn {
   messages: Array<{ text: string; final: boolean }>;
   /** Thread token total before this turn's first model request. */
   baseline: TokenUsageBreakdown | null;
+  /** What the turn runs on. */
+  model: TurnResult["model"];
   latest: TokenUsageBreakdown | null;
   finish: (turn: Pick<Turn, "status" | "error">) => void;
 }
@@ -73,6 +81,8 @@ export class AppServerProcess {
   private readonly activeTurns = new Map<string, ActiveTurn>();
   /** Last token total Codex reported for each thread, to measure the next turn against. */
   private readonly threadTotals = new Map<string, TokenUsageBreakdown>();
+  /** What each thread runs on: from its start or resume, then from each turn that names a model. */
+  private readonly threadModels = new Map<string, NonNullable<TurnResult["model"]>>();
   private exitReason: string | null = null;
 
   private constructor(
@@ -125,16 +135,30 @@ export class AppServerProcess {
       ephemeral,
       dynamicTools: tools as ParamsOf<"thread/start">["dynamicTools"],
     })) as ThreadStartResponse;
+    if (response.model) this.threadModels.set(response.thread.id, { model: response.model, effort: response.reasoningEffort ?? null });
     return response.thread.id;
   }
 
   /** Dynamic tools are saved with the thread, so a resumed thread keeps the tools it started with. */
   async resumeThread(threadId: string, settings: ThreadSettings): Promise<void> {
-    (await this.connection.request("thread/resume", {
+    const response = (await this.connection.request("thread/resume", {
       threadId,
       ...lockedDownThread(settings),
       excludeTurns: true,
     })) as ThreadResumeResponse;
+    if (response.model) this.threadModels.set(threadId, { model: response.model, effort: response.reasoningEffort ?? null });
+  }
+
+  /** The models this sign-in offers, with the reasoning levels AiHub allows. */
+  async models(): Promise<ModelOption[]> {
+    const models: ModelOption[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = (await this.connection.request("model/list", { cursor, includeHidden: false })) as ModelListResponse;
+      models.push(...page.data.map(modelOption));
+      cursor = page.nextCursor;
+    } while (cursor);
+    return models;
   }
 
   async runTurn(threadId: string, options: RunTurnOptions): Promise<TurnResult> {
@@ -147,6 +171,7 @@ export class AppServerProcess {
       options,
       messages: [],
       baseline: this.threadTotals.get(threadId) ?? null,
+      model: options.model ?? this.threadModels.get(threadId) ?? null,
       latest: null,
       finish,
     };
@@ -154,11 +179,14 @@ export class AppServerProcess {
 
     const timeoutMs = options.timeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
     try {
+      // The model and level apply from this turn on, so a thread follows a staff member's new choice.
       const { turn } = (await this.connection.request("turn/start", {
         threadId,
         input: [{ type: "text", text: options.input, text_elements: [] }],
+        ...(options.model ? { model: options.model.model, effort: options.model.effort } : {}),
       })) as TurnStartResponse;
       active.turnId = turn.id;
+      if (options.model) this.threadModels.set(threadId, options.model);
 
       let outcome = await Promise.race([finished, delay(timeoutMs)]);
       if (outcome === "timeout") {
@@ -271,6 +299,19 @@ export class AppServerProcess {
   }
 }
 
+function modelOption(model: Model): ModelOption {
+  return {
+    id: model.model,
+    name: model.displayName,
+    description: model.description,
+    efforts: model.supportedReasoningEfforts
+      .filter((option) => !LEVELS_NOT_OFFERED.includes(option.reasoningEffort))
+      .map((option) => ({ effort: option.reasoningEffort, description: option.description })),
+    defaultEffort: model.defaultReasoningEffort,
+    isDefault: model.isDefault,
+  };
+}
+
 function lockedDownThread(settings: ThreadSettings) {
   return {
     cwd: settings.cwd,
@@ -294,7 +335,7 @@ function recordItem(active: ActiveTurn, item: ThreadItem) {
 
 function result(active: ActiveTurn, status: TurnResult["status"], error: string | null, blocker: TurnBlocker | null = null): TurnResult {
   const final = active.messages.findLast((message) => message.final) ?? active.messages.at(-1);
-  return { status, text: final?.text ?? "", error, usage: usageOf(active), blocker };
+  return { status, text: final?.text ?? "", error, usage: usageOf(active), blocker, model: active.model };
 }
 
 /** Sorts a failed turn's cause into what waiting may fix, or null when it won't. */

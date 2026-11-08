@@ -4,6 +4,7 @@ import { readSource } from "../sources/collect.ts";
 import { STAFF_READER_PREFIX } from "../sources/folder.ts";
 import { BUILT_IN_READERS, isBuiltInReader } from "../sources/readers.ts";
 import { READER_CODE_LIMIT } from "../staff/toolsmith.ts";
+import { catalogText, modelChoiceProblem } from "../staff/models.ts";
 import { MAX_SITES, normalizeSites } from "../staff/web.ts";
 import { POLICY_LIMIT } from "../staff/policy.ts";
 import { defineTool, type GatewayTool } from "./gateway.ts";
@@ -234,6 +235,14 @@ export const proposeSupervisorTool = defineTool({
         .nullable()
         .default(null)
         .describe("Web search, for public information such as news or prices. Search answers from an index and opens no live pages. Null for none."),
+      model: z
+        .object({
+          id: z.string().trim().min(1).max(80).describe("A model from aihub_list_models."),
+          effort: z.string().trim().min(1).max(20).describe("A reasoning level that model offers."),
+          why: z.string().trim().min(1).max(200).describe("Why it fits the work, in a sentence the operator reads on the card."),
+        })
+        .strict()
+        .describe("What the supervisor runs on. Pick the lightest model and reasoning that do the work well: every run uses the operator's plan."),
       reason: z.string().trim().min(1).max(300).describe("Why, in the operator's own terms."),
     })
     .strict(),
@@ -241,8 +250,8 @@ export const proposeSupervisorTool = defineTool({
   profiles: ["conversation"],
   // Also when a toolsmith's reader comes back: proposing only puts a card in front of the operator.
   kinds: ["chat", "follow_up"],
-  run: (input, { caller, proposeSupervisor, store }) => {
-    if (!proposeSupervisor) throw new Error("Recruiting isn't available in this office");
+  run: async (input, { caller, proposeSupervisor, store, models }) => {
+    if (!proposeSupervisor || !models) throw new Error("Recruiting isn't available in this office");
     const { expiresInDays, ...duty } = input.responsibility;
     const expiresAt = expiresInDays ? new Date(Date.now() + expiresInDays * 86_400_000).toISOString() : null;
     let { source } = input;
@@ -262,9 +271,27 @@ export const proposeSupervisorTool = defineTool({
     // A supervisor reports at every briefing, so it needs something to check.
     if (!source && !input.web) throw new Error("A supervisor needs something to check: a source on this PC, or web search for public information.");
     const web = input.web ? { sites: normalizeSites(input.web.sites) } : null;
-    proposeSupervisor(caller, { profile: input.profile, responsibility: { ...duty, expiresAt }, source, web, reason: input.reason });
+    const problem = modelChoiceProblem(await models(), { model: input.model.id, effort: input.model.effort });
+    if (problem) throw new Error(`${problem} See aihub_list_models.`);
+    proposeSupervisor(caller, { profile: input.profile, responsibility: { ...duty, expiresAt }, source, web, model: input.model, reason: input.reason });
     const where = source ? ` and picks the ${source.kind === "folder" ? "folder" : "file"} there` : "";
     return `Proposal recorded. The operator sees an approval card in this chat${where}. Tell them in a sentence what you proposed and why.`;
+  },
+});
+
+// What staff run on (DESIGN.md › Staff and work model): the Chief of Staff picks for each supervisor she proposes.
+export const listModelsTool = defineTool({
+  name: "aihub_list_models",
+  description: "List the models staff can run on and the reasoning levels each offers. Use it to pick what a supervisor you propose runs on.",
+  input: z.object({}).strict(),
+  roles: ["chief_of_staff"],
+  profiles: ["conversation"],
+  kinds: ["chat", "follow_up"],
+  run: async (_input, { models }) => {
+    if (!models) throw new Error("The list of models isn't available in this office");
+    const catalog = await models();
+    if (!catalog.length) throw new Error("Codex offers no models right now.");
+    return `${catalogText(catalog)}\n\nMore reasoning thinks longer and uses more of the operator's plan on every run. Staff with no choice of their own run on the office default.`;
   },
 });
 
@@ -500,6 +527,7 @@ export const submitReader = defineTool({
 export const OFFICE_TOOLS: GatewayTool[] = [
   getRoster,
   listActivity,
+  listModelsTool,
   proposeSupervisorTool,
   proposePolicyTool,
   askColleague,

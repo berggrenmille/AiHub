@@ -1,9 +1,10 @@
 import { useId, useRef, useState, type FormEvent } from "react";
-import type { Proposal, ProposedSource, SourcePreview, StaffReader } from "@aihub/shared";
+import type { ModelOption, Proposal, ProposedSource, SourcePreview, StaffReader } from "@aihub/shared";
 import { errorText } from "../api.ts";
 import { lookFor } from "../lib/avatar.ts";
 import { approvalGate, describeSource, patternOf, previewRows, READER_STATUS_LABELS, readerOf, type PreviewState } from "../lib/sources.ts";
 import { formatDateTime } from "../format.ts";
+import { describeModel } from "../lib/models.ts";
 import { Portrait } from "./office/Figure.tsx";
 import { Icon } from "./Icon.tsx";
 
@@ -17,6 +18,8 @@ interface ProposalCardProps {
   /** The chat message that carried the card. */
   intro: string;
   readers: StaffReader[];
+  /** For naming the model the proposal picks. */
+  models: ModelOption[] | null;
   onPreview(sourcePath: string): Promise<SourcePreview>;
   onApprove(sourcePath?: string): Promise<void>;
   onDecline(): Promise<void>;
@@ -28,7 +31,7 @@ const STATUS_LABELS: Record<Proposal["status"], string> = {
   declined: "Declined",
 };
 
-export function ProposalCard({ proposal, intro, readers, onPreview, onApprove, onDecline }: ProposalCardProps) {
+export function ProposalCard({ proposal, intro, readers, models, onPreview, onApprove, onDecline }: ProposalCardProps) {
   const [path, setPath] = useState("");
   const [busy, setBusy] = useState<"approve" | "decline" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +49,7 @@ export function ProposalCard({ proposal, intro, readers, onPreview, onApprove, o
     );
   }
 
-  const { profile, responsibility, source, web, reason } = proposal.payload;
+  const { profile, responsibility, source, web, model, reason } = proposal.payload;
   const pending = proposal.status === "pending";
   const pathNeeded = pending && source !== null;
   const trimmed = path.trim();
@@ -160,6 +163,15 @@ export function ProposalCard({ proposal, intro, readers, onPreview, onApprove, o
           </div>
         )}
         {source?.kind === "folder" && <BuiltInReaderFact source={source} readers={readers} />}
+        {model && (
+          <div>
+            <dt>Runs on</dt>
+            <dd>
+              {describeModel(model.id, model.effort, models)}
+              <span className="block muted">{model.why} You can change it on the profile card later.</span>
+            </dd>
+          </div>
+        )}
         <div>
           <dt>Why</dt>
           <dd>{reason}</dd>

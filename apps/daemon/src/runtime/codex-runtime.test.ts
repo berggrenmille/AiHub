@@ -102,6 +102,40 @@ describe("CodexRuntime", () => {
     assert.deepEqual(result.usage, { inputTokens: 100, cachedInputTokens: 40, outputTokens: 10 });
   });
 
+  it("lists the models, leaving out the level that starts Codex's own sub-agents", async () => {
+    assert.deepEqual(await runtime.models(), [
+      {
+        id: "gpt-fake",
+        name: "GPT-FAKE",
+        description: "The gpt-fake model.",
+        efforts: [
+          { effort: "low", description: "low reasoning" },
+          { effort: "high", description: "high reasoning" },
+        ],
+        defaultEffort: "low",
+        isDefault: true,
+      },
+      { id: "gpt-fake-mini", name: "GPT-FAKE-MINI", description: "The gpt-fake-mini model.", efforts: [{ effort: "medium", description: "medium reasoning" }], defaultEffort: "medium", isDefault: false },
+    ]);
+    assert.deepEqual(requests("model/list").map((request) => request.params.cursor ?? null), [null, "page-2"]);
+  });
+
+  it("names the model and reasoning level on the turn, and reports what the turn ran on", async () => {
+    const contextId = await runtime.startContext(conversation);
+    const plain = await runtime.runTurn(contextId, { input: "hello", onToolCall: noTools });
+    assert.deepEqual(plain.model, { model: "gpt-fake", effort: null }, "the thread's own model");
+
+    const chosen = await runtime.runTurn(contextId, { input: "hello", onToolCall: noTools, model: { model: "gpt-fake-mini", effort: "medium" } });
+    assert.deepEqual(chosen.model, { model: "gpt-fake-mini", effort: "medium" });
+    const [first, second] = requests("turn/start");
+    assert.equal(first?.params.model, undefined);
+    assert.deepEqual([second?.params.model, second?.params.effort], ["gpt-fake-mini", "medium"]);
+
+    // The choice stays with the thread for a turn that names none.
+    const after = await runtime.runTurn(contextId, { input: "hello", onToolCall: noTools });
+    assert.deepEqual(after.model, { model: "gpt-fake-mini", effort: "medium" });
+  });
+
   it("routes tool calls through the handler and returns the final answer", async () => {
     const contextId = await runtime.startContext(conversation);
     const calls: ToolCall[] = [];

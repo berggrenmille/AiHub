@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from "react";
-import type { Agent, ChatMessage, Conversation, PolicyVersion, Proposal, Run, SourcePreview, StaffReader } from "@aihub/shared";
+import type { Agent, ChatMessage, Conversation, ModelOption, PolicyVersion, Proposal, Run, SourcePreview, StaffReader } from "@aihub/shared";
 import { errorText } from "../api.ts";
 import { lookFor } from "../lib/avatar.ts";
 import { formatClock, formatDateTime, formatLongDate, STATE_LABELS, toneOf } from "../format.ts";
@@ -27,6 +27,8 @@ interface ChatDrawerProps {
   streaming: StreamingReply[];
   proposals: Proposal[];
   policies: PolicyVersion[];
+  /** The models Codex offers, for naming the one a proposal picks. */
+  models: ModelOption[] | null;
   readers: StaffReader[];
   /** What the staff member answers from, for anyone but the Chief of Staff. */
   scope: string | null;
@@ -159,6 +161,7 @@ export function ChatDrawer(props: ChatDrawerProps) {
               proposal={message.kind === "proposal" ? props.proposals.find((proposal) => proposal.id === message.refId) : undefined}
               policy={message.kind === "policy" ? props.policies.find((policy) => String(policy.id) === message.refId) : undefined}
               policies={props.policies}
+              models={props.models}
               readers={props.readers}
               onPreview={props.onPreview}
               onApprove={props.onApprove}
@@ -231,6 +234,7 @@ interface MessageViewProps {
   proposal: Proposal | undefined;
   policy: PolicyVersion | undefined;
   policies: PolicyVersion[];
+  models: ModelOption[] | null;
   readers: StaffReader[];
   onPreview(proposalId: string, sourcePath: string): Promise<SourcePreview>;
   onApprove(proposalId: string, sourcePath?: string): Promise<void>;
@@ -267,6 +271,7 @@ function MessageView(props: MessageViewProps) {
           proposal={proposal}
           intro={message.body}
           readers={readers}
+          models={props.models}
           onPreview={(sourcePath) => onPreview(message.refId ?? "", sourcePath)}
           onApprove={(sourcePath) => onApprove(message.refId ?? "", sourcePath)}
           onDecline={() => onDecline(message.refId ?? "")}

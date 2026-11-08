@@ -3,6 +3,8 @@ import type {
   ActivityEntry,
   Agent,
   Assignment,
+  ModelChoice,
+  ModelOption,
   NoteSummary,
   Responsibility,
   Routine,
@@ -32,6 +34,8 @@ import { AssignmentList } from "./Assignments.tsx";
 import { Icon } from "./Icon.tsx";
 import { Portrait } from "./office/Figure.tsx";
 import { StateBadge } from "./StateBadge.tsx";
+import { ModelSetting } from "./ModelSetting.tsx";
+import { modelName } from "../lib/models.ts";
 
 // A staff member's profile card (DESIGN.md › The office experience): who they are, where they sit
 // in the team, what they own, how far they've come, what they've done lately, and their notes.
@@ -56,6 +60,10 @@ interface ProfileCardProps {
   onUpdate(changes: UpdateAgentRequest): Promise<void>;
   /** Gives web search, or with null takes it away. */
   onSetWeb(web: WebGrant | null): Promise<void>;
+  /** The models Codex offers, or null until loaded. */
+  models: ModelOption[] | null;
+  onLoadModels(): Promise<unknown>;
+  onSetModel(choice: ModelChoice): Promise<void>;
   onRunRoutine(routineId: string): Promise<void>;
   onSetWeekends(routineId: string, weekends: boolean): Promise<void>;
 }
@@ -272,6 +280,19 @@ export function ProfileCard(props: ProfileCardProps) {
             <WebAccess key={agent.id} agent={agent} onSet={props.onSetWeb} />
           </section>
 
+          <section className="profile-section" aria-label="Model">
+            <h3>Model</h3>
+            <ModelSetting
+              key={agent.id}
+              agent={agent}
+              models={props.models}
+              lastRun={runsOf(agent.id, props.runs).find((run) => run.model !== null) ?? null}
+              now={now}
+              onLoad={props.onLoadModels}
+              onSet={props.onSetModel}
+            />
+          </section>
+
           {authored.length > 0 && (
             <section className="profile-section" aria-label={authored.length === 1 ? "Reader" : "Readers"}>
               <h3>{authored.length === 1 ? "Reader" : "Readers"}</h3>
@@ -299,7 +320,9 @@ export function ProfileCard(props: ProfileCardProps) {
                       {run.error && <span className="block small tone-text-failed">{run.error}</span>}
                     </span>
                     <span className="muted small" title={formatDateTime(run.startedAt ?? run.queuedAt)}>
-                      {RUN_KIND_LABELS[run.kind]} · {run.turns} turn{run.turns === 1 ? "" : "s"} · {formatAgo(run.finishedAt ?? run.startedAt ?? run.queuedAt, now)}
+                      {RUN_KIND_LABELS[run.kind]} · {run.turns} turn{run.turns === 1 ? "" : "s"}
+                      {run.model && ` · ${modelName(run.model, props.models)}${run.effort ? `, ${run.effort}` : ""}`} ·{" "}
+                      {formatAgo(run.finishedAt ?? run.startedAt ?? run.queuedAt, now)}
                     </span>
                   </li>
                 ))}

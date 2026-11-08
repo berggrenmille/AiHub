@@ -85,11 +85,11 @@ flowchart LR
 
 | Record | Purpose |
 | --- | --- |
-| Agent | Persistent identity: name, title, job description, working style, and appearance. Also its role, manager, charter, run profile, and lifecycle state. |
+| Agent | Persistent identity: name, title, job description, working style, and appearance. Also its role, manager, charter, run profile, model and reasoning level, and lifecycle state. |
 | Responsibility | An ongoing or time-bounded outcome with an owner, scope, initiative policy, reporting rules, success criteria, and optional expiry. |
 | Routine | Trigger, owner, instructions, delivery destination, turn budget, and pause state. |
 | Assignment | Bounded work with an owner, inputs, expected result, and optional parent assignment and review requirement. A question to a colleague is an assignment too. |
-| Run | An execution attempt with status, timestamps, turn and usage counts, and failure details. |
+| Run | An execution attempt with status, timestamps, turn and usage counts, the model and reasoning level it ran on, and failure details. |
 | Result | A report for an assignment with source references, freshness, and decisions needed. It references items rather than restating them. |
 | Item | A finding with a stable identity from its source, such as a mail thread ID or a calendar event ID and version. It has a state (new, open, resolved, or dismissed), first-seen and last-reported times, and an owning responsibility. |
 | Cursor | The last position a responsibility has checked on a connection, so collectors fetch only what changed. |
@@ -101,6 +101,10 @@ flowchart LR
 | Note | A markdown file in the notes vault, written by a staff member, the operator, or AiHub, and linked to other notes with `[[wikilinks]]`. |
 
 In V1 each supervisor owns exactly one responsibility. The roster shows it as a staff member; the engine treats it as that responsibility's owner. The Chief of Staff owns the briefing and any mandates.
+
+### Models and reasoning
+
+Each staff member runs on a model and a reasoning level from the runtime's catalog, which for Codex is the list its sign-in offers. Staff with no choice of their own run on the office default, the model the runtime marks as its default, at that model's default reasoning. AiHub resolves the choice and names the model and level on every turn, so a chat thread follows a change from its next turn and every run records what it ran on. A choice the catalog no longer offers falls back to the default. When the Chief of Staff proposes a supervisor, she reads the catalog with `aihub_list_models` and picks the lightest model and reasoning that fit the work, with a reason the approval card shows; every run uses the operator's plan, so heavier choices cost usage on every run. A worker starts on its manager's choice. The operator changes any staff member's model and level on the profile card. Codex's "ultra" level is never offered: it starts Codex's own sub-agents, which AiHub turns off and does through its own staff.
 
 ### Recruitment and delegation
 

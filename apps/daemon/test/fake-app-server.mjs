@@ -146,7 +146,7 @@ function handle(message) {
       const threadId = randomUUID();
       threads.set(threadId, { total: usage(0, 0, 0) });
       if (!params.ephemeral) save(threadId);
-      return send({ id, result: { thread: { id: threadId } } });
+      return send({ id, result: { thread: { id: threadId }, model: params.model ?? "gpt-fake", reasoningEffort: null } });
     }
     case "thread/resume": {
       const total = savedThreads[params.threadId];
@@ -165,6 +165,22 @@ function handle(message) {
       return started.then(() => {
         if (savedThreads[threadId]) save(threadId);
       });
+    }
+    case "model/list": {
+      // Two pages, so the client has to follow the cursor.
+      const effort = (reasoningEffort) => ({ reasoningEffort, description: `${reasoningEffort} reasoning` });
+      const model = (name, isDefault, efforts) => ({
+        id: name,
+        model: name,
+        displayName: name.toUpperCase(),
+        description: `The ${name} model.`,
+        hidden: false,
+        supportedReasoningEfforts: efforts.map(effort),
+        defaultReasoningEffort: efforts[0],
+        isDefault,
+      });
+      if (!params.cursor) return send({ id, result: { data: [model("gpt-fake", true, ["low", "high", "ultra"])], nextCursor: "page-2" } });
+      return send({ id, result: { data: [model("gpt-fake-mini", false, ["medium"])], nextCursor: null } });
     }
     case "turn/interrupt": {
       send({ id, result: {} });

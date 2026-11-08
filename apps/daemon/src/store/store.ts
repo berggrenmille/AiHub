@@ -53,10 +53,14 @@ export interface AgentRecord extends StaffProfile {
   avatar: string;
   status: "active" | "archived";
   hiredAt: string;
+  /** The model it runs on. Null follows the office default. */
+  model: string | null;
+  /** Its reasoning level. Null follows the model's default. */
+  effort: string | null;
 }
 
-export type NewAgent = Omit<AgentRecord, "status" | "hiredAt" | "avatar" | "title" | "description" | "workingStyle"> &
-  Partial<Pick<AgentRecord, "avatar" | "title" | "description" | "workingStyle">>;
+export type NewAgent = Omit<AgentRecord, "status" | "hiredAt" | "avatar" | "title" | "description" | "workingStyle" | "model" | "effort"> &
+  Partial<Pick<AgentRecord, "avatar" | "title" | "description" | "workingStyle" | "model" | "effort">>;
 
 export interface ConversationRecord extends Conversation {
   /** The runtime context that caches this conversation. Disposable: it can be rebuilt from messages. */
@@ -119,8 +123,8 @@ export class Store {
   upsertAgent(agent: NewAgent) {
     this.db
       .prepare(
-        `INSERT INTO agents (id, name, title, description, working_style, avatar, role, manager_id, profile, charter, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+        `INSERT INTO agents (id, name, title, description, working_style, avatar, role, manager_id, profile, charter, status, created_at, model, effort)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET role = excluded.role, manager_id = excluded.manager_id,
            profile = excluded.profile, charter = excluded.charter,
            title = CASE WHEN agents.title = '' THEN excluded.title ELSE agents.title END,
@@ -139,7 +143,14 @@ export class Store {
         agent.profile,
         agent.charter,
         this.timestamp(),
+        agent.model ?? null,
+        agent.effort ?? null,
       );
+  }
+
+  /** The operator picks the model and reasoning level a staff member runs on. */
+  setAgentModel(id: string, choice: { model: string | null; effort: string | null }) {
+    this.db.prepare("UPDATE agents SET model = ?, effort = ? WHERE id = ?").run(choice.model, choice.effort, id);
   }
 
   /** The operator edits a staff member's profile. */
@@ -346,7 +357,8 @@ export class Store {
   }
 
   /** Records one model turn and what it used. */
-  addTurn(id: string, usage: Usage | null): Run {
+  /** Counts a turn and its usage, and records the model it ran on when the runtime said. */
+  addTurn(id: string, usage: Usage | null, model?: { model: string; effort: string | null } | null): Run {
     this.db
       .prepare(
         `UPDATE runs SET turns = turns + 1, input_tokens = input_tokens + ?,
@@ -354,6 +366,7 @@ export class Store {
          WHERE id = ?`,
       )
       .run(usage?.inputTokens ?? 0, usage?.cachedInputTokens ?? 0, usage?.outputTokens ?? 0, id);
+    if (model) this.db.prepare("UPDATE runs SET model = ?, effort = ? WHERE id = ?").run(model.model, model.effort, id);
     return this.getRun(id)!;
   }
 
@@ -1046,6 +1059,8 @@ function toAgentRecord(row: Row): AgentRecord {
     charter: String(row.charter),
     status: row.status as AgentRecord["status"],
     hiredAt: String(row.created_at),
+    model: (row.model as string | null) ?? null,
+    effort: (row.effort as string | null) ?? null,
   };
 }
 
@@ -1094,6 +1109,8 @@ function toRun(row: Row): Run {
     queuedAt: String(row.queued_at),
     startedAt: row.started_at as string | null,
     finishedAt: row.finished_at as string | null,
+    model: (row.model as string | null) ?? null,
+    effort: (row.effort as string | null) ?? null,
   };
 }
 

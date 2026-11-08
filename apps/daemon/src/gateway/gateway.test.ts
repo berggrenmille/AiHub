@@ -27,6 +27,7 @@ describe("Gateway", () => {
     assert.deepEqual(gateway.specsFor(chief).map((tool) => tool.name), [
       "aihub_get_roster",
       "aihub_list_activity",
+      "aihub_list_models",
       "aihub_propose_supervisor",
       "aihub_propose_policy",
       "aihub_ask_colleague",

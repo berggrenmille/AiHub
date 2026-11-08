@@ -60,6 +60,7 @@ const ACTIVITY_TONES: Record<ActivityKind, Tone> = {
   worker: "waiting",
   web: "idle",
   policy: "waiting",
+  model: "idle",
 };
 
 export function activityTone(kind: ActivityKind): Tone {

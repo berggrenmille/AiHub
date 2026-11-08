@@ -2,6 +2,7 @@ import {
   ContextUnavailableError,
   type AgentRuntime,
   type ContextOptions,
+  type ModelOption,
   type RunTurnOptions,
   type RuntimeAccount,
   type TurnResult,
@@ -95,6 +96,7 @@ async function delegate(input: string, options: RunTurnOptions): Promise<string 
         profile: { name, title: `${reader} Supervisor`, description: `Watches the ${reader} folder and reports what stands out.`, workingStyle: "Brief." },
         responsibility: { title: reader, scope: `Files in the ${reader} folder.` },
         source: { kind: "folder", label: reader, reader },
+        model: { id: "fake-light", effort: "medium", why: "Reading one folder is light work." },
         reason: "The reader is ready, so someone can watch the folder.",
       });
       if (proposed.ok) return `The ${reader} reader is ready. I've proposed ${name} to watch the folder: pick it on the card, preview what the reader finds, and approve.`;
@@ -171,6 +173,7 @@ async function delegate(input: string, options: RunTurnOptions): Promise<string 
         profile: { name, title: `${label} Supervisor`, description: `Watches the ${label} folder and reports what's new.`, workingStyle: "Brief." },
         responsibility: { title: label, scope: `Files in the ${label} folder.` },
         source: { kind: "folder", label, reader },
+        model: { id: "fake-light", effort: "medium", why: "Watching a folder is light work." },
         reason: `You asked for someone to watch ${label}.`,
       });
       if (proposed.ok) return `I've proposed ${name} to watch ${label}, reading the files as ${reader}. Pick the folder on the card and approve.`;
@@ -185,6 +188,33 @@ async function delegate(input: string, options: RunTurnOptions): Promise<string 
   return null;
 }
 
+/** The models a fake office offers: a default and a lighter one. */
+export const FAKE_MODELS: ModelOption[] = [
+  {
+    id: "fake-standard",
+    name: "Fake Standard",
+    description: "The everyday model.",
+    efforts: [
+      { effort: "low", description: "Fast responses with lighter reasoning" },
+      { effort: "medium", description: "Balances speed and reasoning depth" },
+      { effort: "high", description: "Greater reasoning depth for complex problems" },
+    ],
+    defaultEffort: "low",
+    isDefault: true,
+  },
+  {
+    id: "fake-light",
+    name: "Fake Light",
+    description: "Fast and affordable, for easier tasks.",
+    efforts: [
+      { effort: "low", description: "Fast responses with lighter reasoning" },
+      { effort: "medium", description: "Balances speed and reasoning depth" },
+    ],
+    defaultEffort: "medium",
+    isDefault: false,
+  },
+];
+
 /** An in-process AgentRuntime for tests and UI work. Records every call it receives. */
 export class FakeRuntime implements AgentRuntime {
   readonly contexts = new Map<string, { options: ContextOptions & { ephemeral?: boolean }; inputs: string[] }>();
@@ -193,6 +223,8 @@ export class FakeRuntime implements AgentRuntime {
   /** What account() and usageLimits() report; tests change them. */
   signedIn = true;
   usage: UsageLimits | null = { usedPercent: 10, resetsAt: null };
+  /** What models() reports; tests change it. */
+  catalog: ModelOption[] = FAKE_MODELS;
   private nextContext = 1;
 
   constructor(private readonly prefix = "ctx") {}
@@ -217,7 +249,13 @@ export class FakeRuntime implements AgentRuntime {
     const context = this.contexts.get(contextId);
     if (!context) throw new ContextUnavailableError(contextId, "not loaded");
     context.inputs.push(options.input);
-    return this.respond(options.input, options);
+    const result = await this.respond(options.input, options);
+    // Like Codex, a turn reports the model it ran on.
+    return { ...result, model: result.model ?? options.model ?? { model: "fake-standard", effort: null } };
+  }
+
+  async models(): Promise<ModelOption[]> {
+    return this.catalog;
   }
 
   async account(): Promise<RuntimeAccount> {

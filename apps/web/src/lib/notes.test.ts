@@ -20,6 +20,8 @@ function agent(id: string, name: string): Agent {
     experience: 0,
     connectionIds: [],
     web: null,
+    model: null,
+    effort: null,
     role: "supervisor",
     managerId: "chief-of-staff",
     profile: "conversation",

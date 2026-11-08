@@ -186,6 +186,9 @@ export class Delegation implements DelegationService {
         managerId: manager.id,
         profile: "data",
         charter: input.charter,
+        // A worker does part of its manager's work, so it starts on what its manager runs on.
+        model: manager.model,
+        effort: manager.effort,
       });
       for (const connectionId of new Set(grants)) store.grant(id, connectionId, ["read"]);
       return id;

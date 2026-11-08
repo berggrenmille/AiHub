@@ -1,7 +1,18 @@
 import { existsSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import fastifyStatic from "@fastify/static";
-import type { Agent, ChatResponse, HealthResponse, Note, NoteSummary, OpenChatResponse, PolicyVersion, SourcePreview, StateSnapshot } from "@aihub/shared";
+import type {
+  Agent,
+  ChatResponse,
+  HealthResponse,
+  ModelsResponse,
+  Note,
+  NoteSummary,
+  OpenChatResponse,
+  PolicyVersion,
+  SourcePreview,
+  StateSnapshot,
+} from "@aihub/shared";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyServerOptions } from "fastify";
 import { z } from "zod";
 import type { SequencedEvent } from "./events.ts";
@@ -54,6 +65,7 @@ const NoteBody = z.object({ body: z.string().max(20_000) }).strict();
 const WebBody = z.object({ sites: z.array(z.string().max(200)).max(50) }).strict();
 const RoutineBody = z.object({ weekends: z.boolean() }).strict();
 const PolicyBody = z.object({ body: z.string().max(20_000) }).strict();
+const ModelBody = z.object({ model: z.string().trim().min(1).max(80).nullable(), effort: z.string().trim().min(1).max(20).nullable() }).strict();
 const ApproveBody = z.object({ sourcePath: z.string().max(1_000).optional() }).strict();
 const PreviewBody = z.object({ sourcePath: z.string().max(1_000) }).strict();
 const ReasonBody = z.object({ reason: z.string().max(500).optional() }).strict();
@@ -150,6 +162,27 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     if (!body.ok) return reply.code(400).send({ error: body.error });
     try {
       const agent: Agent = office.setWebGrant(request.params.id, body.data);
+      return agent;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  // What staff run on (DESIGN.md › Staff and work model).
+  app.get("/api/models", async (_request, reply) => {
+    try {
+      const response: ModelsResponse = { models: await office.models() };
+      return response;
+    } catch (error) {
+      return sendError(reply, new ConflictError(`Codex's list of models isn't available right now: ${error instanceof Error ? error.message : String(error)}`));
+    }
+  });
+
+  app.put<{ Params: { id: string } }>("/api/agents/:id/model", async (request, reply) => {
+    const body = bodyOf(ModelBody, request.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
+    try {
+      const agent: Agent = await office.setModel(request.params.id, body.data);
       return agent;
     } catch (error) {
       return sendError(reply, error);

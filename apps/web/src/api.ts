@@ -5,6 +5,8 @@ import type {
   ChatResponse,
   DaemonEvent,
   Item,
+  ModelChoice,
+  ModelsResponse,
   Note,
   NoteSummary,
   OpenChatResponse,
@@ -105,6 +107,16 @@ export function updateAgent(agentId: string, body: UpdateAgentRequest): Promise<
 export function setWebGrant(agentId: string, web: WebGrant | null): Promise<Agent> {
   const path = `/api/agents/${encodeURIComponent(agentId)}/web`;
   return request<Agent>(path, web ? json("PUT", web) : json("DELETE", {}));
+}
+
+/** The models Codex offers. Answers 409 when Codex can't be asked. */
+export function listModels(): Promise<ModelsResponse> {
+  return request<ModelsResponse>("/api/models");
+}
+
+/** Sets what a staff member runs on. Null follows the default; a model or level Codex doesn't offer answers 400. */
+export function setAgentModel(agentId: string, choice: ModelChoice): Promise<Agent> {
+  return request<Agent>(`/api/agents/${encodeURIComponent(agentId)}/model`, json("PUT", choice));
 }
 
 /** The URL of a note: its vault path, each segment encoded. */

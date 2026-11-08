@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
-import type { Conversation, DaemonEvent, SourcePreview, UpdateAgentRequest, WebGrant } from "@aihub/shared";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import type { Conversation, DaemonEvent, ModelChoice, ModelOption, SourcePreview, UpdateAgentRequest, WebGrant } from "@aihub/shared";
 import {
   approvePolicy,
   approveProposal,
@@ -7,12 +7,14 @@ import {
   declinePolicy,
   declineProposal,
   dismissItem,
+  listModels,
   openChat,
   previewProposal,
   putNote,
   resolveItem,
   runRoutine,
   sendChat,
+  setAgentModel,
   setWebGrant,
   updateAgent,
   updateRoutine,
@@ -27,6 +29,9 @@ export interface OfficeCommands {
   openChat(agentId: string): Promise<Conversation>;
   updateAgent(agentId: string, changes: UpdateAgentRequest): Promise<void>;
   setWeb(agentId: string, web: WebGrant | null): Promise<void>;
+  /** Loads the models Codex offers into `models`. */
+  loadModels(): Promise<ModelOption[]>;
+  setModel(agentId: string, choice: ModelChoice): Promise<void>;
   setWeekends(routineId: string, weekends: boolean): Promise<void>;
   savePolicy(body: string): Promise<void>;
   approvePolicy(policyId: number): Promise<void>;
@@ -45,6 +50,8 @@ export interface OfficeCommands {
 export function useOffice() {
   const [state, dispatch] = useReducer(officeReducer, initialOfficeState);
   const sendQueue = useRef<Promise<unknown>>(Promise.resolve());
+  // Not part of the office's state: the daemon asks Codex for them on request.
+  const [models, setModels] = useState<ModelOption[] | null>(null);
 
   useEffect(
     () =>
@@ -74,6 +81,12 @@ export function useOffice() {
       },
       updateAgent: async (agentId, changes) => apply({ type: "agent", agent: await updateAgent(agentId, changes) }),
       setWeb: async (agentId, web) => apply({ type: "agent", agent: await setWebGrant(agentId, web) }),
+      loadModels: async () => {
+        const { models } = await listModels();
+        setModels(models);
+        return models;
+      },
+      setModel: async (agentId, choice) => apply({ type: "agent", agent: await setAgentModel(agentId, choice) }),
       setWeekends: async (routineId, weekends) => apply({ type: "routine", routine: await updateRoutine(routineId, { weekends }) }),
       savePolicy: async (body) => apply({ type: "policy", policy: await writePolicy(body) }),
       approvePolicy: async (policyId) => apply({ type: "policy", policy: await approvePolicy(policyId) }),
@@ -91,5 +104,5 @@ export function useOffice() {
     };
   }, [send]);
 
-  return { state, commands };
+  return { state, commands, models };
 }
