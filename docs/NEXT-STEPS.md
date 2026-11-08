@@ -2,18 +2,44 @@
 
 Where the build stands against [DESIGN.md](../DESIGN.md) › Build sequence and acceptance.
 
-## Up next: the Milestone 6 proof
+## Up next: the rest of the Milestone 6 proof
 
-Milestone 6 is built, and its whole flow runs in the fake office (below). What is left is step 8, against real Codex, on an account the operator picks:
-- It is set up from chat, signed in by the operator, and read at a briefing with the browser closed.
-- A second account or supervisor can't read the first one's.
-- Sign in again works after the operator signs out at the service.
-- Items open their source record.
-- A cut-off read says what it held back.
-- An unsafe operation is refused before its tick and runs after it.
-- All of it shows in the Access panel.
+The proof against real Codex ran on GitHub on 2026-11-08 (below). Two checks wait for the operator:
+- **An unsafe operation runs after its tick.** Vera's card that lets Elias add and remove reactions on pull requests is waiting in her chat. Approving it with a tick, then asking Elias to react to a pull request and take the reaction back, writes to GitHub, so the operator does it.
+- **Sign in again after signing out at the service.** For a ChatGPT app, that means disconnecting GitHub at ChatGPT, seeing the lapse in Vera's chat and in Access, connecting it again, and pressing Check again.
 
-GitHub is connected here as a ChatGPT app with two linked accounts, so it can show account isolation with no new sign-in. A remote MCP server needs the operator to sign in once in the browser. The proof also settles what the probe left open: Windows Credential Manager as the store for sign-ins, a real service's sign-in, and how long its refresh token lasts.
+The proof used a ChatGPT app, so what the probe left open about MCP servers is still open: Windows Credential Manager as the store for sign-ins, a real MCP server's sign-in, and how long its refresh token lasts.
+
+## Milestone 6 proof against real GitHub (2026-11-08)
+
+GitHub is connected at ChatGPT with two linked accounts, Personal and Work. Everything went through the installed office at 127.0.0.1:7420, from the Chief of Staff's chat.
+
+| Check | What happened |
+| --- | --- |
+| Set up from chat | Asked to watch GitHub on the Personal account, Vera proposed GitHub (Personal): the ChatGPT app, 91 operations, 50 of them only read. Then she proposed Elias with a source on `github.search_issues`. Her first mapping guessed GitHub's REST shape, and the card's preview failed (below). With the fix, her next proposal fit, keyed by each issue's address. |
+| Read at a briefing, browser closed | Two briefings ran from the API with no page open. The collector read the account in code, and Elias's first briefing turn made no call of its own. In the second briefing he had nothing new, so no turn ran for him. |
+| A cut-off read says what it held back | The first read held 100 records. Elias was handed the 60 newest, with the note that the rest were recorded as seen, and his report said so. |
+| Account isolation | A second service, GitHub (Work), with its own supervisor, Mira. Its source read 2 issues, none of Personal's 100. Asked to call `github.get_user_login` on GitHub (Personal) with Work's `link_id`, Elias got the Personal login, because the daemon sets the account. His call on GitHub (Work) was refused. Nora holds no service. |
+| Items open their source record | Mira's item opens the GitHub issue it came from. |
+| An unsafe operation is refused before its tick | With nothing ticked, the Operations card's Approve stays disabled and the daemon refuses the approval. Elias can't call the operations. Running one waits for the operator (Up next). |
+| The Access panel | It lists both services with their accounts, each supervisor's operations with when each was last used, both sources with their readers, Nora's cached search, and no unsafe grants. |
+
+### What the proof changed
+
+| Finding | Change |
+| --- | --- |
+| Most app operations declare no output, so the Chief of Staff guessed a mapping, and only the operator's preview found it wrong. | AiHub reads a service source once when she proposes it. A mapping that doesn't fit goes back to her with the output's shape: field names and kinds of value, never a value. She fixed hers in one try. |
+| GitHub's search gives titles, bodies, and links, with state and assignees empty. A briefing turn couldn't call the supervisor's operations, so Elias couldn't check anything and filed nothing. | A briefing turn may call operations that only read, at most 8 times. Unsafe grants never run at a briefing, only in chat or a task. In the second briefing Mira used all 8 calls, then was refused. |
+| The Access panel showed a source's approval time as its last read. | Each briefing's read records its time and what it found. |
+| A service's 91 operations were listed in Codex's order, and long links in their descriptions widened the chat. | Read-only operations come first, then by name, and the descriptions wrap. |
+| The notice for a new supervisor named the service after each of eight operations. | It names it once. |
+| The failed-preview hint sent the operator to Access, even for a mapping that didn't fit. | It says what to do in either case. |
+
+### Known gaps from the proof
+
+- Mira spent her 8 calls on broad searches, as her standing instructions said, and found a pull request waiting for review. AiHub left it out of the Inbox because it cited no record the briefing handed her. The briefing text mentions it, without its link.
+- Setting up GitHub, the Chief of Staff's chat turns took 64,000 to 190,000 tokens each, mostly on listing 91 operations.
+- GitHub's search gives no state or times, so records come in the service's order, and an edit to an issue's text counts as a change.
 
 ## Milestone 6: connections from chat (built 2026-11-08)
 
@@ -30,7 +56,7 @@ Staff can't write the part that reaches an account. A reader is safe because it 
 | 1. Services | `services/services.ts` keeps each service in AiHub's database: a ChatGPT app with one of its linked accounts, or an MCP server by its address or command. Nothing goes into Codex's `config.toml`. The connector process (`runtime/codex-runtime.ts`) runs with apps on and the rest locked down. It gives a service's config only to that service's own thread, where no turn runs. `codex-runtime.test.ts` checks this against the fake app server. |
 | 2. Sources on a service | `sources/service.ts`, behind the same source contract as files and folders. A mapping (`sources/mapping.ts`) turns the structured output into records with a key, a version or fingerprint, a title, a time, and a link that must be a web address. A cut-off read says what waits for the next check, and items open their record. Tested in `mapping.test.ts` and `services.test.ts`. |
 | 3. Set up from chat | The Chief of Staff has `aihub_list_services` and `aihub_propose_service`. The service card approves, signs in, and checks again. A supervisor's card proposes a source on a service and the operations it may call, and its preview reads the account. An app with several linked accounts needs one named, and the daemon pins its `link_id` on every call. |
-| 4. Using it | At the briefing the collector reads the source in code. In chat and tasks, `aihub_use_service` checks the grant on every call and returns the answer between data markers. Every call is in the activity log. The health check, and any call that finds a lapsed sign-in, say so in the Chief of Staff's chat. |
+| 4. Using it | At the briefing the collector reads the source in code, and the supervisor may look closer with operations that only read, at most 8 calls. In chat and tasks, `aihub_use_service` checks the grant on every call and returns the answer between data markers. Every call is in the activity log. The health check, and any call that finds a lapsed sign-in, say so in the Chief of Staff's chat. |
 | 5. Unsafe grants | Ticks on the service card, the hiring card, and a new staff change, Operations (migration v15), which only the operator's request in chat can bring about. A required tick blocks approval. An optional one left unticked isn't granted, and the notice names it. Live search is always unsafe. Unsafe grants never pass to a replacement, and each use is logged as "Unsafe:". |
 | 6. The Access panel | `AccessPanel.tsx`, opened from the top bar and from each profile card. Staff tools come from `GET /api/access`, as the gateway gives them. |
 | 7. The fake office | `runtime/fake-connectors.ts`: a mail service behind a sign-in, with four made-up messages, one of them a prompt injection, and a ChatGPT app list. In `npm run dev:fake`, "watch my inbox" runs the whole flow, and "let Ines send replies" adds the unsafe send. |
@@ -76,9 +102,9 @@ No model turn ran.
 
 **Decision (2026-11-08):** both paths, behind one kind of service in AiHub: ChatGPT apps for what OpenAI offers, and MCP servers for everything else.
 
-Not tested yet, and left for the proof:
+Still open, since the proof used a ChatGPT app:
 - Windows Credential Manager as the store for sign-ins. It is Codex's default; the probe used a file so it left nothing behind.
-- A real service's sign-in.
+- A real MCP server's sign-in.
 - How long a real refresh token lasts.
 
 ## Milestone 1: runtime, isolation, and control surface (done 2026-11-07)

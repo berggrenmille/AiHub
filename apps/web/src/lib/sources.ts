@@ -131,7 +131,7 @@ export function approvalGate(source: ProposedSource | null, readers: StaffReader
     if (preview.status === "failed") {
       return {
         ready: false,
-        reason: "The preview couldn't read the service. If it is signed out, sign in from Access and preview again. Otherwise decline with what went wrong, so the Chief of Staff can propose again.",
+        reason: "The preview couldn't read the service. If it is signed out, sign in from Access and preview again. Otherwise decline it and tell the Chief of Staff in chat what went wrong.",
         tone: "info",
       };
     }
