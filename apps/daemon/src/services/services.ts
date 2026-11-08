@@ -7,6 +7,7 @@ import { checkProposedSource } from "../sources/collect.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "../staff/chief-of-staff.ts";
 import type { ServiceConfig, ServiceRecord, ServiceTool } from "../store/store.ts";
 import {
+  callsOn,
   collectionRisk,
   describeInput,
   describeOutput,
@@ -436,7 +437,7 @@ export class Services {
   async use(caller: Caller, input: { service: string; operation: string; arguments: Record<string, unknown> }): Promise<string> {
     const { store } = this.office;
     const held = store.listServiceGrants(caller.agentId);
-    const yours = held.map((grant) => `${grant.operation} on ${store.getService(grant.serviceId)?.name ?? "?"}`).join(", ") || "none";
+    const yours = callsOn(held.map((grant) => ({ operation: grant.operation, serviceName: store.getService(grant.serviceId)?.name ?? "?" }))) || "none";
     const record = this.find(input.service);
     const grant = record ? store.serviceGrantFor(caller.agentId, record.id, input.operation) : null;
     if (!record || !grant) throw new Error(`You may not call ${input.operation} on ${input.service}. Yours: ${yours}. Only the operator grants more.`);

@@ -9,7 +9,7 @@ import { STAFF_READER_PREFIX } from "../sources/folder.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "./chief-of-staff.ts";
 import { SUPERVISOR_CHARTER } from "./supervisor.ts";
 import { describeWeb } from "./web.ts";
-import { unsafeKey } from "../services/catalog.ts";
+import { callsOn, unsafeKey } from "../services/catalog.ts";
 
 // Recruitment (DESIGN.md › Recruitment and delegation). The Chief of Staff proposes; the operator
 // approves from a card; the daemon checks the caps and creates everything in one transaction.
@@ -198,7 +198,7 @@ export async function approveProposal(office: Office, id: string, options: { sou
     : "";
   const searches = granted ? ` ${profile.name} has ${describeWeb(granted)}.` : "";
   const calls = operations.length
-    ? ` ${profile.name} may call ${operations.map((operation) => `${operation.operation} on ${operation.serviceName}${operation.unsafe ? " (unsafe, as you ticked)" : ""}`).join(", ")}.`
+    ? ` ${profile.name} may call ${callsOn(operations, { markUnsafe: true })}.`
     : "";
   const notGiven = leftOut.length ? ` Left out, as you didn't tick ${leftOut.length === 1 ? "it" : "them"}: ${leftOut.map((grant) => grant.what).join("; ")}.` : "";
   const runsOn = model ? ` ${profile.name} runs on ${describeModel({ model: model.id, effort: model.effort }, office.knownModels())}.` : "";

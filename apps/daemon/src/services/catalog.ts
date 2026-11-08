@@ -99,6 +99,24 @@ export function publicService(record: ServiceRecord): Service {
   };
 }
 
+/**
+ * Operations as a phrase, grouped by service, such as "search_messages and send_message (unsafe, as
+ * you ticked) on Work mail". A code host grants eight at once, and naming the service each time hid them.
+ */
+export function callsOn(operations: ReadonlyArray<{ operation: string; serviceName: string; unsafe?: unknown }>, options: { markUnsafe?: boolean } = {}): string {
+  const byService = new Map<string, string[]>();
+  for (const operation of operations) {
+    const names = byService.get(operation.serviceName) ?? [];
+    names.push(`${operation.operation}${options.markUnsafe && operation.unsafe ? " (unsafe, as you ticked)" : ""}`);
+    byService.set(operation.serviceName, names);
+  }
+  return [...byService].map(([service, names]) => `${listed(names)} on ${service}`).join("; ");
+}
+
+function listed(names: string[]): string {
+  return names.length <= 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")}, and ${names.at(-1)}`;
+}
+
 /** A tool's input, cut down to what staff need to call it: the properties, their types, and what is required. */
 export function describeInput(schema: unknown): string {
   const object = typeof schema === "object" && schema !== null ? (schema as { properties?: Record<string, { type?: unknown; description?: string }>; required?: string[] }) : {};

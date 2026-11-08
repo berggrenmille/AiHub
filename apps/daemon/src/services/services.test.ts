@@ -192,6 +192,11 @@ describe("Services", () => {
     const { ines, caller } = await hireInes(office, tool, [unsafeKey.operation(service.id, "send_message")]);
     const send = store.listServiceGrants(ines.id).find((grant) => grant.operation === "send_message")!;
     assert.match(send.unsafe ?? "", /send what they know to anyone/);
+    assert.match(
+      store.recentMessages(5, CHIEF_OF_STAFF_CONVERSATION_ID).at(-1)!.body,
+      / Ines may call search_messages and send_message \(unsafe, as you ticked\) on Work mail\./,
+      "operations are grouped by service",
+    );
 
     const sent = await tool("aihub_use_service", { service: "work mail", operation: "send_message", arguments: { to: "anna@example.test", subject: "Re: Dinner", body: "Yes!" } }, caller);
     assert.equal(sent.ok, true, sent.text);
@@ -228,7 +233,7 @@ describe("Services", () => {
     await assert.rejects(() => approveStaffChange(office, pending!.id), /none is ticked/);
     assert.equal(store.getStaffChange(pending!.id)?.status, "pending", "nothing was decided");
     const approved = await approveStaffChange(office, pending!.id, [unsafeKey.operation(service.id, "send_message")]);
-    assert.match(approved.outcome ?? "", /Ines may call send_message on Work mail \(unsafe, as you ticked\) from the next run\./);
+    assert.match(approved.outcome ?? "", /Ines may call send_message \(unsafe, as you ticked\) on Work mail from the next run\./);
     assert.ok(store.recentActivity(10).some((entry) => entry.summary === "Unsafe: the operator let Ines call send_message on Work mail"));
     const sent = await tool("aihub_use_service", { service: "Work mail", operation: "send_message", arguments: { to: "anna@example.test", subject: "Hi", body: "Hello" } }, caller);
     assert.equal(sent.ok, true, sent.text);

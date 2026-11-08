@@ -2,7 +2,7 @@ import type { ProposedModel, ProposedOperation, Responsibility, StaffChange, Sta
 import { ConflictError, InvalidRequestError, NotFoundError } from "../errors.ts";
 import type { Caller } from "../gateway/gateway.ts";
 import type { Office } from "../office.ts";
-import { unsafeKey } from "../services/catalog.ts";
+import { callsOn, unsafeKey } from "../services/catalog.ts";
 import type { AgentRecord } from "../store/store.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "./chief-of-staff.ts";
 import { describeModel, modelChoiceProblem } from "./models.ts";
@@ -117,7 +117,7 @@ async function detailOf(office: Office, agent: AgentRecord, responsibility: Resp
 
 /** Operations as a list, such as "search_messages on Work mail, send_message on Work mail". */
 function callList(operations: ProposedOperation[]): string {
-  return operations.map((operation) => `${operation.operation} on ${operation.serviceName}`).join(", ");
+  return callsOn(operations);
 }
 
 async function checkModel(office: Office, model: ProposedModel) {
@@ -275,7 +275,7 @@ async function apply(
       }
       notebook.journal(agentId, `The operator let me call ${callList(granted)}, with aihub_use_service.`);
       const notGiven = leftOut.length ? ` Left out, as you didn't tick ${leftOut.length === 1 ? "it" : "them"}: ${leftOut.map((grant) => grant.what).join("; ")}.` : "";
-      return `${name} may call ${granted.map((operation) => `${operation.operation} on ${operation.serviceName}${operation.unsafe ? " (unsafe, as you ticked)" : ""}`).join(", ")} from the next run.${notGiven}`;
+      return `${name} may call ${callsOn(granted, { markUnsafe: true })} from the next run.${notGiven}`;
     }
   }
 }
