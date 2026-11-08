@@ -9,7 +9,7 @@ import { STAFF_READER_PREFIX } from "../sources/folder.ts";
 import { CHIEF_OF_STAFF_ID } from "./chief-of-staff.ts";
 import { SUPERVISOR_CHARTER } from "./supervisor.ts";
 import { describeWeb } from "./web.ts";
-import { callsOn, unsafeKey } from "../services/catalog.ts";
+import { allowedBy, callsOn, leftOutSentence, ticksOperations, unsafeKey } from "../services/catalog.ts";
 
 // Recruitment (DESIGN.md › Recruitment and delegation). The Chief of Staff proposes; the operator
 // approves from a card; the daemon checks the caps and creates everything in one transaction.
@@ -92,7 +92,7 @@ export async function previewProposal(office: Office, id: string, sourcePath = "
 
 /**
  * The operator approves: hire the supervisor with its responsibility, routine, and access. Each grant
- * that breaks the data boundary needs its own tick: a required one blocks approval without it, and an
+ * that breaks the data boundary needs its tick: a required one blocks approval without it, and an
  * optional one is left out (DESIGN.md › Authority and data boundaries).
  */
 export async function approveProposal(office: Office, id: string, options: { sourcePath?: string; unsafe?: string[] } = {}): Promise<Proposal> {
@@ -112,7 +112,7 @@ export async function approveProposal(office: Office, id: string, options: { sou
     throw new InvalidRequestError(`Tick ${missing.map((grant) => `"${grant.what}"`).join(" and ")} to approve this proposal. ${missing[0]!.risk}`);
   }
   const leftOut = unsafe.filter((grant) => !grant.required && !ticked.has(grant.key));
-  const operations = (proposal.payload.operations ?? []).filter((operation) => !operation.unsafe || ticked.has(unsafeKey.operation(operation.serviceId, operation.operation)));
+  const operations = (proposal.payload.operations ?? []).filter((operation) => allowedBy(operation, ticked));
   const granted: WebGrant | null = web ? { sites: web.sites, ...(web.live && ticked.has(unsafeKey.liveWeb) && { live: true }) } : null;
   // The services may have been removed since the proposal was made.
   for (const serviceId of [...(source?.service ? [source.service.serviceId] : []), ...operations.map((operation) => operation.serviceId)]) {
@@ -200,7 +200,10 @@ export async function approveProposal(office: Office, id: string, options: { sou
   const calls = operations.length
     ? ` ${profile.name} may call ${callsOn(operations, { markUnsafe: true })}.`
     : "";
-  const notGiven = leftOut.length ? ` Left out, as you didn't tick ${leftOut.length === 1 ? "it" : "them"}: ${leftOut.map((grant) => grant.what).join("; ")}.` : "";
+  const notGiven = leftOutSentence(
+    (proposal.payload.operations ?? []).filter((operation) => !allowedBy(operation, ticked)),
+    leftOut.filter((grant) => !ticksOperations(grant)),
+  );
   const runsOn = model ? ` ${profile.name} runs on ${describeModel({ model: model.id, effort: model.effort }, office.knownModels())}.` : "";
   for (const operation of operations.filter((granted) => granted.unsafe)) {
     bus.publish({

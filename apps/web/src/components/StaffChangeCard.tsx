@@ -14,7 +14,7 @@ import { UnsafeGrants } from "./UnsafeGrants.tsx";
 // The approval card for a change to a supervisor that the Chief of Staff proposed (DESIGN.md › Staff
 // review): new instructions, another model, more operations on a service, ending the responsibility,
 // or a replacement. It shows what changes; nothing applies until the operator approves, and an unsafe
-// operation only with its own tick.
+// operation only with its tick.
 
 const STATUS_LABELS: Record<StaffChange["status"], string> = {
   pending: "Waiting for you",

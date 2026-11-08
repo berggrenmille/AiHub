@@ -270,7 +270,7 @@ async function delegate(input: string, options: RunTurnOptions): Promise<string 
       operations: [{ service: "Fake mail", operation: "send_message", why: "To send replies you ask for." }],
       reason: "You asked for it.",
     });
-    return proposed.ok ? `I've proposed letting ${letSend[1]} send mail. It's unsafe, so it has its own tick on the card.` : proposed.text;
+    return proposed.ok ? `I've proposed letting ${letSend[1]} send mail. It's unsafe, so it needs your tick on the card.` : proposed.text;
   }
   const ask = /\bask (\w+)\b/i.exec(message);
   if (ask) {
@@ -366,7 +366,7 @@ async function mail(message: string, call: (name: string, args: object) => Promi
       model: { id: "fake-light", effort: "medium", why: "Reading mail is light work." },
       reason: "You asked for someone to watch your inbox.",
     });
-    if (proposed.ok) return `I've proposed ${name} to watch your inbox. Sending replies is an unsafe grant, so it has its own tick on the card.`;
+    if (proposed.ok) return `I've proposed ${name} to watch your inbox. Sending replies is an unsafe grant, so it needs your tick on the card.`;
     if (!/already/i.test(proposed.text)) return proposed.text;
   }
   return "Everyone I'd propose is already on staff.";

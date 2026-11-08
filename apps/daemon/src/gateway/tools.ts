@@ -473,7 +473,7 @@ export const proposeStaffChangeTool = defineTool({
         extra(["operations"]);
         if (!input.operations?.length) throw new Error("Give the operations to add, by service and name. See aihub_list_services.");
         await proposeStaffChange(caller, { supervisor, reason, change: { kind: "operations", operations: input.operations } });
-        return "Proposal recorded. The operator sees an approval card in your chat, where each unsafe operation has its own tick. Tell them in a sentence what you proposed.";
+        return "Proposal recorded. The operator sees an approval card in your chat, where unsafe operations need the operator's tick, one per service and kind. Tell them in a sentence what you proposed.";
       case "end":
         extra([]);
         await proposeStaffChange(caller, { supervisor, reason, change: { kind: "end" } });

@@ -172,7 +172,7 @@ describe("Services", () => {
     const { proposal, ines, caller } = await hireInes(office, tool);
     assert.deepEqual(
       proposal.payload.unsafe?.map((grant) => [grant.key, grant.required]),
-      [[unsafeKey.operation(service.id, "send_message"), false]],
+      [[unsafeKey.operations(service.id, "change"), false]],
       "only sending is unsafe: the inbox and search only read",
     );
     assert.deepEqual(proposal.payload.source?.service?.arguments, { limit: 20 }, "staff never pick the account");
@@ -190,7 +190,7 @@ describe("Services", () => {
   it("lets a supervisor call a ticked unsafe operation, logged and marked, until the operator takes it back", async () => {
     const { store, office, tool, mail } = setUp();
     const service = await connectMail(office, tool);
-    const { ines, caller } = await hireInes(office, tool, [unsafeKey.operation(service.id, "send_message")]);
+    const { ines, caller } = await hireInes(office, tool, [unsafeKey.operations(service.id, "change")]);
     const send = store.listServiceGrants(ines.id).find((grant) => grant.operation === "send_message")!;
     assert.match(send.unsafe ?? "", /send what they know to anyone/);
     assert.match(
@@ -221,7 +221,7 @@ describe("Services", () => {
   it("lets a briefing run look closer with operations that read, a few calls at most, and never an unsafe one", async () => {
     const { store, office, tool } = setUp();
     const service = await connectMail(office, tool);
-    const { ines } = await hireInes(office, tool, [unsafeKey.operation(service.id, "send_message")]);
+    const { ines } = await hireInes(office, tool, [unsafeKey.operations(service.id, "change")]);
     const run = store.createRun({ agentId: ines.id, kind: "report", title: "Report for the briefing: Inbox" });
     const briefing = { agentId: ines.id, runId: run.id, profile: "data" as const };
     const search = () => tool("aihub_use_service", { service: "Work mail", operation: "search_messages", arguments: { query: "dinner" } }, briefing);
@@ -235,7 +235,7 @@ describe("Services", () => {
     assert.ok(!store.recentActivity(30).some((entry) => entry.summary.startsWith("Unsafe: Ines called")), "nothing was sent");
   });
 
-  it("adds an operation later with a staff change, where the unsafe one needs its own tick too", async () => {
+  it("adds an operation later with a staff change, where the unsafe one needs its tick too", async () => {
     const { store, office, tool, mail } = setUp();
     const service = await connectMail(office, tool);
     const { ines, caller } = await hireInes(office, tool);
@@ -252,11 +252,11 @@ describe("Services", () => {
     assert.equal(proposed.ok, true, proposed.text);
     const [pending] = store.pendingStaffChanges(ines.id);
     assert.equal(pending?.change.kind, "operations");
-    assert.deepEqual(pending?.change.kind === "operations" && pending.change.unsafe.map((grant) => grant.key), [unsafeKey.operation(service.id, "send_message")]);
+    assert.deepEqual(pending?.change.kind === "operations" && pending.change.unsafe.map((grant) => grant.key), [unsafeKey.operations(service.id, "change")]);
 
     await assert.rejects(() => approveStaffChange(office, pending!.id), /none is ticked/);
     assert.equal(store.getStaffChange(pending!.id)?.status, "pending", "nothing was decided");
-    const approved = await approveStaffChange(office, pending!.id, [unsafeKey.operation(service.id, "send_message")]);
+    const approved = await approveStaffChange(office, pending!.id, [unsafeKey.operations(service.id, "change")]);
     assert.match(approved.outcome ?? "", /Ines may call send_message \(unsafe, as you ticked\) on Work mail from the next run\./);
     assert.ok(store.recentActivity(10).some((entry) => entry.summary === "Unsafe: the operator let Ines call send_message on Work mail"));
     const sent = await tool("aihub_use_service", { service: "Work mail", operation: "send_message", arguments: { to: "anna@example.test", subject: "Hi", body: "Hello" } }, caller);
@@ -326,8 +326,8 @@ describe("Services", () => {
     const service = await connectMail(office, tool);
     await tool("aihub_propose_supervisor", { ...INES, web: { sites: [], live: true } });
     const [proposal] = store.listProposals();
-    assert.deepEqual(proposal?.payload.unsafe?.map((grant) => grant.key), [unsafeKey.operation(service.id, "send_message"), unsafeKey.liveWeb]);
-    await approveProposal(office, proposal!.id, { unsafe: [unsafeKey.liveWeb, unsafeKey.operation(service.id, "send_message")] });
+    assert.deepEqual(proposal?.payload.unsafe?.map((grant) => grant.key), [unsafeKey.operations(service.id, "change"), unsafeKey.liveWeb]);
+    await approveProposal(office, proposal!.id, { unsafe: [unsafeKey.liveWeb, unsafeKey.operations(service.id, "change")] });
     assert.deepEqual(store.webGrantOf("ines"), { sites: [], live: true });
 
     store.upsertAgent({ id: "nils", name: "Nils", role: "supervisor", managerId: CHIEF_OF_STAFF_ID, profile: "data", charter: "" });

@@ -199,6 +199,11 @@ export interface ProposedOperation {
   why: string;
   /** Why it breaks the data boundary, as AiHub words it, or null when it doesn't. */
   unsafe: string | null;
+  /**
+   * The tick it shares with the service's other unsafe operations of its kind, or null when it is safe.
+   * Absent on proposals made before ticks were grouped, where it has a tick of its own.
+   */
+  tick?: string | null;
 }
 
 /** A ChatGPT app on AiHub's Codex sign-in, connected or not. */

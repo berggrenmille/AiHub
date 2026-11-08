@@ -1,4 +1,4 @@
-import type { OperationLabel, Service, ServiceOperation, UnsafeGrant } from "@aihub/shared";
+import type { OperationLabel, ProposedOperation, Service, ServiceOperation, UnsafeGrant } from "@aihub/shared";
 import type { ServiceConfig, ServiceRecord, ServiceTool } from "../store/store.ts";
 import type { ServiceEndpoint } from "../runtime/types.ts";
 
@@ -49,13 +49,95 @@ export function collectionRisk(service: Pick<ServiceRecord, "name">, tool: Servi
   return `${service.name} ${said}, and reading the source runs it at every briefing.`;
 }
 
+/**
+ * Which tick an unsafe operation shares, by what it can do: reach other parties while only reading,
+ * add or change things, or delete and overwrite them. MCP's default is that a tool that changes things
+ * may destroy them, so only an explicit no puts it with the changes; an unlabeled tool counts as
+ * destroying. A destructive operation never shares a tick with one that isn't.
+ */
+export type RiskGroup = "reach" | "change" | "destroy";
+
+export function riskGroup(tool: ServiceTool): RiskGroup {
+  const label = labelOf(tool);
+  if (label === "reads") return "reach";
+  return label === "changes" && tool.annotations?.destructiveHint === false ? "change" : "destroy";
+}
+
 /** The key the operator ticks for an unsafe grant. */
 export const unsafeKey = {
   service: (serviceId: string) => `service:${serviceId}`,
   source: (serviceId: string, operation: string) => `source:${serviceId}/${operation}`,
+  /** One operation's own tick, as cards had before operations were grouped. */
   operation: (serviceId: string, operation: string) => `operation:${serviceId}/${operation}`,
+  /** The tick a service's unsafe operations of one kind share. */
+  operations: (serviceId: string, group: RiskGroup) => `operations:${serviceId}/${group}`,
   liveWeb: "web:live",
 } as const;
+
+/** Whether a proposed operation may be granted with these ticks. A proposal from before grouping ticks it on its own. */
+export function allowedBy(operation: ProposedOperation, ticked: ReadonlySet<string>): boolean {
+  return !operation.unsafe || ticked.has(operation.tick ?? unsafeKey.operation(operation.serviceId, operation.operation));
+}
+
+/** What the operator didn't tick, as a sentence to add to the outcome, or nothing: operations by name, then other grants. */
+export function leftOutSentence(operations: ReadonlyArray<ProposedOperation>, others: ReadonlyArray<UnsafeGrant> = []): string {
+  const parts = [...(operations.length ? [callsOn(operations)] : []), ...others.map((grant) => grant.what.charAt(0).toLowerCase() + grant.what.slice(1))];
+  if (!parts.length) return "";
+  return ` Left out, as you didn't tick ${operations.length + others.length === 1 ? "it" : "them"}: ${parts.join("; ")}.`;
+}
+
+/** Whether a grant is a tick for operations, which the outcome names by operation instead. */
+export function ticksOperations(grant: UnsafeGrant): boolean {
+  return /^operations?:/.test(grant.key);
+}
+
+/**
+ * The ticks for unsafe operations, one per service and kind, each naming its operations, so a code
+ * host's sixty operations ask for two or three ticks rather than sixty.
+ */
+export function groupedGrants(
+  operations: ReadonlyArray<{ service: Pick<ServiceRecord, "id" | "name" | "kind">; tool: ServiceTool }>,
+  staffName: string,
+): UnsafeGrant[] {
+  const groups = new Map<string, { service: Pick<ServiceRecord, "id" | "name" | "kind">; group: RiskGroup; tools: ServiceTool[] }>();
+  for (const { service, tool } of operations) {
+    if (!operationRisk(service, tool, staffName)) continue;
+    const group = riskGroup(tool);
+    const key = unsafeKey.operations(service.id, group);
+    const entry = groups.get(key) ?? { service, group, tools: [] };
+    entry.tools.push(tool);
+    groups.set(key, entry);
+  }
+  return [...groups].map(([key, { service, group, tools }]) => ({
+    key,
+    what: `${GROUP_WHAT[group]} ${service.name}: ${listed(tools.map((tool) => tool.name))}`,
+    risk: groupRisk(service, group, tools, staffName),
+    required: false,
+  }));
+}
+
+const GROUP_WHAT: Record<RiskGroup, string> = {
+  reach: "Reach others through",
+  change: "Add or change things on",
+  destroy: "Delete or overwrite things on",
+};
+
+function groupRisk(service: Pick<ServiceRecord, "name" | "kind">, group: RiskGroup, tools: ServiceTool[], staffName: string): string {
+  const these = tools.length === 1 ? tools[0]!.name : "These";
+  const they = tools.length === 1 ? "it" : "them";
+  if (service.kind === "local_mcp") return `${localRisk(service)} Something ${staffName} reads could tell them what to ask of it.`;
+  switch (group) {
+    case "reach":
+      return `${service.name} doesn't rule out that ${these === "These" ? "these" : these} ${tools.length === 1 ? "reaches" : "reach"} parties other than itself. Something ${staffName} reads could make them send what they know there.`;
+    case "change":
+      return `${these} ${tools.length === 1 ? "changes" : "change"} things outside the office, though ${service.name} says not by deleting or overwriting. Something ${staffName} reads could tell them to use ${they}, such as to send what they know to anyone.`;
+    case "destroy": {
+      const unlabeled = tools.filter((tool) => labelOf(tool) === "unlabeled").map((tool) => tool.name);
+      const unsaid = unlabeled.length ? ` ${service.name} doesn't say what ${listed(unlabeled)} ${unlabeled.length === 1 ? "does" : "do"}, so ${unlabeled.length === 1 ? "it counts" : "they count"} as this.` : "";
+      return `${these} can delete or overwrite things outside the office.${unsaid} Something ${staffName} reads could tell them to use ${they}.`;
+    }
+  }
+}
 
 /** What a staff member with live search could do, for the card. */
 export function liveWebRisk(staffName: string): UnsafeGrant {

@@ -1,8 +1,8 @@
-import type { ProposedModel, ProposedOperation, Responsibility, StaffChange, StaffChangeDetail, StaffProfile, UnsafeGrant } from "@aihub/shared";
+import type { ProposedModel, ProposedOperation, Responsibility, StaffChange, StaffChangeDetail, StaffProfile } from "@aihub/shared";
 import { ConflictError, InvalidRequestError, NotFoundError } from "../errors.ts";
 import type { Caller } from "../gateway/gateway.ts";
 import type { Office } from "../office.ts";
-import { callsOn, unsafeKey } from "../services/catalog.ts";
+import { allowedBy, callsOn, leftOutSentence } from "../services/catalog.ts";
 import type { AgentRecord } from "../store/store.ts";
 import { CHIEF_OF_STAFF_ID } from "./chief-of-staff.ts";
 import { describeModel, modelChoiceProblem } from "./models.ts";
@@ -109,8 +109,7 @@ async function detailOf(office: Office, agent: AgentRecord, responsibility: Resp
       const held = planned.operations.filter((operation) => store.serviceGrantFor(agent.id, operation.serviceId, operation.operation));
       const operations = planned.operations.filter((operation) => !held.includes(operation));
       if (!operations.length) throw new Error(`${agent.name} may already call ${callList(held)}.`);
-      const keys = new Set(operations.map((operation) => unsafeKey.operation(operation.serviceId, operation.operation)));
-      return { kind: "operations", operations, unsafe: planned.unsafe.filter((grant) => keys.has(grant.key)) };
+      return { kind: "operations", operations, unsafe: office.services.operationGrants(agent.name, operations) };
     }
   }
 }
@@ -195,8 +194,8 @@ export async function approveStaffChange(office: Office, id: number, ticked: str
 }
 
 /** What an operations change grants with the operator's ticks, and what it leaves out. Throws when it would grant nothing. */
-function accessOf(office: Office, change: Extract<StaffChangeDetail, { kind: "operations" }>, ticked: ReadonlySet<string>): { granted: ProposedOperation[]; leftOut: UnsafeGrant[] } {
-  const granted = change.operations.filter((operation) => !operation.unsafe || ticked.has(unsafeKey.operation(operation.serviceId, operation.operation)));
+function accessOf(office: Office, change: Extract<StaffChangeDetail, { kind: "operations" }>, ticked: ReadonlySet<string>): { granted: ProposedOperation[]; leftOut: ProposedOperation[] } {
+  const granted = change.operations.filter((operation) => allowedBy(operation, ticked));
   if (!granted.length) throw new InvalidRequestError("Every operation here is unsafe and none is ticked. Tick the ones you allow, or decline.");
   for (const serviceId of new Set(granted.map((operation) => operation.serviceId))) {
     const service = office.store.getService(serviceId);
@@ -204,7 +203,7 @@ function accessOf(office: Office, change: Extract<StaffChangeDetail, { kind: "op
       throw new ConflictError(`${service?.name ?? "A service this proposal uses"} is no longer in use. Ask the Chief of Staff for a new proposal.`);
     }
   }
-  return { granted, leftOut: change.unsafe.filter((grant) => !ticked.has(grant.key)) };
+  return { granted, leftOut: change.operations.filter((operation) => !granted.includes(operation)) };
 }
 
 /** Makes the change and says what it did. */
@@ -213,7 +212,7 @@ async function apply(
   proposed: StaffChange,
   agentId: string,
   responsibility: Responsibility,
-  access: { granted: ProposedOperation[]; leftOut: UnsafeGrant[] },
+  access: { granted: ProposedOperation[]; leftOut: ProposedOperation[] },
 ): Promise<string> {
   const { store, bus, notebook } = office;
   const { change, agentName: name } = proposed;
@@ -274,8 +273,7 @@ async function apply(
         });
       }
       notebook.journal(agentId, `The operator let me call ${callList(granted)}, with aihub_use_service.`);
-      const notGiven = leftOut.length ? ` Left out, as you didn't tick ${leftOut.length === 1 ? "it" : "them"}: ${leftOut.map((grant) => grant.what).join("; ")}.` : "";
-      return `${name} may call ${callsOn(granted, { markUnsafe: true })} from the next run.${notGiven}`;
+      return `${name} may call ${callsOn(granted, { markUnsafe: true })} from the next run.${leftOutSentence(leftOut)}`;
     }
   }
 }

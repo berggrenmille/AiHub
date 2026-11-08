@@ -12,7 +12,7 @@ After the Milestone 6 proof the operator asked for meetings, a bigger chat, a ca
 4. **16 supervisors.** A floor of four by four that scales to fit, with a meeting room where those in a meeting gather, and the day's turn budget as a setting with a higher default.
 
 At any point along the way:
-- Unsafe ticks grouped by service and kind: one tick for a service's operations that add or change, another for those that delete or overwrite, read from the operations' own labels. A destructive operation never shares a tick with one that isn't. This changes DESIGN.md's "its own tick" rule.
+- Done: unsafe ticks are grouped by service and kind (`groupedGrants` in `services/catalog.ts`): one for a service's operations that reach other parties while only reading, one for those that add or change, and one for those that delete or overwrite, read from the operations' own labels. A destructive or unlabeled operation never shares a tick with one that isn't. Proposals made before keep a tick per operation.
 - Done: the daemon checks a staff member's call against the operation's input schema before calling the service (`argumentProblems` in `services/catalog.ts`). An argument missing, unknown, of the wrong type, or outside its list goes back to the staff member with the operation's input; what a schema leaves open passes, and the service has the last word.
 
 The proof used a ChatGPT app, so what the probe left open about MCP servers is still open: Windows Credential Manager as the store for sign-ins, a real MCP server's sign-in, and how long its refresh token lasts.

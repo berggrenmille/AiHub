@@ -13,12 +13,14 @@ import {
   describeInput,
   describeOutput,
   endpointOf,
+  groupedGrants,
   labelOf,
   liveWebRisk,
   localRisk,
   operationRisk,
   opensWorld,
   publicService,
+  riskGroup,
   unsafeKey,
 } from "./catalog.ts";
 
@@ -277,11 +279,24 @@ export class Services {
       const { service, tool } = this.operationOn(wanted.service, wanted.operation);
       if (operations.some((operation) => operation.serviceId === service.id && operation.operation === tool.name)) continue;
       const risk = operationRisk(service, tool, staffName);
-      operations.push({ serviceId: service.id, serviceName: service.name, operation: tool.name, why: wanted.why, unsafe: risk });
-      if (risk) unsafe.push({ key: unsafeKey.operation(service.id, tool.name), what: `${tool.name} on ${service.name}`, risk, required: false });
+      const tick = risk ? unsafeKey.operations(service.id, riskGroup(tool)) : null;
+      operations.push({ serviceId: service.id, serviceName: service.name, operation: tool.name, why: wanted.why, unsafe: risk, tick });
     }
+    unsafe.push(...this.operationGrants(staffName, operations));
     if (request.liveWeb) unsafe.push(liveWebRisk(staffName));
     return { source, operations, unsafe };
+  }
+
+  /** The ticks these operations ask for: one per service and kind, naming the operations it covers. */
+  operationGrants(staffName: string, operations: ReadonlyArray<Pick<ProposedOperation, "serviceId" | "operation">>): UnsafeGrant[] {
+    return groupedGrants(
+      operations.flatMap((operation) => {
+        const service = this.office.store.getService(operation.serviceId);
+        const tool = service?.tools.find((candidate) => candidate.name === operation.operation);
+        return service && tool ? [{ service, tool }] : [];
+      }),
+      staffName,
+    );
   }
 
   /**

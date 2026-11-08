@@ -1,9 +1,9 @@
 import type { UnsafeGrant } from "@aihub/shared";
 import { Icon } from "./Icon.tsx";
 
-// Grants that break the data boundary, each with its own tick (DESIGN.md › Authority and data
-// boundaries). Approve alone never covers one: a required one blocks approval until ticked, and an
-// optional one left unticked is left out.
+// Grants that break the data boundary, each with a tick; a service's unsafe operations share one per
+// kind (DESIGN.md › Authority and data boundaries). Approve alone never covers one: a required one
+// blocks approval until ticked, and an optional one left unticked is left out.
 
 interface UnsafeGrantsProps {
   grants: UnsafeGrant[];
