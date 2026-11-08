@@ -156,7 +156,7 @@ A review is a run of its own kind. Its input is what AiHub counts from its recor
 - The items it found, how many of them needed the operator, and how many the operator resolved or dismissed, with the operator's latest reasons for dismissing, up to five.
 - Its sources' state, its model and reasoning level, and its responsibility's scope and standing instructions.
 
-The input also holds the signs, and the staff changes proposed in the last 30 days with the operator's decisions. It holds no reports, item text, notes, or source data, and the run has no tools to read them, so nothing a source says can steer it. Reasons for dismissing are the operator's own words, since only the operator dismisses items. The run can only propose staff changes, propose a new supervisor, and list models.
+The input also holds the signs, and the staff changes proposed in the last 30 days with the operator's decisions. It holds no reports, item text, notes, or source data, and the run has no tools to read them, so nothing a source says can steer it. Reasons for dismissing are the operator's own words, since only the operator dismisses items. The run can only propose staff changes, propose a new supervisor, and list models. It never proposes more operations: access grows only when the operator asks for it.
 
 A staff change waits on an approval card in the Chief of Staff's chat. Nothing applies until the operator approves it:
 
@@ -164,8 +164,9 @@ A staff change waits on an approval card in the Chief of Staff's chat. Nothing a
 | --- | --- |
 | Instructions | Replaces the responsibility's scope or standing instructions. The card shows the change line by line. |
 | Model | Sets the supervisor's model and reasoning level. |
+| Operations | Lets the supervisor call more operations on approved services, such as sending replies. Only in chat, when the operator asks. Each unsafe one has its own tick, and one left unticked isn't granted. |
 | End | Ends the responsibility. The supervisor leaves the office with its access revoked. Its items, runs, and notes stay. |
-| Replace | A new supervisor, named on the card, takes over the responsibility with its routine, sources, web search, and items. It starts with empty notes, and the old supervisor leaves. |
+| Replace | A new supervisor, named on the card, takes over the responsibility with its routine, sources, web search, operations, and items. Unsafe grants stay behind: unsafe operations aren't passed on, and live search becomes cached. It starts with empty notes, and the old supervisor leaves. |
 
 A review proposes at most three changes, and each supervisor has at most one change waiting; a newer one replaces it. A change applies only to the supervisor and responsibility as they were when it was proposed. If either changed since, approval is refused, and a supervisor who left withdraws its waiting changes. Ending or replacing a supervisor waits until its open questions and tasks are done. The Chief of Staff can also propose a staff change in chat when the operator asks for one, and the card says when that chat held source data.
 
@@ -270,13 +271,13 @@ Persist occurrence IDs and attempts to deduplicate delivery across retries and r
 - A grant that would break that rule is unsafe, and the operator can still give it, directly. Unsafe grants include:
   - an operation that changes or sends something outside the office;
   - one that can reach parties other than its service;
-  - live web search for staff with personal data;
+  - live web search;
   - a local program, such as an MCP server, that runs outside the sandbox;
   - an operation its service doesn't label.
 
   Each one gets its own row on the card, with a sentence on what could go wrong, and its own tick. Approving the rest never covers it. Unsafe grants are marked wherever they show, every use is recorded and marked, and they never pass to a worker. (Revised 2026-11-08: until then the rule had no exceptions.)
 - Web search is a grant the operator gives a staff member, on the proposal card or the profile card, optionally limited to listed sites. It is Codex's own search in cached mode: results and pages come from OpenAI's index, and Codex fetches nothing from the sites themselves ("offline/cache-only mode" in OpenAI's terms). A query reaches only OpenAI's search service, which already processes the run's context as the model service, and no site sees what a run looks up or which pages it reads. So any staff member may hold it, including one with personal sources. What search returns is untrusted: it enters as data, the run's output counts as source data, and every search and page the run opens is recorded in its activity. [Codex web search](https://learn.chatgpt.com/docs/web-search), [external web access](https://developers.openai.com/api/docs/guides/tools-web-search)
-- Live web access is off unless granted. Live search fetches pages from the sites, so an address a run opens reaches whoever runs that site, and an injected instruction could carry data out in it. Codex's "indexed" mode may also fetch from sites, so it counts as live. Live search can be granted to staff that hold no personal data: no sources, no answers from colleagues, and no notes but their own. For anyone else it is an unsafe grant, given only directly. (Revised 2026-11-08: web search was off for every run until then.)
+- Live web access is off unless granted. Live search fetches pages from the sites, so an address a run opens reaches whoever runs that site, and an injected instruction could carry data out in it. Codex's "indexed" mode may also fetch from sites, so it counts as live. Live search is always an unsafe grant: the operator ticks it on a proposal card or turns it on on the profile card. Every staff member has notes and a responsibility, so none can be shown to hold no personal data. (Revised 2026-11-08: web search was off for every run until then.)
 - A reader written by staff is code, so it runs as a pure function in a WebAssembly JavaScript interpreter with no host APIs, a memory cap, and a time limit. The daemon hands it one file's text and validates the records it returns. It reaches no files, network, or other process. AiHub pins the approved code by its hash, so changed code never runs; a new version is a new reader, approved again.
 - V1 covers reading, monitoring, analysis, reporting, and internal coordination. Drafts, project work, and spending follow in the phases under Roadmap after V1, each with its own grants and approval policies.
 - Staff never see or hold payment card details. A purchase ends in a checkout the operator completes, or later in a payment method with its own hard cap.

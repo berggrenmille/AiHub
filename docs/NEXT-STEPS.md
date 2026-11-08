@@ -2,7 +2,20 @@
 
 Where the build stands against [DESIGN.md](../DESIGN.md) › Build sequence and acceptance.
 
-## Up next: Milestone 6, connections from chat (planned 2026-11-08)
+## Up next: the Milestone 6 proof
+
+Milestone 6 is built, and its whole flow runs in the fake office (below). What is left is step 8, against real Codex, on an account the operator picks:
+- It is set up from chat, signed in by the operator, and read at a briefing with the browser closed.
+- A second account or supervisor can't read the first one's.
+- Sign in again works after the operator signs out at the service.
+- Items open their source record.
+- A cut-off read says what it held back.
+- An unsafe operation is refused before its tick and runs after it.
+- All of it shows in the Access panel.
+
+GitHub is connected here as a ChatGPT app with two linked accounts, so it can show account isolation with no new sign-in. A remote MCP server needs the operator to sign in once in the browser. The proof also settles what the probe left open: Windows Credential Manager as the store for sign-ins, a real service's sign-in, and how long its refresh token lasts.
+
+## Milestone 6: connections from chat (built 2026-11-08)
 
 The operator decided how real integrations work on 2026-11-08:
 - AiHub sets up accounts from chat, as it does folders, and nothing is built for one service in particular.
@@ -11,53 +24,31 @@ The operator decided how real integrations work on 2026-11-08:
 
 Staff can't write the part that reaches an account. A reader is safe because it has no network. Code written by staff that holds an account, reads untrusted mail, and reaches the internet could send that mail anywhere. So the code that reaches out is a service the operator approves, and AiHub's code stands between it and the staff. Approving and signing in stay with the operator, and AiHub never sees a password.
 
-0. **Probe Codex.** Done: both ChatGPT apps and MCP servers work for AiHub (below, What the probe settled).
-1. **Services.** A service reaches an outside account. It is one of:
-   - a ChatGPT app connected to the operator's account, with one of its linked accounts;
-   - a remote MCP server at an address;
-   - a local MCP server, which is a program on this PC.
+| Step | Where it is |
+| --- | --- |
+| 0. Probe Codex | Done first: What the probe settled, below. |
+| 1. Services | `services/services.ts` keeps each service in AiHub's database: a ChatGPT app with one of its linked accounts, or an MCP server by its address or command. Nothing goes into Codex's `config.toml`. The connector process (`runtime/codex-runtime.ts`) runs with apps on and the rest locked down. It gives a service's config only to that service's own thread, where no turn runs. `codex-runtime.test.ts` checks this against the fake app server. |
+| 2. Sources on a service | `sources/service.ts`, behind the same source contract as files and folders. A mapping (`sources/mapping.ts`) turns the structured output into records with a key, a version or fingerprint, a title, a time, and a link that must be a web address. A cut-off read says what waits for the next check, and items open their record. Tested in `mapping.test.ts` and `services.test.ts`. |
+| 3. Set up from chat | The Chief of Staff has `aihub_list_services` and `aihub_propose_service`. The service card approves, signs in, and checks again. A supervisor's card proposes a source on a service and the operations it may call, and its preview reads the account. An app with several linked accounts needs one named, and the daemon pins its `link_id` on every call. |
+| 4. Using it | At the briefing the collector reads the source in code. In chat and tasks, `aihub_use_service` checks the grant on every call and returns the answer between data markers. Every call is in the activity log. The health check, and any call that finds a lapsed sign-in, say so in the Chief of Staff's chat. |
+| 5. Unsafe grants | Ticks on the service card, the hiring card, and a new staff change, Operations (migration v15), which only the operator's request in chat can bring about. A required tick blocks approval. An optional one left unticked isn't granted, and the notice names it. Live search is always unsafe. Unsafe grants never pass to a replacement, and each use is logged as "Unsafe:". |
+| 6. The Access panel | `AccessPanel.tsx`, opened from the top bar and from each profile card. Staff tools come from `GET /api/access`, as the gateway gives them. |
+| 7. The fake office | `runtime/fake-connectors.ts`: a mail service behind a sign-in, with four made-up messages, one of them a prompt injection, and a ChatGPT app list. In `npm run dev:fake`, "watch my inbox" runs the whole flow, and "let Ines send replies" adds the unsafe send. |
 
-   AiHub keeps each service in its database. For an app it keeps the app and the linked account. For an MCP server it keeps the address or the command. It never writes a service into Codex's `config.toml`, where every process would load it. Codex keeps the sign-ins.
+### What trying it in the fake office changed
 
-   A third Codex process, the connector process, runs with apps on. A service's config goes only to the thread that calls it, and no model turn ever runs there: the daemon only lists tools, signs in, and calls operations. Data and conversation runs keep the locked-down features and never see a service.
-2. **Sources on a service.** A new source kind, `service`, sits behind the same source contract. Its connection names three things, all fixed on the card: the service, the read operation the collector calls, and that operation's arguments. For an app, the arguments include the linked account's `link_id`, which the daemon sets, never staff.
-   - **Records.** A mapping turns the output, usually its `structuredContent`, into records: where the list is, and which fields give each record its key, version, title, time, and link. The Chief of Staff writes the mapping from the tool's declared output, and the card's preview checks it. A toolsmith writes a reader only when a mapping can't express the output. It works from the declared output and a made-up sample, never real output.
-   - **Errors.** A tool's error result counts as a failed read.
-   - **From there, the folder flow.** The source has a cursor and a diff, a big change is cut, and no model turn runs when nothing is new. Items link back to their record in the service.
-3. **Set up from chat.**
-   - `aihub_list_services` lists for the Chief of Staff what is installed and signed in, with each service's operations.
-   - When nothing fits, she proposes adding a service with `aihub_propose_service`. It is either a ChatGPT app, found in the app list, which the operator connects at ChatGPT from the card's link, or an MCP server by its address or command. The operator approves it on the card. For an MCP server they also sign in from the card: AiHub opens Codex's sign-in address in their browser and waits for it to finish.
-   - Then she proposes the supervisor with a source on the service, as with folders. Preview reads the account in code, shows the records, and names the account it read. Approve waits for the preview.
-4. **Using it.**
-   - **At the briefing**, the collector calls the read operation in the connector process and hands the supervisor records, as data.
-   - **In chat and tasks**, `aihub_read_source` calls the approved read operations with the arguments the grant allows. Any other approved operation goes through `aihub_use_service`: the gateway checks the grant, then the daemon makes the call.
-   - **Staff never hold a service.** Every call is in the activity log.
-   - **The health check** checks the sign-in of each service in use. When one has lapsed, it posts a notice with Sign in again.
-5. **Unsafe grants, approved directly.** A grant is unsafe when it breaks the rule that no run combines personal data, untrusted content, and a way out. That covers:
-   - an operation that changes or sends something outside the office, such as sending mail;
-   - an operation that can reach parties other than the service, such as fetching any address;
-   - live web search for staff with personal data (web search can now be granted live as well as cached);
-   - a local MCP server, which runs as a program outside the sandbox;
-   - an operation the service doesn't label, which counts as changing things.
+| Finding | Change |
+| --- | --- |
+| A supervisor couldn't be given another operation after joining. | The Operations staff change, with the same ticks as the hiring card. |
+| A call that found the sign-in gone changed the service's status and nothing else. | AiHub says so once in the Chief of Staff's chat. |
+| A failed call read "answered, which answered with an error", and the fake runtime called a failed send sent. | Both fixed. |
+| The card still said "Finish signing in" once the service was connected. | The hint goes once it is connected. |
+| A record's time showed as a raw timestamp in the preview. | It shows as the office shows times. |
 
-   On the card, each unsafe grant has its own row with a sentence on what could go wrong, such as "An email Ines reads could tell her to forward your mail to anyone." Each row needs its own tick, and Approve alone never covers one. The same holds when a staff change adds an unsafe grant later. Unsafe grants are marked wherever they show, every use is logged and marked, and they never pass to a worker. Removing one takes effect at the next call.
-6. **The Access panel.** An Access button in the top bar lists everything staff can reach beyond their own notes, with who has access and when they last used it. Unsafe grants come first, marked.
-   - **Services:** where each comes from, its sign-in, its operations and their labels, and who may use which, with Sign in again and Remove.
-   - **Sources:** every connection, from calendar exports and folders to accounts, with its status, last read, reader, and the staff who hold a grant, with Revoke for each grant.
-   - **Readers:** built-in and written by staff, with the approved code, its author, and the sources that use it.
-   - **Web search:** who holds it, for which sites, cached or live.
-   - **Staff tools:** each staff member's AiHub tools for each kind of run, as the gateway gives them.
+### Known gaps
 
-   The access section on a profile card links to that staff member's rows.
-7. **The fake office.** A fake mail service with a made-up mailbox. "Watch my inbox" runs the whole flow with no account, including an unsafe send the card makes the operator tick.
-8. **The proof.** Against real Codex, on an account the operator picks:
-   - It is set up from chat, signed in by the operator, and read at a briefing with the browser closed.
-   - A second account or supervisor can't read the first one's.
-   - Sign in again works after the operator signs out at the service.
-   - Items open their source record.
-   - A cut-off read says what it held back.
-   - An unsafe operation is refused before its tick and runs after it.
-   - All of it shows in the Access panel.
+- Items only worth knowing appear in the briefing's text, not in the Inbox, so the link to their record shows only for items that need the operator.
+- The fake mail service forgets its sign-in when the daemon restarts, which `tsx watch` does on every edit. Sign in again from the card.
 
 Not in this milestone:
 - Asking the operator before each send: approved unsafe operations run without asking each time. A queue for that is Roadmap phase A.
@@ -85,7 +76,7 @@ No model turn ran.
 
 **Decision (2026-11-08):** both paths, behind one kind of service in AiHub: ChatGPT apps for what OpenAI offers, and MCP servers for everything else.
 
-Not tested yet, and covered by the proof:
+Not tested yet, and left for the proof:
 - Windows Credential Manager as the store for sign-ins. It is Codex's default; the probe used a file so it left nothing behind.
 - A real service's sign-in.
 - How long a real refresh token lasts.

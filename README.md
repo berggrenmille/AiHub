@@ -54,7 +54,7 @@ Ask the Chief of Staff in chat to look after something, such as your work calend
 
 Some staff look things up instead of reading a file, such as a supervisor who summarizes the news. Give a staff member web search on their profile card, optionally limited to some sites, or approve it on the Chief of Staff's proposal card. It is Codex's cached web search: it answers from OpenAI's search index and opens no live pages, so no site sees what your staff look up. What it finds is treated like source data, and every search shows in the activity log.
 
-A supervisor with web search and no source researches what is new since the last briefing and gives each story's address. The same story isn't new twice. Stories are only for reading, so they never go in the Inbox, and dashboards can list them for two days. Live browsing stays off; DESIGN.md › Authority and data boundaries says why.
+A supervisor with web search and no source researches what is new since the last briefing and gives each story's address. The same story isn't new twice. Stories are only for reading, so they never go in the Inbox, and dashboards can list them for two days. Live search, which opens pages on the sites themselves, is an unsafe grant: tick Live search on the profile card or the proposal card to allow it (below, Accounts and services).
 
 ## In the background
 
@@ -88,6 +88,18 @@ Chat with any staff member from their profile card. A supervisor answers from it
 
 In the fake office, try "watch my reading list" or "write a reader for my bank export" in the Chief of Staff's chat.
 
+## Accounts and services
+
+Staff can read outside accounts, such as your mail, through services. A service is a ChatGPT app connected to your ChatGPT account, or an MCP server at an address or running on this PC. Ask the Chief of Staff in chat, such as "watch my inbox". If no service fits, she proposes one on a card. Approve it, then sign in from the card, or for an app, connect it at ChatGPT from the card's link. AiHub never sees your password: Codex keeps the sign-in.
+
+Then she proposes a supervisor whose source is a read operation on the service, such as listing the latest mail. Preview reads the account now, so you see what the supervisor would get, and Approve waits for it. At each briefing AiHub reads the account in code and hands the supervisor only what is new, and each item opens where it came from. The card also lists the operations the supervisor may call itself in chat and tasks, such as searching the mailbox.
+
+Some grants break the data boundary (DESIGN.md › Authority and data boundaries): an operation that changes or sends something, one that may reach others, live web search, and a program that runs on this PC. Each has its own tick on the card, with a sentence on what could go wrong, and approving never covers one you didn't tick. Every use shows in the activity log, marked Unsafe. To give a supervisor more later, such as sending replies, ask the Chief of Staff, and the card works the same way.
+
+The Access button in the top bar lists everything staff can reach. Unsafe grants come first, then services and who may call what, sources and who reads them, readers, web search, and each staff member's AiHub tools. Revoke or remove anything there; it takes effect at the next call. When a sign-in lapses, AiHub says so in the Chief of Staff's chat and in Access, and the health check before the briefing says it again.
+
+In the fake office, try "watch my inbox" in the Chief of Staff's chat, then "let Ines send replies" with the name she proposed. The fake mail service holds made-up messages, one of them a prompt injection, and its sign-in finishes by itself after a few seconds; the page it opens doesn't exist.
+
 ## Staff notes
 
 Staff keep their notes in a vault of markdown files at `data/vault/`, one folder per staff member under `Staff/` plus a shared `Office/` folder. Open the folder in Obsidian to browse the notes and their graph, or point `AIHUB_VAULT_DIR` at a folder inside an existing vault. AiHub picks up notes you edit there. Profile notes follow each staff card, so edit profiles in AiHub instead.
@@ -110,7 +122,7 @@ In the fake office, try "show me a chart" or "make me a dashboard" in the Chief 
 
 The Chief of Staff looks over the supervisors when AiHub notices a warning sign after a briefing: a section missing from two briefings in a row, a source that couldn't be read for three, most of a supervisor's findings dismissed, or nothing found in two weeks. A sign that still stands a week later gets one more look. A week without a new sign costs nothing, and Review now on her profile card asks for a review at any time.
 
-She reads only counts and your decisions, such as runs, failures, usage, how many findings you resolved or dismissed, and the reasons you gave for dismissing, never what supervisors reported. When something would serve you better, she writes a short staff review in her chat, followed by a card for each change: new scope or standing instructions, another model or reasoning level, ending a responsibility so its supervisor leaves, or a replacement who takes over the work with empty notes. She can also propose a new supervisor. Nothing changes until you approve, and she can propose the same changes in chat when you ask. With nothing to suggest she posts nothing and notes why in her journal.
+She reads only counts and your decisions, such as runs, failures, usage, how many findings you resolved or dismissed, and the reasons you gave for dismissing, never what supervisors reported. When something would serve you better, she writes a short staff review in her chat, followed by a card for each change: new scope or standing instructions, another model or reasoning level, ending a responsibility so its supervisor leaves, or a replacement who takes over the work with empty notes. She can also propose a new supervisor. Nothing changes until you approve, and she can propose the same changes in chat when you ask, as well as more operations for a supervisor on a service. With nothing to suggest she posts nothing and notes why in her journal.
 
 In the fake office, press Review now on Vera's card.
 
