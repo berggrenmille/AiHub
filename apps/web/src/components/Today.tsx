@@ -138,7 +138,7 @@ export function Today(props: TodayProps) {
         </h2>
         {!fresh && (
           <p className="muted small">
-            {briefing ? "No briefing yet today." : "No briefing has been delivered yet."}
+            {briefing ? "No briefing yet today." : "No briefing here yet."}
             {nextBriefing && ` The next one is due ${isSameDay(nextBriefing, today) ? "" : `${formatLongDate(nextBriefing)} `}at ${formatClock(nextBriefing)}.`}
           </p>
         )}
