@@ -27,6 +27,10 @@ import {
   type StaffChange,
   type StaffChangeDetail,
   type WebGrant,
+  type ServiceSource,
+  type ServiceGrant,
+  type ServiceStatus,
+  type UnsafeGrant,
   type SourceKind,
   type StaffProfile,
   type StaffReader,
@@ -77,6 +81,43 @@ export interface ConversationRecord extends Conversation {
 }
 
 type Row = Record<string, SQLInputValue>;
+
+/** Where a service is, as AiHub keeps it. Codex keeps the sign-ins. */
+export type ServiceConfig =
+  /** A ChatGPT app. `linkId` names one of its linked accounts; null for an app with one account, or not connected yet. */
+  | { kind: "app"; appId: string; appName: string; linkId: string | null; account: string | null; connectUrl: string | null }
+  /** An MCP server at an address. `server` is the name Codex knows it by. */
+  | { kind: "remote_mcp"; server: string; url: string }
+  /** An MCP server that runs as a program on this PC. */
+  | { kind: "local_mcp"; server: string; command: string; args: string[] };
+
+/** A tool a service offers, as its catalog describes it. */
+export interface ServiceTool {
+  name: string;
+  title: string | null;
+  description: string;
+  /** The service's own labels, such as `readOnlyHint`. Null when it gives none. */
+  annotations: { readOnlyHint?: boolean; destructiveHint?: boolean; openWorldHint?: boolean } | null;
+  inputSchema: unknown;
+  outputSchema: unknown;
+}
+
+export interface ServiceRecord {
+  id: string;
+  kind: ServiceConfig["kind"];
+  name: string;
+  config: ServiceConfig;
+  status: ServiceStatus;
+  detail: string | null;
+  tools: ServiceTool[];
+  reason: string | null;
+  proposedBy: string | null;
+  runId: string | null;
+  unsafe: UnsafeGrant | null;
+  checkedAt: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+}
 
 const ACTIVE_STATES_SQL = ACTIVE_RUN_STATES.map((state) => `'${state}'`).join(", ");
 
@@ -223,6 +264,7 @@ export class Store {
          ) AS unassigned,
          (SELECT group_concat(g.connection_id, ' ') FROM grants g WHERE g.agent_id = a.id AND g.revoked_at IS NULL) AS connection_ids,
          (SELECT w.sites FROM web_grants w WHERE w.agent_id = a.id) AS web_sites,
+         (SELECT w.live FROM web_grants w WHERE w.agent_id = a.id) AS web_live,
          (SELECT COUNT(*) FROM results x WHERE x.agent_id = a.id)
            + (SELECT COUNT(*) FROM items i JOIN responsibilities r ON r.id = i.responsibility_id
               WHERE r.owner_id = a.id AND i.state = 'resolved') AS experience
@@ -236,7 +278,7 @@ export class Store {
       // A run in progress shows first; then missing access; then a supervisor whose responsibility ended.
       const state = (row.run_state as RunState | null) ?? (row.waiting ? "waiting_for_access" : row.unassigned ? "done" : "idle");
       const connectionIds = row.connection_ids ? String(row.connection_ids).split(" ") : [];
-      const web = row.web_sites === null || row.web_sites === undefined ? null : { sites: JSON.parse(String(row.web_sites)) as string[] };
+      const web = row.web_sites === null || row.web_sites === undefined ? null : webGrantFrom(row.web_sites, row.web_live);
       return { ...agent, experience: Number(row.experience), state, connectionIds, web };
     });
   }
@@ -498,9 +540,9 @@ export class Store {
 
   // Connections and grants --------------------------------------------------
 
-  createConnection(input: { kind: SourceKind; label: string; path: string; pattern?: string | null; reader?: string | null }): SourceConnection {
+  createConnection(input: { kind: SourceKind; label: string; path: string; pattern?: string | null; reader?: string | null; service?: ServiceSource | null }): SourceConnection {
     const id = crypto.randomUUID();
-    const config = { path: input.path, pattern: input.pattern ?? null, reader: input.reader ?? null };
+    const config = { path: input.path, pattern: input.pattern ?? null, reader: input.reader ?? null, service: input.service ?? null };
     this.db
       .prepare("INSERT INTO connections (id, kind, label, config, status, created_at) VALUES (?, ?, ?, ?, 'unverified', ?)")
       .run(id, input.kind, input.label, JSON.stringify(config), this.timestamp());
@@ -527,6 +569,14 @@ export class Store {
       .run(agentId, connectionId, JSON.stringify(operations), this.timestamp());
   }
 
+  /** Connections every grant on was taken back, such as when the operator removed their service: nobody reads them. */
+  abandonedConnectionIds(): Set<string> {
+    const rows = this.db
+      .prepare("SELECT connection_id FROM grants GROUP BY connection_id HAVING SUM(CASE WHEN revoked_at IS NULL THEN 1 ELSE 0 END) = 0")
+      .all() as Row[];
+    return new Set(rows.map((row) => String(row.connection_id)));
+  }
+
   /** Takes back an agent's access to a connection. */
   revokeGrant(agentId: string, connectionId: string) {
     this.db
@@ -541,6 +591,7 @@ export class Store {
       this.db.prepare("UPDATE agents SET status = 'archived' WHERE id = ?").run(id);
       this.db.prepare("UPDATE grants SET revoked_at = ? WHERE agent_id = ? AND revoked_at IS NULL").run(now, id);
       this.db.prepare("DELETE FROM web_grants WHERE agent_id = ?").run(id);
+      this.db.prepare("UPDATE service_grants SET revoked_at = ? WHERE agent_id = ? AND revoked_at IS NULL").run(now, id);
     });
   }
 
@@ -667,8 +718,10 @@ export class Store {
 
   /**
    * Hands a supervisor's responsibility to its replacement, with the routines that serve it, its
-   * sources, and its web search. The old grants are revoked and new ones granted, so each grant still
-   * says who held it when. Items and cursors belong to the responsibility, so they follow it.
+   * sources, its web search, and the operations it may call on services. The old grants are revoked and
+   * new ones granted, so each grant still says who held it when. Unsafe grants don't pass on: the
+   * operator approved them for one staff member, so live search becomes cached and unsafe operations
+   * stay behind. Items and cursors belong to the responsibility, so they follow it.
    */
   handOver(fromId: string, toId: string, responsibilityId: string) {
     const now = this.timestamp();
@@ -686,6 +739,13 @@ export class Store {
         .prepare("INSERT INTO web_grants (agent_id, sites, granted_at) SELECT ?, sites, ? FROM web_grants WHERE agent_id = ? ON CONFLICT (agent_id) DO NOTHING")
         .run(toId, now, fromId);
       this.db.prepare("DELETE FROM web_grants WHERE agent_id = ?").run(fromId);
+      this.db
+        .prepare(
+          `INSERT INTO service_grants (agent_id, service_id, operation, unsafe, granted_at)
+           SELECT ?, service_id, operation, NULL, ? FROM service_grants WHERE agent_id = ? AND revoked_at IS NULL AND unsafe IS NULL`,
+        )
+        .run(toId, now, fromId);
+      this.db.prepare("UPDATE service_grants SET revoked_at = ? WHERE agent_id = ? AND revoked_at IS NULL").run(now, fromId);
     });
   }
 
@@ -757,8 +817,8 @@ export class Store {
 
   /** The web search a staff member holds, or null. */
   webGrantOf(agentId: string): WebGrant | null {
-    const row = this.db.prepare("SELECT sites FROM web_grants WHERE agent_id = ?").get(agentId) as Row | undefined;
-    return row ? { sites: JSON.parse(String(row.sites)) as string[] } : null;
+    const row = this.db.prepare("SELECT sites, live FROM web_grants WHERE agent_id = ?").get(agentId) as Row | undefined;
+    return row ? webGrantFrom(row.sites, row.live) : null;
   }
 
   /** Gives a staff member web search, or with null takes it away. */
@@ -768,8 +828,8 @@ export class Store {
       return;
     }
     this.db
-      .prepare("INSERT INTO web_grants (agent_id, sites, granted_at) VALUES (?, ?, ?) ON CONFLICT (agent_id) DO UPDATE SET sites = excluded.sites")
-      .run(agentId, JSON.stringify(grant.sites), this.timestamp());
+      .prepare("INSERT INTO web_grants (agent_id, sites, live, granted_at) VALUES (?, ?, ?, ?) ON CONFLICT (agent_id) DO UPDATE SET sites = excluded.sites, live = excluded.live")
+      .run(agentId, JSON.stringify(grant.sites), grant.live ? 1 : 0, this.timestamp());
   }
 
   /** Connections the agent holds an unrevoked grant for. */
@@ -781,6 +841,124 @@ export class Store {
       )
       .all(agentId) as Row[];
     return rows.map(toConnection);
+  }
+
+  // Services and the operations staff may call on them (Milestone 6) ---------
+
+  createService(input: {
+    /** Set when something must name the service before it exists, such as its unsafe grant's key. */
+    id?: string;
+    name: string;
+    config: ServiceConfig;
+    status: ServiceStatus;
+    detail?: string | null;
+    tools?: ServiceTool[];
+    reason?: string | null;
+    proposedBy?: string | null;
+    runId?: string | null;
+    unsafe?: UnsafeGrant | null;
+  }): ServiceRecord {
+    const id = input.id ?? crypto.randomUUID();
+    this.db
+      .prepare(
+        `INSERT INTO services (id, kind, name, config, status, detail, tools, reason, proposed_by, run_id, unsafe, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        input.config.kind,
+        input.name,
+        JSON.stringify(input.config),
+        input.status,
+        input.detail ?? null,
+        JSON.stringify(input.tools ?? []),
+        input.reason ?? null,
+        input.proposedBy ?? null,
+        input.runId ?? null,
+        input.unsafe ? JSON.stringify(input.unsafe) : null,
+        this.timestamp(),
+      );
+    return this.getService(id)!;
+  }
+
+  getService(id: string): ServiceRecord | null {
+    const row = this.db.prepare("SELECT * FROM services WHERE id = ?").get(id) as Row | undefined;
+    return row ? toServiceRecord(row) : null;
+  }
+
+  /** Every service, newest first. */
+  listServices(): ServiceRecord[] {
+    return (this.db.prepare("SELECT * FROM services ORDER BY created_at DESC, rowid DESC").all() as Row[]).map(toServiceRecord);
+  }
+
+  /** Services in use or waiting to be: neither declined nor removed. */
+  activeServices(): ServiceRecord[] {
+    return this.listServices().filter((service) => service.status !== "declined" && service.status !== "removed");
+  }
+
+  updateService(
+    id: string,
+    patch: Partial<Pick<ServiceRecord, "name" | "config" | "status" | "detail" | "tools" | "checkedAt" | "decidedAt">>,
+  ): ServiceRecord | null {
+    const current = this.getService(id);
+    if (!current) return null;
+    const next = { ...current, ...patch };
+    this.db
+      .prepare("UPDATE services SET name = ?, config = ?, status = ?, detail = ?, tools = ?, checked_at = ?, decided_at = ? WHERE id = ?")
+      .run(next.name, JSON.stringify(next.config), next.status, next.detail, JSON.stringify(next.tools), next.checkedAt, next.decidedAt, id);
+    return this.getService(id);
+  }
+
+  /** Lets a staff member call an operation on a service. `unsafe` says why it breaks the data boundary, when it does. */
+  grantOperation(agentId: string, serviceId: string, operation: string, unsafe: string | null) {
+    const held = this.db
+      .prepare("SELECT id FROM service_grants WHERE agent_id = ? AND service_id = ? AND operation = ? AND revoked_at IS NULL")
+      .get(agentId, serviceId, operation) as Row | undefined;
+    if (held) return;
+    this.db
+      .prepare("INSERT INTO service_grants (agent_id, service_id, operation, unsafe, granted_at) VALUES (?, ?, ?, ?, ?)")
+      .run(agentId, serviceId, operation, unsafe, this.timestamp());
+  }
+
+  /** Takes back one operation. Returns the grant, or null when it was already gone. */
+  revokeServiceGrant(id: number): ServiceGrant | null {
+    const row = this.db.prepare("SELECT * FROM service_grants WHERE id = ? AND revoked_at IS NULL").get(id) as Row | undefined;
+    if (!row) return null;
+    this.db.prepare("UPDATE service_grants SET revoked_at = ? WHERE id = ?").run(this.timestamp(), id);
+    return toServiceGrant(row);
+  }
+
+  /** Takes back every operation on a service, such as when it is removed. */
+  revokeServiceGrantsOn(serviceId: string) {
+    this.db.prepare("UPDATE service_grants SET revoked_at = ? WHERE service_id = ? AND revoked_at IS NULL").run(this.timestamp(), serviceId);
+  }
+
+  /** Operations staff may call, oldest first. */
+  listServiceGrants(agentId?: string): ServiceGrant[] {
+    const rows = this.db
+      .prepare(
+        `SELECT g.* FROM service_grants g JOIN agents a ON a.id = g.agent_id
+         WHERE g.revoked_at IS NULL AND a.status = 'active' AND (? IS NULL OR g.agent_id = ?) ORDER BY g.id`,
+      )
+      .all(agentId ?? null, agentId ?? null) as Row[];
+    return rows.map(toServiceGrant);
+  }
+
+  /** The grant that lets a staff member call an operation, or null. */
+  serviceGrantFor(agentId: string, serviceId: string, operation: string): ServiceGrant | null {
+    const row = this.db
+      .prepare("SELECT * FROM service_grants WHERE agent_id = ? AND service_id = ? AND operation = ? AND revoked_at IS NULL")
+      .get(agentId, serviceId, operation) as Row | undefined;
+    return row ? toServiceGrant(row) : null;
+  }
+
+  markServiceGrantUsed(id: number) {
+    this.db.prepare("UPDATE service_grants SET last_used_at = ? WHERE id = ?").run(this.timestamp(), id);
+  }
+
+  /** Revokes every grant on a connection, such as when the operator takes a source away from everyone. */
+  revokeConnection(connectionId: string) {
+    this.db.prepare("UPDATE grants SET revoked_at = ? WHERE connection_id = ? AND revoked_at IS NULL").run(this.timestamp(), connectionId);
   }
 
   // Routines and occurrences ------------------------------------------------
@@ -952,6 +1130,8 @@ export class Store {
     /** Whether the operator has to do or decide something. True when left out. */
     needsOperator?: boolean;
     expiresAt: string | null;
+    /** Where the operator opens the record, when the source says. */
+    link?: string | null;
   }): { item: Item; change: "new" | "changed" | "unchanged" } {
     const at = this.timestamp();
     const needs = input.needsOperator === false ? 0 : 1;
@@ -961,19 +1141,19 @@ export class Store {
     if (!existing) {
       const { lastInsertRowid } = this.db
         .prepare(
-          `INSERT INTO items (responsibility_id, source_key, source_version, title, detail, urgency, needs_operator, state, first_seen_at, expires_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?)`,
+          `INSERT INTO items (responsibility_id, source_key, source_version, title, detail, urgency, needs_operator, state, first_seen_at, expires_at, updated_at, link)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?)`,
         )
-        .run(input.responsibilityId, input.sourceKey, input.sourceVersion, input.title, input.detail, input.urgency, needs, at, input.expiresAt, at);
+        .run(input.responsibilityId, input.sourceKey, input.sourceVersion, input.title, input.detail, input.urgency, needs, at, input.expiresAt, at, input.link ?? null);
       return { item: this.getItem(Number(lastInsertRowid))!, change: "new" };
     }
     if (existing.source_version === input.sourceVersion) return { item: toItem(existing), change: "unchanged" };
     this.db
       .prepare(
         `UPDATE items SET source_version = ?, title = ?, detail = ?, urgency = ?, needs_operator = ?, state = 'new', resolution = NULL,
-           expires_at = ?, updated_at = ? WHERE id = ?`,
+           expires_at = ?, updated_at = ?, link = ? WHERE id = ?`,
       )
-      .run(input.sourceVersion, input.title, input.detail, input.urgency, needs, input.expiresAt, at, Number(existing.id));
+      .run(input.sourceVersion, input.title, input.detail, input.urgency, needs, input.expiresAt, at, input.link ?? null, Number(existing.id));
     return { item: this.getItem(Number(existing.id))!, change: "changed" };
   }
 
@@ -1436,8 +1616,44 @@ function toResponsibility(row: Row): Responsibility {
   };
 }
 
+function toServiceRecord(row: Row): ServiceRecord {
+  const config = JSON.parse(String(row.config)) as ServiceConfig;
+  return {
+    id: String(row.id),
+    kind: config.kind,
+    name: String(row.name),
+    config,
+    status: row.status as ServiceStatus,
+    detail: row.detail as string | null,
+    tools: JSON.parse(String(row.tools)) as ServiceTool[],
+    reason: row.reason as string | null,
+    proposedBy: row.proposed_by as string | null,
+    runId: row.run_id as string | null,
+    unsafe: row.unsafe ? (JSON.parse(String(row.unsafe)) as UnsafeGrant) : null,
+    checkedAt: row.checked_at as string | null,
+    decidedAt: row.decided_at as string | null,
+    createdAt: String(row.created_at),
+  };
+}
+
+function toServiceGrant(row: Row): ServiceGrant {
+  return {
+    id: Number(row.id),
+    agentId: String(row.agent_id),
+    serviceId: String(row.service_id),
+    operation: String(row.operation),
+    unsafe: row.unsafe as string | null,
+    grantedAt: String(row.granted_at),
+    lastUsedAt: row.last_used_at as string | null,
+  };
+}
+
+function webGrantFrom(sites: unknown, live: unknown): WebGrant {
+  return { sites: JSON.parse(String(sites)) as string[], ...(Number(live) === 1 && { live: true }) };
+}
+
 function toConnection(row: Row): SourceConnection {
-  const config = JSON.parse(String(row.config)) as { path: string; pattern?: string | null; reader?: string | null };
+  const config = JSON.parse(String(row.config)) as { path: string; pattern?: string | null; reader?: string | null; service?: ServiceSource | null };
   return {
     id: String(row.id),
     kind: row.kind as SourceKind,
@@ -1445,6 +1661,7 @@ function toConnection(row: Row): SourceConnection {
     path: config.path,
     pattern: config.pattern ?? null,
     reader: config.reader ?? null,
+    service: config.service ?? null,
     status: row.status as SourceConnection["status"],
     detail: row.detail as string | null,
     verifiedAt: row.verified_at as string | null,
@@ -1611,5 +1828,6 @@ function toItem(row: Row): Item {
     lastReportedAt: row.last_reported_at as string | null,
     resolution: row.resolution as string | null,
     updatedAt: String(row.updated_at),
+    link: (row.link as string | null) ?? null,
   };
 }

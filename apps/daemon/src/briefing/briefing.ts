@@ -30,7 +30,7 @@ export interface BriefingSection {
   /** The responsibility the section reports for. Without one, report items aren't kept as items. */
   responsibilityId?: string | null;
   /** For each source record id: the version that identifies its item, and when the item stops mattering. */
-  identities?: Map<string, { version: string; expiresAt: string | null }>;
+  identities?: Map<string, { version: string; expiresAt: string | null; link?: string | null }>;
   /** Why the source couldn't be read. Such a section reports that instead of running a turn. */
   unavailable?: string | null;
   /** The first check of this source: the changes are everything in its window. */
@@ -383,6 +383,8 @@ function applyItems(office: Office, section: BriefingSection, run: Run, report: 
       urgency: reported.urgency,
       needsOperator: reported.needsOperator,
       expiresAt,
+      // A news story cites its own address; a record from a service may say where it opens.
+      link: identity.link ?? webAddress(reported.sourceRef),
     });
     office.bus.publish({ type: "item", item });
     if (change !== "unchanged" && item.state === "new") fresh.push(item);
@@ -446,4 +448,9 @@ function composeInput(outcomes: SectionOutcome[], viewsOf: (runId: string) => Vi
       return lines.join("\n");
     })
     .join("\n\n");
+}
+
+/** The address itself, when a source reference is a web address. */
+function webAddress(ref: string): string | null {
+  return /^https?:\/\/\S+$/i.test(ref) ? ref : null;
 }

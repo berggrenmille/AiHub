@@ -324,7 +324,13 @@ export class Scheduler {
     const { signedIn, unavailable } = await this.office.checkRuntime();
     if (unavailable) problems.push(sentence(unavailable));
     else if (!signedIn) problems.push(`Codex isn't signed in.${SIGN_IN}`);
-    for (const { id } of store.listConnections()) {
+    // A service that lapsed shows once, by name, with what to do; its sources then say they can't be read.
+    for (const service of await this.office.services.checkAll().catch(() => [])) {
+      problems.push(`${service.name}: ${service.detail ?? "it can't be reached."}${service.status === "signed_out" ? " Sign in again from the Access panel." : ""}`);
+    }
+    // A source taken away from everyone needn't work.
+    const abandoned = store.abandonedConnectionIds();
+    for (const { id } of store.listConnections().filter((connection) => !abandoned.has(connection.id))) {
       const { connection, warning } = await checkConnection(store, id, this.office.sourceContext(this.now()));
       bus.publish({ type: "connection", connection });
       if (connection.status !== "connected") problems.push(`${connection.label}: ${connection.detail}`);

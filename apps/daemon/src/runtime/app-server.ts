@@ -2,8 +2,14 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { InitializeResponse, ServerNotification, ServerRequest } from "@aihub/codex-protocol";
 import type {
+  AppInfo,
+  AppsListResponse,
   CodexErrorInfo,
   DynamicToolCallResponse,
+  ListMcpServerStatusResponse,
+  McpServerOauthLoginResponse,
+  McpServerStatus,
+  McpServerToolCallResponse,
   GetAccountRateLimitsResponse,
   GetAccountResponse,
   Model,
@@ -84,6 +90,8 @@ export class AppServerProcess {
   /** What each thread runs on: from its start or resume, then from each turn that names a model. */
   private readonly threadModels = new Map<string, NonNullable<TurnResult["model"]>>();
   private exitReason: string | null = null;
+  /** Sign-ins in progress, by service name. */
+  private readonly signIns = new Map<string, (outcome: { ok: boolean; error: string | null }) => void>();
 
   private constructor(
     command: AppServerCommand,
@@ -209,6 +217,69 @@ export class AppServerProcess {
     return this.connection.request("account/read", { refreshToken: false }) as Promise<GetAccountResponse>;
   }
 
+  // Services (DESIGN.md › Connectors and capabilities). These run only in the connector process,
+  // where no turn ever runs: AiHub lists, signs in to, and calls services from code.
+
+  /** A thread that only carries a service's config, for calls from code. No turn runs in it. */
+  async startServiceThread(cwd: string, mcpServers: Record<string, unknown>): Promise<string> {
+    const response = (await this.connection.request("thread/start", {
+      cwd,
+      sandbox: "read-only",
+      approvalPolicy: "untrusted",
+      ephemeral: true,
+      config: { web_search: "disabled", ...(Object.keys(mcpServers).length && { mcp_servers: mcpServers }) } as ParamsOf<"thread/start">["config"],
+      developerInstructions: "AiHub calls services from code in this thread. No turn runs here.",
+    })) as ThreadStartResponse;
+    return response.thread.id;
+  }
+
+  async listApps(): Promise<AppInfo[]> {
+    const apps: AppInfo[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = (await this.connection.request("app/list", { cursor, limit: 500 })) as AppsListResponse;
+      apps.push(...page.data);
+      cursor = page.nextCursor;
+    } while (cursor);
+    return apps;
+  }
+
+  async mcpStatus(threadId: string, serverName: string): Promise<McpServerStatus | null> {
+    const page = (await this.connection.request("mcpServerStatus/list", { threadId, serverName, detail: "toolsAndAuthOnly" })) as ListMcpServerStatusResponse;
+    return page.data.find((status) => status.name === serverName) ?? null;
+  }
+
+  /** Starts a service's sign-in. `done` settles when Codex says it finished, or after the timeout. */
+  async oauthLogin(name: string, threadId: string, timeoutSecs: number): Promise<{ url: string; done: Promise<{ ok: boolean; error: string | null }> }> {
+    let settle!: (outcome: { ok: boolean; error: string | null }) => void;
+    const done = new Promise<{ ok: boolean; error: string | null }>((resolve) => (settle = resolve));
+    const timer = setTimeout(() => settle({ ok: false, error: "The sign-in wasn't finished in time." }), (timeoutSecs + 5) * 1000);
+    timer.unref?.();
+    const listener = (outcome: { ok: boolean; error: string | null }) => {
+      clearTimeout(timer);
+      settle(outcome);
+    };
+    this.signIns.set(name, listener);
+    try {
+      // The generated type says bigint, but the wire takes a plain number, which JSON can carry.
+      const response = (await this.connection.request("mcpServer/oauth/login", { name, threadId, timeoutSecs: timeoutSecs as unknown as bigint })) as McpServerOauthLoginResponse;
+      return { url: response.authorizationUrl, done: done.finally(() => this.signIns.delete(name)) };
+    } catch (error) {
+      clearTimeout(timer);
+      this.signIns.delete(name);
+      throw error;
+    }
+  }
+
+  async callTool(threadId: string, server: string, tool: string, args: Record<string, unknown>): Promise<McpServerToolCallResponse> {
+    return (await this.connection.request("mcpServer/tool/call", {
+      threadId,
+      server,
+      tool,
+      arguments: args as ParamsOf<"mcpServer/tool/call">["arguments"],
+    })) as McpServerToolCallResponse;
+  }
+
   rateLimits(): Promise<GetAccountRateLimitsResponse> {
     return this.connection.request("account/rateLimits/read", undefined) as Promise<GetAccountRateLimitsResponse>;
   }
@@ -288,6 +359,11 @@ export class AppServerProcess {
       case "turn/completed":
         this.activeTurns.get(notification.params.threadId)?.finish(notification.params.turn);
         return;
+      case "mcpServer/oauthLogin/completed": {
+        const { name, success, error } = notification.params;
+        this.signIns.get(name)?.({ ok: success, error: success ? null : (error ?? "The sign-in failed.") });
+        return;
+      }
     }
   }
 

@@ -93,6 +93,124 @@ export interface ProposedModel {
 export interface WebGrant {
   /** Sites search is limited to, such as "bbc.com". Empty allows any. */
   sites: string[];
+  /**
+   * Live search, which opens pages on the sites themselves. It is an unsafe grant the operator gives
+   * directly. Cached search, from an index, when false or left out.
+   */
+  live?: boolean;
+}
+
+/** How a service reaches an outside account (DESIGN.md › Connectors and capabilities). */
+export type ServiceKind = "app" | "remote_mcp" | "local_mcp";
+
+/** What a service's operation does, as the service labels it. Unlabeled counts as changing things. */
+export type OperationLabel = "reads" | "changes" | "unlabeled";
+
+export interface ServiceOperation {
+  name: string;
+  title: string | null;
+  description: string;
+  label: OperationLabel;
+  /** The service says it may reach parties other than itself, or says nothing either way. */
+  openWorld: boolean;
+}
+
+/**
+ * proposed: waiting for the operator. signed_out: approved, waiting for a sign-in. connected: AiHub
+ * can call it. failed: it couldn't be reached. declined and removed: no longer in use.
+ */
+export type ServiceStatus = "proposed" | "signed_out" | "connected" | "failed" | "declined" | "removed";
+
+/** Something that reaches an outside account: a ChatGPT app with one of its accounts, or an MCP server. */
+export interface Service {
+  id: string;
+  kind: ServiceKind;
+  name: string;
+  /** For an app, the app. For an MCP server, its address or the program it runs. */
+  where: string;
+  /** For an app, which of its linked accounts, such as "Work". */
+  account: string | null;
+  status: ServiceStatus;
+  /** What the last check found, or what to do. */
+  detail: string | null;
+  operations: ServiceOperation[];
+  /** Why the Chief of Staff proposed it. */
+  reason: string | null;
+  proposedBy: string | null;
+  /** Why adding it breaks the data boundary, such as a program that runs outside the sandbox. The operator ticks it. */
+  unsafe: UnsafeGrant | null;
+  /** For an app not connected yet: where the operator connects it at ChatGPT. */
+  connectUrl: string | null;
+  checkedAt: string | null;
+  createdAt: string;
+}
+
+/** An operation a staff member may call on a service. */
+export interface ServiceGrant {
+  id: number;
+  agentId: string;
+  serviceId: string;
+  operation: string;
+  /** Why it breaks the data boundary, when it does: the operator approved it directly. */
+  unsafe: string | null;
+  grantedAt: string;
+  lastUsedAt: string | null;
+}
+
+/** A grant that breaks the data boundary, which the operator approves on its own (DESIGN.md › Authority and data boundaries). */
+export interface UnsafeGrant {
+  /** What the operator ticks, such as "operation:<service id>/send_message". */
+  key: string;
+  /** What it grants, such as "send_message on Work mail". */
+  what: string;
+  /** What could go wrong, in a sentence. */
+  risk: string;
+  /** The rest can't work without it, so approving needs the tick. Otherwise an unticked one is left out. */
+  required: boolean;
+}
+
+/** Turns a service's output into records: where the list is, and which fields say what. Paths are dotted, such as "messages" or "data.items". */
+export interface RecordMapping {
+  /** Where the list of records is in the output. Empty when the output is the list. */
+  list: string;
+  /** The field that identifies a record. */
+  key: string;
+  /** A field that changes when the record does. AiHub fingerprints the record when left out. */
+  version?: string;
+  title: string;
+  time?: string;
+  link?: string;
+}
+
+/** What a source on a service calls, all fixed when the operator approves it. */
+export interface ServiceSource {
+  serviceId: string;
+  operation: string;
+  arguments: Record<string, unknown>;
+  mapping: RecordMapping;
+}
+
+/** An operation the Chief of Staff proposes a supervisor may call itself. */
+export interface ProposedOperation {
+  serviceId: string;
+  serviceName: string;
+  operation: string;
+  /** Why the supervisor needs it. */
+  why: string;
+  /** Why it breaks the data boundary, as AiHub words it, or null when it doesn't. */
+  unsafe: string | null;
+}
+
+/** A ChatGPT app on AiHub's Codex sign-in, connected or not. */
+export interface AppListing {
+  id: string;
+  name: string;
+  description: string | null;
+  connected: boolean;
+  /** Where the operator connects it at ChatGPT. */
+  connectUrl: string | null;
+  /** Its linked accounts, once connected. */
+  accounts: string[];
 }
 
 export interface Usage {
@@ -138,7 +256,7 @@ export interface Run {
  * chat: a conversation turn. briefing: a delivered briefing. proposal, policy, and staff_change: a
  * card for the record `refId`. notice: AiHub's own note. review: the Chief of Staff's staff review.
  */
-export type MessageKind = "chat" | "briefing" | "proposal" | "notice" | "policy" | "review" | "staff_change";
+export type MessageKind = "chat" | "briefing" | "proposal" | "notice" | "policy" | "review" | "staff_change" | "service";
 
 export interface ChatMessage {
   id: number;
@@ -182,7 +300,10 @@ export type ActivityKind =
   | "policy"
   | "model"
   | "view"
-  | "review";
+  | "review"
+  | "service"
+  /** The operator took access away, such as a source from a staff member. */
+  | "access";
 
 export interface ActivityEntry {
   id: number;
@@ -243,8 +364,8 @@ export interface Responsibility {
   endedAt: string | null;
 }
 
-/** A calendar export, or a folder of files that a reader turns into records. */
-export type SourceKind = "ics_file" | "folder";
+/** A calendar export, a folder of files that a reader turns into records, or an operation on a service. */
+export type SourceKind = "ics_file" | "folder" | "service";
 
 /** The readers AiHub has built in, for folder sources. */
 export type BuiltInReader = "markdown" | "text" | "csv" | "json";
@@ -260,6 +381,8 @@ export interface SourceConnection {
   pattern: string | null;
   /** For a folder: the reader that turns each file into records. */
   reader: string | null;
+  /** For a source on a service: what it calls. */
+  service: ServiceSource | null;
   status: "unverified" | "connected" | "failed";
   /** What verification found, such as the number of events or the error. */
   detail: string | null;
@@ -294,6 +417,8 @@ export interface ProposedSource {
   /** For a folder: the reader for its files, built in or "staff:<id>" for one a toolsmith wrote, and which files to read. */
   reader?: string;
   pattern?: string;
+  /** For a source on a service: what it calls. Nothing is left for the operator to pick. */
+  service?: ServiceSource;
 }
 
 export type StaffReaderStatus = "drafting" | "proposed" | "approved" | "failed";
@@ -333,6 +458,10 @@ export interface RecruitProposal {
   web?: WebGrant | null;
   /** What the supervisor runs on. Proposals from before the choice existed have none. */
   model?: ProposedModel | null;
+  /** Operations on services the supervisor may call itself, beyond what its source reads. */
+  operations?: ProposedOperation[];
+  /** The grants in this proposal that break the data boundary, each for the operator to tick. */
+  unsafe?: UnsafeGrant[];
   reason: string;
 }
 
@@ -405,6 +534,8 @@ export interface Item {
   lastReportedAt: string | null;
   resolution: string | null;
   updatedAt: string;
+  /** Where the operator opens the record it came from, such as the message in their mail, when the source says. */
+  link: string | null;
 }
 
 /** Who wrote a note, and from what kind of run (DESIGN.md › Memory and notes). */
@@ -481,6 +612,10 @@ export interface StateSnapshot {
   staffChanges: StaffChange[];
   /** Dashboards, and the views under the messages in this snapshot. */
   views: View[];
+  /** Services AiHub reaches outside accounts through, including those proposed or removed, newest first. */
+  services: Service[];
+  /** Operations staff may call on services. */
+  serviceGrants: ServiceGrant[];
   office: OfficeStats;
   runtime: RuntimeStatus | null;
   /** The last event this snapshot includes. Follow the stream with `/api/events?after=<lastEventId>`. */
@@ -507,6 +642,9 @@ export type DaemonEvent =
   | { type: "policy"; policy: PolicyVersion }
   | { type: "staff_change"; change: StaffChange }
   | { type: "view"; view: View }
+  | { type: "service"; service: Service }
+  /** Every operation staff may call on services, after any change. */
+  | { type: "service_grants"; grants: ServiceGrant[] }
   /** The operator removed a dashboard. */
   | { type: "view_removed"; viewId: string }
   /** A conversation was opened, such as the operator's first chat with a supervisor. */
@@ -535,6 +673,23 @@ export interface OpenChatResponse {
 /** `POST /api/proposals/:id/approve`. A proposal with a source needs the file or folder to read. */
 export interface ApproveProposalRequest {
   sourcePath?: string;
+  /** The keys of the unsafe grants the operator ticked. Unticked ones are left out, or block approval when required. */
+  unsafe?: string[];
+}
+
+/** `POST /api/services/:id/approve`: a service with an unsafe grant needs its tick. */
+export interface ApproveServiceRequest {
+  unsafe?: string[];
+}
+
+/** `POST /api/services/:id/sign-in`: the address to open in the operator's browser. AiHub opens it too. */
+export interface ServiceSignInResponse {
+  url: string;
+}
+
+/** `GET /api/services/apps`: the ChatGPT apps connected to AiHub's Codex sign-in. */
+export interface AppsResponse {
+  apps: AppListing[];
 }
 
 /**

@@ -58,6 +58,7 @@ function item(id: number, overrides: Partial<Item> = {}): Item {
     title: `Item ${id}`,
     detail: "",
     urgency: "fyi",
+    link: null,
     needsOperator: true,
     state: "open",
     firstSeenAt: "2026-11-07T16:00:00.000Z",

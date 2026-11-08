@@ -2,6 +2,7 @@ import type { ProposedSource, SourceConnection, SourceKind } from "@aihub/shared
 import type { Store } from "../store/store.ts";
 import { calendarSource } from "./calendar.ts";
 import { folderSource } from "./folder.ts";
+import { serviceSource } from "./service.ts";
 import { BUILT_IN_READERS, isBuiltInReader } from "./readers.ts";
 import type { Identity, SourceAdapter, SourceContext, SourceQuery, SourceReading, SourceRecord } from "./source.ts";
 
@@ -13,6 +14,7 @@ export type { SourceRecord } from "./source.ts";
 const ADAPTERS: Record<SourceKind, SourceAdapter> = {
   ics_file: calendarSource,
   folder: folderSource,
+  service: serviceSource,
 };
 
 export function adapterFor(kind: SourceKind): SourceAdapter {
@@ -84,11 +86,12 @@ export async function checkProposedSource(source: ProposedSource, path: string, 
 }
 
 /** What a connection for a proposed source stores: the path, and for a folder its files and reader. */
-export function connectionFor(source: ProposedSource, path: string): Pick<SourceConnection, "kind" | "label" | "path" | "pattern" | "reader"> {
-  if (source.kind !== "folder") return { kind: source.kind, label: source.label, path, pattern: null, reader: null };
+export function connectionFor(source: ProposedSource, path: string): Pick<SourceConnection, "kind" | "label" | "path" | "pattern" | "reader" | "service"> {
+  if (source.kind === "service") return { kind: "service", label: source.label, path: "", pattern: null, reader: null, service: source.service ?? null };
+  if (source.kind !== "folder") return { kind: source.kind, label: source.label, path, pattern: null, reader: null, service: null };
   const reader = source.reader ?? "text";
   const pattern = source.pattern?.trim() || (isBuiltInReader(reader) ? BUILT_IN_READERS[reader].pattern : "*");
-  return { kind: "folder", label: source.label, path, pattern, reader };
+  return { kind: "folder", label: source.label, path, pattern, reader, service: null };
 }
 
 /** What a proposed source would read at a path, for the operator to look at before approving. */

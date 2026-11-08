@@ -35,6 +35,8 @@ describe("Gateway", () => {
       "aihub_ask_colleague",
       "aihub_assign_task",
       "aihub_commission_reader",
+      "aihub_list_services",
+      "aihub_propose_service",
       ...NOTE_TOOLS,
       ...VIEW_TOOLS,
       "aihub_save_dashboard",

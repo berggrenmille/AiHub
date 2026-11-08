@@ -42,6 +42,7 @@ import { proposeSupervisor } from "./staff/proposals.ts";
 import { proposePolicy } from "./staff/policy.ts";
 import { StaffReview } from "./staff/review.ts";
 import { proposeStaffChange } from "./staff/staff-changes.ts";
+import { Services } from "./services/services.ts";
 import type { SourceContext } from "./sources/source.ts";
 import type { Scheduler } from "./scheduler.ts";
 import { NO_PLATFORM, type Platform } from "./platform.ts";
@@ -161,6 +162,7 @@ export class Office {
   readonly toolsmith: Toolsmith;
   readonly views: Views;
   readonly staffReview: StaffReview;
+  readonly services: Services;
 
   constructor(options: OfficeOptions) {
     this.store = options.store;
@@ -175,6 +177,7 @@ export class Office {
     this.toolsmith = new Toolsmith(this);
     this.views = new Views(this);
     this.staffReview = new StaffReview(this);
+    this.services = new Services(this, options.runtime.connectors ?? null);
     this.gateway = new Gateway(this.store, options.tools ?? OFFICE_TOOLS, (entry) => this.bus.publish({ type: "activity", entry }), {
       notebook: this.notebook,
       proposeSupervisor: (caller, proposal) => proposeSupervisor(this, caller, proposal),
@@ -185,17 +188,18 @@ export class Office {
       toolsmith: this.toolsmith,
       views: this.views,
       sourceContext: () => this.sourceContext(),
+      services: this.services,
     });
   }
 
   /** What source adapters get from the office: the readers staff wrote and the operator approved. */
   sourceContext(now = new Date()): SourceContext {
-    return { now, staffReader: (id) => this.toolsmith.approved(id) };
+    return { now, staffReader: (id) => this.toolsmith.approved(id), callService: (serviceId, operation, args) => this.services.call(serviceId, operation, args) };
   }
 
   /** For checking a proposed source before approval: a reader handed in but not yet approved runs too, in the sandbox. */
   candidateSourceContext(now = new Date()): SourceContext {
-    return { now, staffReader: (id) => this.toolsmith.candidate(id) };
+    return { now, staffReader: (id) => this.toolsmith.candidate(id), callService: (serviceId, operation, args) => this.services.call(serviceId, operation, args) };
   }
 
   /** Seeds the Chief of Staff and closes out runs that a restart interrupted. */
@@ -312,6 +316,8 @@ export class Office {
       policies: this.store.listPolicies(),
       staffChanges: this.store.listStaffChanges(),
       views: this.store.listViews(messages.map((message) => message.id)),
+      services: this.services.list(),
+      serviceGrants: this.services.grants(),
       office: this.officeStats(),
       runtime: this.runtimeStatus,
       lastEventId: this.bus.lastEventId,
@@ -430,6 +436,7 @@ export class Office {
       sources: this.sourceNamesOf(agent.id),
       web,
       policy: this.store.currentPolicy()?.body,
+      operations: this.operationsOf(agent.id),
     });
     // Every turn of a thread is offered the same tools, so a follow-up doesn't restart the thread.
     const options: ContextOptions = {
@@ -550,14 +557,26 @@ export class Office {
   setWebGrant(agentId: string, grant: WebGrant | null): Agent {
     const record = this.store.getAgentRecord(agentId);
     if (!record || record.status !== "active") throw new NotFoundError(`No staff member ${agentId}`);
-    const sites = grant ? normalizeSites(grant.sites) : [];
-    this.store.setWebGrant(agentId, grant ? { sites } : null);
+    // Live search is an unsafe grant, so only the operator gives it, here (DESIGN.md › Authority and data boundaries).
+    const given: WebGrant | null = grant ? { sites: normalizeSites(grant.sites), ...(grant.live && { live: true }) } : null;
+    this.store.setWebGrant(agentId, given);
     const agent = this.store.getAgent(agentId)!;
     this.bus.publish({ type: "agent", agent });
-    const summary = grant ? `The operator gave ${agent.name} ${describeWeb({ sites })}` : `The operator took web search away from ${agent.name}`;
-    this.bus.publish({ type: "activity", entry: this.store.addActivity({ agentId, runId: null, kind: "web", summary }) });
-    this.notebook.journal(agentId, grant ? `The operator gave me ${describeWeb({ sites })}.` : "The operator took my web search away.");
+    const summary = given ? `The operator gave ${agent.name} ${describeWeb(given)}` : `The operator took web search away from ${agent.name}`;
+    this.bus.publish({ type: "activity", entry: this.store.addActivity({ agentId, runId: null, kind: "web", summary: given?.live ? `Unsafe: ${summary}` : summary }) });
+    this.notebook.journal(agentId, given ? `The operator gave me ${describeWeb(given)}.` : "The operator took my web search away.");
     return agent;
+  }
+
+  /** The operator takes a source away from a staff member. Their next read is refused. */
+  revokeSource(connectionId: string, agentId: string) {
+    const connection = this.store.getConnection(connectionId);
+    const agent = this.store.getAgent(agentId);
+    if (!connection || !agent?.connectionIds.includes(connectionId)) throw new NotFoundError(`${agent?.name ?? "That staff member"} holds no grant on that source.`);
+    this.store.revokeGrant(agentId, connectionId);
+    this.bus.publish({ type: "agent", agent: this.store.getAgent(agentId)! });
+    this.activity(agentId, null, "access", `The operator took ${connection.label} away from ${agent.name}`);
+    this.notebook.journal(agentId, `The operator took ${connection.label} away from me.`);
   }
 
   /** The models staff can run on, from the runtime. Read again after an hour. */
@@ -610,6 +629,11 @@ export class Office {
     return this.store.connectionsOf(agentId).map((connection) => connection.label);
   }
 
+  /** The operations a staff member may call on services, as its instructions name them. */
+  private operationsOf(agentId: string): string[] {
+    return this.store.listServiceGrants(agentId).map((grant) => `${grant.operation} on ${this.store.getService(grant.serviceId)?.name ?? "a removed service"}`);
+  }
+
   private async executeTask(runId: string, task: Task): Promise<TaskOutcome> {
     const agent = this.store.getAgentRecord(task.agentId)!;
     const caller = { agentId: agent.id, runId, profile: agent.profile, sourceData: task.sourceData ?? agent.profile === "data" };
@@ -624,7 +648,7 @@ export class Office {
       const web = this.store.webGrantOf(agent.id);
       const contextId = await this.runtime.startContext({
         profile: agent.profile,
-        instructions: `${instructionsFor(agent, { responsibility, sources: this.sourceNamesOf(agent.id), web, policy: this.store.currentPolicy()?.body })}
+        instructions: `${instructionsFor(agent, { responsibility, sources: this.sourceNamesOf(agent.id), web, policy: this.store.currentPolicy()?.body, operations: this.operationsOf(agent.id) })}
 
 ${task.instructions}`,
         tools: this.gateway.specsFor(caller),

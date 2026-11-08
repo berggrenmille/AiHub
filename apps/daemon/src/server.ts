@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import fastifyStatic from "@fastify/static";
 import type {
   Agent,
+  AppsResponse,
   ChatResponse,
   HealthResponse,
   ModelsResponse,
@@ -10,6 +11,8 @@ import type {
   NoteSummary,
   OpenChatResponse,
   PolicyVersion,
+  Service,
+  ServiceSignInResponse,
   SourcePreview,
   StaffChange,
   StateSnapshot,
@@ -65,12 +68,14 @@ const ProfileBody = z
   .refine((profile) => Object.keys(profile).length > 0, "Change at least one field");
 
 const NoteBody = z.object({ body: z.string().max(20_000) }).strict();
-const WebBody = z.object({ sites: z.array(z.string().max(200)).max(50) }).strict();
+const WebBody = z.object({ sites: z.array(z.string().max(200)).max(50), live: z.boolean().optional() }).strict();
 const RoutineBody = z.object({ weekends: z.boolean() }).strict();
 const PolicyBody = z.object({ body: z.string().max(20_000) }).strict();
 const ModelBody = z.object({ model: z.string().trim().min(1).max(80).nullable(), effort: z.string().trim().min(1).max(20).nullable() }).strict();
-const ApproveBody = z.object({ sourcePath: z.string().max(1_000).optional() }).strict();
-const PreviewBody = z.object({ sourcePath: z.string().max(1_000) }).strict();
+const UnsafeTicks = z.array(z.string().max(300)).max(40).optional();
+const ApproveBody = z.object({ sourcePath: z.string().max(1_000).optional(), unsafe: UnsafeTicks }).strict();
+const PreviewBody = z.object({ sourcePath: z.string().max(1_000).default("") }).strict();
+const ApproveServiceBody = z.object({ unsafe: UnsafeTicks }).strict();
 const ReasonBody = z.object({ reason: z.string().max(500).optional() }).strict();
 const CloseItemBody = z.object({ note: z.string().max(500).optional() }).strict();
 const ViewDataBody = z.object({ tool: z.string().trim().min(1).max(60), args: z.record(z.string(), z.unknown()).optional() }).strict();
@@ -232,6 +237,83 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     if (!body.ok) return reply.code(400).send({ error: body.error });
     try {
       return declineProposal(office, request.params.id, body.data.reason);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  // Services (DESIGN.md › Connectors and capabilities): the operator approves, signs in, checks, and removes them.
+  app.get<{ Querystring: { refresh?: string } }>("/api/services/apps", async (request, reply) => {
+    try {
+      const response: AppsResponse = { apps: await office.services.apps(request.query.refresh === "1") };
+      return response;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/services/:id/approve", async (request, reply) => {
+    const body = bodyOf(ApproveServiceBody, request.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
+    try {
+      const service: Service = await office.services.approve(request.params.id, body.data.unsafe ?? []);
+      return service;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/services/:id/decline", async (request, reply) => {
+    const body = bodyOf(ReasonBody, request.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
+    try {
+      const service: Service = office.services.decline(request.params.id, body.data.reason);
+      return service;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/services/:id/sign-in", async (request, reply) => {
+    try {
+      const response: ServiceSignInResponse = await office.services.signIn(request.params.id);
+      return response;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/services/:id/refresh", async (request, reply) => {
+    try {
+      const service: Service = await office.services.refresh(request.params.id);
+      return service;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/services/:id/remove", async (request, reply) => {
+    try {
+      const service: Service = office.services.remove(request.params.id);
+      return service;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.delete<{ Params: { id: string } }>("/api/service-grants/:id", async (request, reply) => {
+    try {
+      office.services.revokeGrant(numericId(request.params.id, "grant"));
+      return reply.code(204).send();
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.delete<{ Params: { id: string; agentId: string } }>("/api/connections/:id/grants/:agentId", async (request, reply) => {
+    try {
+      office.revokeSource(request.params.id, request.params.agentId);
+      return reply.code(204).send();
     } catch (error) {
       return sendError(reply, error);
     }

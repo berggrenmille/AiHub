@@ -399,7 +399,7 @@ async function partB() {
     const accessible = apps.filter((app) => app.isAccessible);
     finding(
       "Which ChatGPT apps does the sign-in offer?",
-      `${apps.length} apps listed, ${accessible.length} connected to this account${accessible.length ? `: ${accessible.map((app) => app.name).join(", ")}` : ""}.\n` +
+      `${apps.length} apps listed, ${accessible.length} connected to this account${accessible.length ? `: ${accessible.map((app) => `${app.name} (${app.id})`).join(", ")}` : ""}.\n` +
         `Some of those listed: ${apps.slice(0, 12).map((app) => app.name).join(", ")}`,
     );
 

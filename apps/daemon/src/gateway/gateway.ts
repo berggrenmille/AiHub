@@ -6,6 +6,7 @@ import type { Notebook } from "../notes/notebook.ts";
 import type { ToolCall, ToolOutcome, ToolSpec } from "../runtime/types.ts";
 import type { SourceContext } from "../sources/source.ts";
 import type { AgentRecord, Store } from "../store/store.ts";
+import type { Services } from "../services/services.ts";
 
 /** Who is calling: identified from the active run, never from anything the model says. */
 export interface Caller {
@@ -60,6 +61,8 @@ export interface OfficeServices {
   views: ViewService | null;
   /** What source adapters need from the office for a read. */
   sourceContext: (() => SourceContext) | null;
+  /** Services that reach outside accounts, and the calls staff may make on them. */
+  services: Services | null;
 }
 
 export interface ToolContext extends OfficeServices {
@@ -145,6 +148,7 @@ export class Gateway {
         toolsmith: this.services.toolsmith ?? null,
         views: this.services.views ?? null,
         sourceContext: this.services.sourceContext ?? null,
+        services: this.services.services ?? null,
       };
       const text = await tool.run(input.data, { caller, agent, store: this.store, ...services });
       this.record(caller, "tool_call", `Used ${call.name}`, { tool: call.name, arguments: input.data });

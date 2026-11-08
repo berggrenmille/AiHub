@@ -106,7 +106,66 @@ export interface UsageLimits {
   exhausted?: boolean;
 }
 
+/** Where a service is, for the runtime to reach it. */
+export type ServiceEndpoint =
+  | { kind: "app"; appId: string }
+  | { kind: "remote_mcp"; server: string; url: string }
+  | { kind: "local_mcp"; server: string; command: string; args: string[] };
+
+/** A ChatGPT app on the runtime's sign-in. */
+export interface RuntimeApp {
+  id: string;
+  name: string;
+  description: string | null;
+  connected: boolean;
+  connectUrl: string | null;
+}
+
+/** A tool a service offers. */
+export interface RuntimeServiceTool {
+  name: string;
+  title: string | null;
+  description: string;
+  annotations: { readOnlyHint?: boolean; destructiveHint?: boolean; openWorldHint?: boolean } | null;
+  inputSchema: unknown;
+  outputSchema: unknown;
+}
+
+export interface ServiceInspection {
+  /** Whether the service is signed in: null when it needs no sign-in. */
+  signedIn: boolean | null;
+  tools: RuntimeServiceTool[];
+  /** For an app: its linked accounts. */
+  accounts: Array<{ linkId: string; name: string }>;
+  /** Why the service couldn't be reached, or null. */
+  error: string | null;
+}
+
+export interface ServiceCallResult {
+  /** False when the service answered with an error. */
+  ok: boolean;
+  text: string;
+  structured: unknown;
+}
+
+/**
+ * Services that reach outside accounts (DESIGN.md › Connectors and capabilities). Calls run in code,
+ * in a process where no model turn ever runs, so a model never holds a service.
+ */
+export interface ConnectorRuntime {
+  /** The ChatGPT apps on the sign-in, connected or not. */
+  apps(): Promise<RuntimeApp[]>;
+  /** The tools a service offers, and whether it is signed in. */
+  inspect(endpoint: ServiceEndpoint): Promise<ServiceInspection>;
+  /** Starts a sign-in: the address for the operator's browser, and when it is done. */
+  signIn(endpoint: ServiceEndpoint): Promise<{ url: string; done: Promise<{ ok: boolean; error: string | null }> }>;
+  /** Calls a tool. For an app, the arguments name the linked account as `link_id`. Throws when the service can't be reached. */
+  call(endpoint: ServiceEndpoint, tool: string, args: Record<string, unknown>): Promise<ServiceCallResult>;
+}
+
 export interface AgentRuntime {
+  /** Services, when the runtime can reach them. */
+  readonly connectors?: ConnectorRuntime;
   /** Starts a context and returns its ID. Ephemeral contexts cannot be resumed. */
   startContext(options: ContextOptions & { ephemeral?: boolean }): Promise<string>;
   /** Resumes a saved context. Throws ContextUnavailableError when it cannot. */

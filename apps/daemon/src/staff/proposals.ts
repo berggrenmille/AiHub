@@ -1,5 +1,5 @@
 import { describeModel } from "./models.ts";
-import type { Proposal, RecruitProposal, SourcePreview } from "@aihub/shared";
+import type { Proposal, ProposedSource, RecruitProposal, SourcePreview, WebGrant } from "@aihub/shared";
 import type { Caller } from "../gateway/gateway.ts";
 import { SUPERVISOR_LIMIT } from "../limits.ts";
 import { ConflictError, InvalidRequestError, NotFoundError } from "../errors.ts";
@@ -9,6 +9,7 @@ import { STAFF_READER_PREFIX } from "../sources/folder.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID, CHIEF_OF_STAFF_ID } from "./chief-of-staff.ts";
 import { SUPERVISOR_CHARTER } from "./supervisor.ts";
 import { describeWeb } from "./web.ts";
+import { unsafeKey } from "../services/catalog.ts";
 
 // Recruitment (DESIGN.md › Recruitment and delegation). The Chief of Staff proposes; the operator
 // approves from a card; the daemon checks the caps and creates everything in one transaction.
@@ -54,12 +55,30 @@ function staffReaderOf(proposal: Proposal): string | null {
   return reader?.startsWith(STAFF_READER_PREFIX) ? reader.slice(STAFF_READER_PREFIX.length) : null;
 }
 
-/** What the proposed source would read at the path the operator typed, before they approve. */
-export async function previewProposal(office: Office, id: string, sourcePath: string): Promise<SourcePreview> {
+/** The service a source on one reads, as the operator knows it: "GitHub (Work)". */
+function serviceNameOf(office: Office, source: ProposedSource): string {
+  const service = source.service ? office.store.getService(source.service.serviceId) : null;
+  return service?.name ?? "the service";
+}
+
+/**
+ * What the proposed source would read: at the path the operator typed, or, for a source on a service,
+ * from the account itself, in code, before they approve.
+ */
+export async function previewProposal(office: Office, id: string, sourcePath = ""): Promise<SourcePreview> {
   const proposal = office.store.getProposal(id);
   if (!proposal) throw new NotFoundError(`No proposal ${id}`);
   const { source } = proposal.payload;
   if (!source) throw new InvalidRequestError("This proposal has no source to preview.");
+  if (source.kind === "service") {
+    const name = serviceNameOf(office, source);
+    try {
+      const reading = await previewProposedSource(source, "", office.candidateSourceContext());
+      return { ...reading, summary: `Read from ${name}: ${reading.summary}`, code: null };
+    } catch (error) {
+      throw new InvalidRequestError(`AiHub can't read ${name}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   const path = sourcePath.trim().replace(/^"(.*)"$/, "$1");
   if (!path) throw new InvalidRequestError(`Pick the ${source.kind === "folder" ? "folder" : "file"} for ${source.label} first.`);
   const readerId = staffReaderOf(proposal);
@@ -71,8 +90,12 @@ export async function previewProposal(office: Office, id: string, sourcePath: st
   }
 }
 
-/** The operator approves: hire the supervisor with its responsibility, routine, and access. */
-export async function approveProposal(office: Office, id: string, options: { sourcePath?: string } = {}): Promise<Proposal> {
+/**
+ * The operator approves: hire the supervisor with its responsibility, routine, and access. Each grant
+ * that breaks the data boundary needs its own tick: a required one blocks approval without it, and an
+ * optional one is left out (DESIGN.md › Authority and data boundaries).
+ */
+export async function approveProposal(office: Office, id: string, options: { sourcePath?: string; unsafe?: string[] } = {}): Promise<Proposal> {
   const { store, bus, notebook } = office;
   const proposal = store.getProposal(id);
   if (!proposal) throw new NotFoundError(`No proposal ${id}`);
@@ -82,21 +105,40 @@ export async function approveProposal(office: Office, id: string, options: { sou
   if (store.isNameTaken(profile.name)) throw new ConflictError(`Someone on staff is already called ${profile.name}.`);
   if (SUPERVISOR_LIMIT - store.countActive("supervisor") <= 0) throw new ConflictError(`The office is at its cap of ${SUPERVISOR_LIMIT} supervisors.`);
 
-  const sourcePath = options.sourcePath?.trim().replace(/^"(.*)"$/, "$1");
+  const ticked = new Set(options.unsafe ?? []);
+  const unsafe = proposal.payload.unsafe ?? [];
+  const missing = unsafe.filter((grant) => grant.required && !ticked.has(grant.key));
+  if (missing.length) {
+    throw new InvalidRequestError(`Tick ${missing.map((grant) => `"${grant.what}"`).join(" and ")} to approve this proposal. ${missing[0]!.risk}`);
+  }
+  const leftOut = unsafe.filter((grant) => !grant.required && !ticked.has(grant.key));
+  const operations = (proposal.payload.operations ?? []).filter((operation) => !operation.unsafe || ticked.has(unsafeKey.operation(operation.serviceId, operation.operation)));
+  const granted: WebGrant | null = web ? { sites: web.sites, ...(web.live && ticked.has(unsafeKey.liveWeb) && { live: true }) } : null;
+  // The services may have been removed since the proposal was made.
+  for (const serviceId of [...(source?.service ? [source.service.serviceId] : []), ...operations.map((operation) => operation.serviceId)]) {
+    const service = store.getService(serviceId);
+    if (!service || !["connected", "signed_out", "failed"].includes(service.status)) {
+      throw new ConflictError(`${service?.name ?? "A service this proposal uses"} is no longer in use. Ask the Chief of Staff for a new proposal.`);
+    }
+  }
+
+  const onService = source?.kind === "service";
+  const sourcePath = onService ? "" : options.sourcePath?.trim().replace(/^"(.*)"$/, "$1");
   const what = source?.kind === "folder" ? "folder" : "file";
-  if (source && !sourcePath) throw new InvalidRequestError(`Pick the ${what} for ${source.label} to approve this proposal.`);
+  if (source && !onService && !sourcePath) throw new InvalidRequestError(`Pick the ${what} for ${source.label} to approve this proposal.`);
   const readerId = staffReaderOf(proposal);
   if (readerId) {
     const reader = store.getReader(readerId);
     if (reader?.status !== "proposed" && reader?.status !== "approved") throw new ConflictError(`The reader this source needs isn't ready: it is ${reader?.status ?? "gone"}.`);
   }
-  if (source && sourcePath) {
-    // Read the source before hiring anyone, so a wrong path is fixed on the card, not after. A reader
-    // staff wrote runs here, in the sandbox, before its approval: approving means having seen this.
+  if (source && (sourcePath || onService)) {
+    // Read the source before hiring anyone, so a wrong path or mapping is fixed on the card, not after. A
+    // reader staff wrote runs here, in the sandbox, before its approval: approving means having seen this.
+    const where = onService ? serviceNameOf(office, source) : sourcePath;
     try {
-      await checkProposedSource(source, sourcePath, office.candidateSourceContext());
+      await checkProposedSource(source, sourcePath ?? "", office.candidateSourceContext());
     } catch (error) {
-      throw new InvalidRequestError(`AiHub can't read ${sourcePath}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new InvalidRequestError(`AiHub can't read ${where}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
   // Another approval may have run while the source was read.
@@ -125,9 +167,10 @@ export async function approveProposal(office: Office, id: string, options: { sou
       timezone: "Europe/Stockholm",
       dailyTurnBudget: SUPERVISOR_DAILY_TURNS,
     });
-    const connection = source && sourcePath ? store.createConnection(connectionFor(source, sourcePath)) : null;
+    const connection = source && (sourcePath || onService) ? store.createConnection(connectionFor(source, sourcePath ?? "")) : null;
     if (connection) store.grant(agentId, connection.id, ["read"]);
-    if (web) store.setWebGrant(agentId, web);
+    if (granted) store.setWebGrant(agentId, granted);
+    for (const operation of operations) store.grantOperation(agentId, operation.serviceId, operation.operation, operation.unsafe);
     const decided = store.decideProposal(id, "approved", `Hired ${profile.name} as ${profile.title}.`)!;
     return { agentId, responsibility, routine, connection, decided };
   });
@@ -142,6 +185,7 @@ export async function approveProposal(office: Office, id: string, options: { sou
   bus.publish({ type: "routine", routine: hired.routine });
   if (connection) bus.publish({ type: "connection", connection });
   for (const agent of [store.getAgent(hired.agentId), store.getAgent(CHIEF_OF_STAFF_ID)]) if (agent) bus.publish({ type: "agent", agent });
+  if (operations.length) office.services.publishGrants();
   bus.publish({ type: "office", office: office.officeStats() });
   bus.publish({
     type: "activity",
@@ -152,12 +196,22 @@ export async function approveProposal(office: Office, id: string, options: { sou
       ? ` ${source!.label} is connected: ${connection.detail}.`
       : ` ${source!.label} isn't readable yet: ${connection.detail}`
     : "";
-  const searches = web ? ` ${profile.name} has ${describeWeb(web)}.` : "";
+  const searches = granted ? ` ${profile.name} has ${describeWeb(granted)}.` : "";
+  const calls = operations.length
+    ? ` ${profile.name} may call ${operations.map((operation) => `${operation.operation} on ${operation.serviceName}${operation.unsafe ? " (unsafe, as you ticked)" : ""}`).join(", ")}.`
+    : "";
+  const notGiven = leftOut.length ? ` Left out, as you didn't tick ${leftOut.length === 1 ? "it" : "them"}: ${leftOut.map((grant) => grant.what).join("; ")}.` : "";
   const runsOn = model ? ` ${profile.name} runs on ${describeModel({ model: model.id, effort: model.effort }, office.knownModels())}.` : "";
+  for (const operation of operations.filter((granted) => granted.unsafe)) {
+    bus.publish({
+      type: "activity",
+      entry: store.addActivity({ agentId: hired.agentId, runId: null, kind: "service", summary: `Unsafe: the operator let ${profile.name} call ${operation.operation} on ${operation.serviceName}` }),
+    });
+  }
   office.postMessage(
     CHIEF_OF_STAFF_CONVERSATION_ID,
     CHIEF_OF_STAFF_ID,
-    `${profile.name} joined as ${profile.title} and reports in the next morning briefing.${access}${searches}${runsOn}`,
+    `${profile.name} joined as ${profile.title} and reports in the next morning briefing.${access}${searches}${calls}${notGiven}${runsOn}`,
     null,
     "notice",
     id,

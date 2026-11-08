@@ -20,6 +20,8 @@ import {
   type Routine,
   type Run,
   type RuntimeStatus,
+  type Service,
+  type ServiceGrant,
   type SourceConnection,
   type StaffReader,
   type StateSnapshot,
@@ -77,6 +79,10 @@ export interface OfficeState {
   office: OfficeStats | null;
   /** Dashboards, and the views shown under messages, by ID. */
   views: Record<string, View>;
+  /** Services AiHub reaches outside accounts through, newest first. */
+  services: Service[];
+  /** Operations staff may call on services. */
+  serviceGrants: ServiceGrant[];
 }
 
 export type OfficeAction =
@@ -115,6 +121,8 @@ export const initialOfficeState: OfficeState = {
   notes: [],
   office: null,
   views: {},
+  services: [],
+  serviceGrants: [],
 };
 
 export function isActive(run: Run): boolean {
@@ -178,6 +186,8 @@ function applySnapshot(state: OfficeState, snapshot: StateSnapshot): OfficeState
     notes: snapshot.notes ?? [],
     office: snapshot.office ?? null,
     views: Object.fromEntries((snapshot.views ?? []).map((view) => [view.id, view])),
+    services: [...(snapshot.services ?? [])].sort(newestFirst),
+    serviceGrants: snapshot.serviceGrants ?? [],
   };
 }
 
@@ -269,6 +279,10 @@ function applyEvent(state: OfficeState, event: DaemonEvent): OfficeState {
       if (existing && existing.updatedAt > event.view.updatedAt) return state;
       return { ...state, views: { ...state.views, [event.view.id]: event.view } };
     }
+    case "service":
+      return { ...state, services: upsert(state.services, event.service, (service) => service.id).sort(newestFirst) };
+    case "service_grants":
+      return { ...state, serviceGrants: event.grants };
     case "view_removed":
       if (!state.views[event.viewId]) return state;
       return { ...state, views: without(state.views, event.viewId) };

@@ -350,4 +350,38 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX staff_changes_by_status ON staff_changes (status, agent_id);
   `,
+
+  // v14: services that reach outside accounts, the operations staff may call on them, and live web
+  // search, each unsafe one approved directly by the operator (Milestone 6).
+  `
+  CREATE TABLE services (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('app', 'remote_mcp', 'local_mcp')),
+    name TEXT NOT NULL,
+    config TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('proposed', 'signed_out', 'connected', 'failed', 'declined', 'removed')),
+    detail TEXT,
+    tools TEXT NOT NULL DEFAULT '[]',
+    reason TEXT,
+    proposed_by TEXT REFERENCES agents (id),
+    run_id TEXT REFERENCES runs (id),
+    unsafe TEXT,
+    checked_at TEXT,
+    decided_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE service_grants (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL REFERENCES agents (id),
+    service_id TEXT NOT NULL REFERENCES services (id),
+    operation TEXT NOT NULL,
+    unsafe TEXT,
+    granted_at TEXT NOT NULL,
+    last_used_at TEXT,
+    revoked_at TEXT
+  );
+  CREATE INDEX service_grants_by_agent ON service_grants (agent_id, revoked_at);
+  ALTER TABLE web_grants ADD COLUMN live INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE items ADD COLUMN link TEXT;
+  `,
 ];

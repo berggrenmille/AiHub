@@ -1,4 +1,5 @@
 import type { SourceConnection, SourceKind } from "@aihub/shared";
+import type { ServiceCallResult } from "../runtime/types.ts";
 import type { FolderReader } from "./reader.ts";
 
 // The source contract (DESIGN.md › Connectors and capabilities). Every kind of source, from a
@@ -16,6 +17,8 @@ export interface SourceRecord {
 export interface Identity {
   version: string;
   expiresAt: string | null;
+  /** Where the operator opens the record, such as a message in their mail, when the source says. */
+  link?: string | null;
 }
 
 export interface SourceChanges {
@@ -54,6 +57,8 @@ export interface SourceContext {
   now: Date;
   /** A reader staff wrote, by its id: null unless the operator approved it. */
   staffReader?: (id: string) => FolderReader | null;
+  /** Calls an operation on a service in code, for a source on one. Throws when the service can't be reached. */
+  callService?: (serviceId: string, operation: string, args: Record<string, unknown>) => Promise<ServiceCallResult>;
 }
 
 export interface SourceAdapter {

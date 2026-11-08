@@ -63,6 +63,8 @@ const ACTIVITY_TONES: Record<ActivityKind, Tone> = {
   model: "idle",
   view: "done",
   review: "done",
+  service: "working",
+  access: "idle",
 };
 
 export function activityTone(kind: ActivityKind): Tone {
