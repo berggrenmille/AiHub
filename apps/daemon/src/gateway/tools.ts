@@ -7,6 +7,7 @@ import { READER_CODE_LIMIT } from "../staff/toolsmith.ts";
 import { catalogText, modelChoiceProblem } from "../staff/models.ts";
 import { MAX_SITES, normalizeSites } from "../staff/web.ts";
 import { POLICY_LIMIT } from "../staff/policy.ts";
+import { VIEW_PROGRAM_LIMIT } from "@aihub/views";
 import { defineTool, type GatewayTool } from "./gateway.ts";
 
 // Read-only office tools for Milestone 1. Each tool names who may call it; the gateway enforces that.
@@ -115,7 +116,7 @@ export const listNotes = defineTool({
   input: z.object({ query: z.string().trim().max(200).optional().describe("Words to look for. Leave out to list everything.") }).strict(),
   roles: ["chief_of_staff", "supervisor", "worker"],
   profiles: ["conversation", "data"],
-  run: ({ query }, { agent, store, notebook }) => {
+  run: ({ query }, { agent, caller, store, notebook, views }) => {
     const names = new Map(store.listAgents().map((other) => [other.id, other.name]));
     const words = query?.toLowerCase().split(/\s+/).filter(Boolean) ?? [];
     const notes = notebookOf(notebook)
@@ -128,6 +129,7 @@ ${notebook!.read(note.path)?.body ?? ""}`.toLowerCase();
         return words.every((word) => text.includes(word));
       })
       .slice(0, 60);
+    if (notes.some((note) => note.ownerId !== agent.id)) views?.tookInPersonal(caller.runId);
     return JSON.stringify(
       notes.map((note) => ({
         title: note.title,
@@ -146,11 +148,12 @@ export const readNote = defineTool({
   input: z.object({ title: z.string().trim().min(1).max(200) }).strict(),
   roles: ["chief_of_staff", "supervisor", "worker"],
   profiles: ["conversation", "data"],
-  run: ({ title }, { agent, notebook }) => {
+  run: ({ title }, { agent, caller, notebook, views }) => {
     const book = notebookOf(notebook);
     const found = book.find(agent.id, title);
     const note = found && book.read(found.path);
     if (!note) throw new Error(`No note titled "${title}" that you can read`);
+    if (note.ownerId !== agent.id) views?.tookInPersonal(caller.runId);
     const header = `Note "${note.title}" (${note.kind}, updated ${note.updatedAt})`;
     // Source-data notes stay data, whoever reads them later.
     return note.provenance === "source_data"
@@ -524,6 +527,62 @@ export const submitReader = defineTool({
   },
 });
 
+// Views (DESIGN.md › Views): interface staff write in OpenUI Lang, checked by AiHub before it shows.
+const viewKinds = ["chat", "follow_up", "report"] as const;
+
+export const viewGuideTool = defineTool({
+  name: "aihub_view_guide",
+  description:
+    "Read how to write a view: a chart, table, key numbers, list, timeline, or cards the operator sees instead of, or beside, text. Read it before your first aihub_show_view or aihub_save_dashboard in a conversation.",
+  input: z
+    .object({
+      for: z.enum(["reply", "dashboard"]).describe("reply: a view under your chat reply or on your briefing section. dashboard: a saved view that fetches fresh data."),
+    })
+    .strict(),
+  roles: ["chief_of_staff", "supervisor"],
+  profiles: ["conversation", "data"],
+  kinds: viewKinds,
+  run: (input, { caller, views }) => {
+    if (!views) throw new Error("Views aren't available in this office");
+    return views.guide(caller, input.for);
+  },
+});
+
+const ViewInput = z
+  .object({
+    title: z.string().trim().min(1).max(80).describe("What it shows, in a few words."),
+    program: z.string().min(1).max(VIEW_PROGRAM_LIMIT).describe("The view in OpenUI Lang, starting with root = Stack([...]). See aihub_view_guide."),
+  })
+  .strict();
+
+export const showViewTool = defineTool({
+  name: "aihub_show_view",
+  description:
+    "Show the operator a view where it reads better than text, such as prices over the day as a chart or a week's meetings as a timeline. In chat it shows under your reply; in a briefing run, on your section. AiHub checks the program first and tells you what to fix. Read aihub_view_guide first.",
+  input: ViewInput,
+  roles: ["chief_of_staff", "supervisor"],
+  profiles: ["conversation", "data"],
+  kinds: viewKinds,
+  run: (input, { caller, views }) => {
+    if (!views) throw new Error("Views aren't available in this office");
+    return views.show(caller, input);
+  },
+});
+
+export const saveDashboardTool = defineTool({
+  name: "aihub_save_dashboard",
+  description:
+    "Save a dashboard when the operator asks for one: a view they open from the Dashboards panel, which fetches fresh office data every time it opens. Saving again under the same title changes it. Read aihub_view_guide for a dashboard first.",
+  input: ViewInput,
+  roles: ["chief_of_staff", "supervisor"],
+  profiles: ["conversation", "data"],
+  kinds: ["chat"],
+  run: (input, { caller, views }) => {
+    if (!views) throw new Error("Views aren't available in this office");
+    return views.saveDashboard(caller, input);
+  },
+});
+
 export const OFFICE_TOOLS: GatewayTool[] = [
   getRoster,
   listActivity,
@@ -542,4 +601,7 @@ export const OFFICE_TOOLS: GatewayTool[] = [
   listNotes,
   readNote,
   writeNote,
+  viewGuideTool,
+  showViewTool,
+  saveDashboardTool,
 ];

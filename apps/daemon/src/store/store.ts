@@ -28,6 +28,7 @@ import {
   type SourceKind,
   type StaffProfile,
   type StaffReader,
+  type View,
   type StaffReaderStatus,
   type Urgency,
   type Usage,
@@ -1031,6 +1032,98 @@ export class Store {
     return this.getAssignment(id)!;
   }
 
+  // Views -------------------------------------------------------------------
+
+  addView(view: Pick<View, "kind" | "agentId" | "runId" | "title" | "program" | "outside">): View {
+    const id = crypto.randomUUID();
+    const at = this.timestamp();
+    this.db
+      .prepare("INSERT INTO views (id, kind, agent_id, run_id, title, program, outside, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(id, view.kind, view.agentId, view.runId, view.title, view.program, view.outside, at, at);
+    return this.getView(id)!;
+  }
+
+  getView(id: string): View | null {
+    const row = this.db.prepare("SELECT * FROM views WHERE id = ?").get(id) as Row | undefined;
+    return row ? toView(row) : null;
+  }
+
+  /** A new version of a view, such as a dashboard its author changed. */
+  updateView(id: string, update: Pick<View, "runId" | "title" | "program">): View {
+    this.db.prepare("UPDATE views SET run_id = ?, title = ?, program = ?, updated_at = ? WHERE id = ?").run(update.runId, update.title, update.program, this.timestamp(), id);
+    return this.getView(id)!;
+  }
+
+  viewsOfRun(runId: string): View[] {
+    return (this.db.prepare("SELECT * FROM views WHERE run_id = ? ORDER BY created_at, rowid").all(runId) as Row[]).map(toView);
+  }
+
+  /** Puts the views the runs handed in, and haven't shown yet, under a posted message. */
+  attachViews(runIds: string[], messageId: number): View[] {
+    if (!runIds.length) return [];
+    const marks = runIds.map(() => "?").join(", ");
+    this.db.prepare(`UPDATE views SET message_id = ? WHERE kind <> 'dashboard' AND message_id IS NULL AND run_id IN (${marks})`).run(messageId, ...runIds);
+    return (this.db.prepare("SELECT * FROM views WHERE message_id = ? ORDER BY created_at, rowid").all(messageId) as Row[]).map(toView);
+  }
+
+  dashboards(): View[] {
+    return (this.db.prepare("SELECT * FROM views WHERE kind = 'dashboard' ORDER BY updated_at DESC, rowid DESC").all() as Row[]).map(toView);
+  }
+
+  findDashboard(agentId: string, title: string): View | null {
+    const row = this.db.prepare("SELECT * FROM views WHERE kind = 'dashboard' AND agent_id = ? AND title = ? COLLATE NOCASE").get(agentId, title) as Row | undefined;
+    return row ? toView(row) : null;
+  }
+
+  /** Dashboards, and the views under the given messages. */
+  listViews(messageIds: number[]): View[] {
+    const marks = messageIds.map(() => "?").join(", ");
+    const shown = messageIds.length
+      ? (this.db.prepare(`SELECT * FROM views WHERE message_id IN (${marks}) ORDER BY created_at, rowid`).all(...messageIds) as Row[]).map(toView)
+      : [];
+    return [...this.dashboards(), ...shown];
+  }
+
+  removeView(id: string): boolean {
+    return this.db.prepare("DELETE FROM views WHERE id = ?").run(id).changes > 0;
+  }
+
+  // Office data for dashboards ------------------------------------------------
+
+  /** Items, newest first, optionally of some responsibilities, in some states, or first seen since a time. */
+  queryItems(filter: { responsibilityIds?: string[]; states: ItemState[]; since?: string; limit: number }): Item[] {
+    const where = [`state IN (${filter.states.map(() => "?").join(", ")})`];
+    const values: SQLInputValue[] = [...filter.states];
+    if (filter.responsibilityIds) {
+      if (!filter.responsibilityIds.length) return [];
+      where.push(`responsibility_id IN (${filter.responsibilityIds.map(() => "?").join(", ")})`);
+      values.push(...filter.responsibilityIds);
+    }
+    if (filter.since) {
+      where.push("first_seen_at >= ?");
+      values.push(filter.since);
+    }
+    const rows = this.db.prepare(`SELECT * FROM items WHERE ${where.join(" AND ")} ORDER BY first_seen_at DESC, id DESC LIMIT ?`).all(...values, filter.limit) as Row[];
+    return rows.map(toItem);
+  }
+
+  /** Runs queued since a time, newest first, optionally of one agent or kind. */
+  queryRuns(filter: { agentId?: string; kind?: RunKind; since: string; limit: number }): Run[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM runs WHERE queued_at >= ? AND (? IS NULL OR agent_id = ?) AND (? IS NULL OR kind = ?)
+         ORDER BY queued_at DESC, rowid DESC LIMIT ?`,
+      )
+      .all(filter.since, filter.agentId ?? null, filter.agentId ?? null, filter.kind ?? null, filter.kind ?? null, filter.limit) as Row[];
+    return rows.map(toRun);
+  }
+
+  /** Assignments created since a time, newest first. */
+  assignmentsSince(since: string): Assignment[] {
+    const rows = this.db.prepare(`${ASSIGNMENT_SELECT} WHERE x.created_at >= ? ORDER BY x.created_at DESC, x.id`).all(since) as Row[];
+    return rows.map(toAssignment);
+  }
+
   // Settings ----------------------------------------------------------------
 
   getSetting(key: string): string | null {
@@ -1260,6 +1353,21 @@ function toAssignment(row: Row): Assignment & { responsibilityId: string | null 
     runsUsed: Number(row.runs_used),
     result: row.result as string | null,
     review: row.review as string | null,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
+function toView(row: Row): View {
+  return {
+    id: String(row.id),
+    kind: row.kind as View["kind"],
+    agentId: String(row.agent_id),
+    runId: (row.run_id as string | null) ?? null,
+    messageId: row.message_id === null || row.message_id === undefined ? null : Number(row.message_id),
+    title: String(row.title),
+    program: String(row.program),
+    outside: row.outside === "load" ? "load" : "ask",
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };

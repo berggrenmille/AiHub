@@ -304,4 +304,22 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE runs ADD COLUMN model TEXT;
   ALTER TABLE runs ADD COLUMN effort TEXT;
   `,
+
+  // v11: views staff write in OpenUI Lang: under a chat reply, in a briefing section, or as a dashboard.
+  `
+  CREATE TABLE views (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('reply', 'section', 'dashboard')),
+    agent_id TEXT NOT NULL REFERENCES agents (id),
+    run_id TEXT REFERENCES runs (id),
+    message_id INTEGER REFERENCES messages (id),
+    title TEXT NOT NULL,
+    program TEXT NOT NULL,
+    outside TEXT NOT NULL CHECK (outside IN ('load', 'ask')),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX views_by_message ON views (message_id);
+  CREATE INDEX views_by_run ON views (run_id);
+  `,
 ];

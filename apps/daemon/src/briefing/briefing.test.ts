@@ -55,14 +55,14 @@ describe("runBriefing", () => {
     assert.equal(store.getAgent(CHIEF_OF_STAFF_ID)?.state, "idle");
   });
 
-  it("gives supervisors only the report tool and their charter", async () => {
+  it("gives supervisors the report and view tools and their charter", async () => {
     const { office, runtime } = setUp();
 
     await runBriefing(office, sampleSections());
 
     for (const context of runtime.contexts.values()) {
       if (context.options.profile !== "data") continue;
-      assert.deepEqual(context.options.tools.map((tool) => tool.name), ["aihub_submit_report", ...NOTE_TOOLS]);
+      assert.deepEqual(context.options.tools.map((tool) => tool.name), ["aihub_submit_report", ...NOTE_TOOLS, "aihub_view_guide", "aihub_show_view"]);
       assert.match(context.options.instructions, /You are \w+, .* Supervisor[\s\S]*Call aihub_submit_report exactly once/);
     }
   });

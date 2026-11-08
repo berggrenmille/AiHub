@@ -5,6 +5,7 @@ import { Store } from "../store/store.ts";
 import { Gateway, type Caller } from "./gateway.ts";
 import { OFFICE_TOOLS } from "./tools.ts";
 const NOTE_TOOLS = ["aihub_list_notes", "aihub_read_note", "aihub_write_note"];
+const VIEW_TOOLS = ["aihub_view_guide", "aihub_show_view"];
 
 function office() {
   const store = new Store(":memory:");
@@ -34,10 +35,13 @@ describe("Gateway", () => {
       "aihub_assign_task",
       "aihub_commission_reader",
       ...NOTE_TOOLS,
+      ...VIEW_TOOLS,
+      "aihub_save_dashboard",
     ]);
-    assert.deepEqual(gateway.specsFor({ ...chief, profile: "data" }).map((tool) => tool.name), ["aihub_ask_colleague", ...NOTE_TOOLS]);
-    assert.deepEqual(gateway.specsFor(supervisor).map((tool) => tool.name), ["aihub_submit_report", ...NOTE_TOOLS]);
-    assert.deepEqual(gateway.specsFor({ ...supervisor, profile: "conversation" }).map((tool) => tool.name), NOTE_TOOLS);
+    assert.deepEqual(gateway.specsFor({ ...chief, profile: "data" }).map((tool) => tool.name), ["aihub_ask_colleague", ...NOTE_TOOLS, ...VIEW_TOOLS, "aihub_save_dashboard"]);
+    // A briefing report may carry a view, but never a dashboard.
+    assert.deepEqual(gateway.specsFor(supervisor).map((tool) => tool.name), ["aihub_submit_report", ...NOTE_TOOLS, ...VIEW_TOOLS]);
+    assert.deepEqual(gateway.specsFor({ ...supervisor, profile: "conversation" }).map((tool) => tool.name), [...NOTE_TOOLS, ...VIEW_TOOLS]);
   });
 
   it("offers each kind of run only the tools that kind allows", async () => {
@@ -52,7 +56,7 @@ describe("Gateway", () => {
     // A task may ask a colleague and read its sources; an answer to a question may only read.
     assert.deepEqual(names(asRun("schedule", "assignment", "data")), ["aihub_ask_colleague", "aihub_recruit_worker", "aihub_read_source", ...NOTE_TOOLS]);
     assert.deepEqual(names(asRun("schedule", "question", "data")), ["aihub_read_source", ...NOTE_TOOLS]);
-    assert.deepEqual(names(asRun("schedule", "follow_up", "data")), ["aihub_review_work", "aihub_read_source", ...NOTE_TOOLS]);
+    assert.deepEqual(names(asRun("schedule", "follow_up", "data")), ["aihub_review_work", "aihub_read_source", ...NOTE_TOOLS, ...VIEW_TOOLS]);
 
     // A chat follow-up is offered the chat's tools, so the thread stays the same, but can't delegate again.
     const followUp = asRun("chief", "follow_up", "conversation");

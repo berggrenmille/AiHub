@@ -136,7 +136,8 @@ describe("HTTP server", () => {
     const response = await app.inject({ url: "/api/health", headers: PAGE });
 
     assert.equal(response.headers["x-frame-options"], "DENY");
-    assert.equal(response.headers["content-security-policy"], "frame-ancestors 'none'");
+    assert.match(String(response.headers["content-security-policy"]), /frame-ancestors 'none'/);
+    assert.match(String(response.headers["content-security-policy"]), /script-src 'self'/);
   });
 
   it("returns the current state", async () => {
@@ -405,5 +406,26 @@ describe("HTTP server: decisions", () => {
     assert.match(started.json().occurrenceId, new RegExp(`^${routine.id}:manual:`));
     assert.equal((await run()).statusCode, 409, "already running");
     assert.equal((await app.inject({ method: "POST", url: "/api/routines/nope/run", headers: PAGE })).statusCode, 404);
+  });
+
+  it("answers a dashboard's data tools, and removes dashboards but not views under messages", async () => {
+    let office: Office;
+    ({ app, office } = await server());
+    const { store } = office;
+    const data = (body: unknown) => app!.inject({ method: "POST", url: "/api/views/data", headers: PAGE, payload: body as object });
+    const staff = await data({ tool: "office_staff" });
+    assert.equal(staff.statusCode, 200);
+    assert.deepEqual(staff.json().rows.map((row: { name: string }) => row.name), ["Vera"]);
+    assert.equal((await data({ tool: "office_items", args: { states: ["gone"] } })).statusCode, 400);
+    assert.equal((await data({ tool: "send_mail", args: {} })).statusCode, 400);
+    assert.equal((await data({})).statusCode, 400);
+
+    const run = store.createRun({ agentId: "chief-of-staff", kind: "chat", title: "Reply" });
+    const dashboard = store.addView({ kind: "dashboard", agentId: "chief-of-staff", runId: run.id, title: "Usage", program: "root = Stack([])", outside: "ask" });
+    const reply = store.addView({ kind: "reply", agentId: "chief-of-staff", runId: run.id, title: "Prices", program: "root = Stack([])", outside: "ask" });
+    const remove = (id: string) => app!.inject({ method: "DELETE", url: `/api/views/${id}`, headers: PAGE });
+    assert.equal((await remove(dashboard.id)).statusCode, 204);
+    assert.equal((await remove(dashboard.id)).statusCode, 404);
+    assert.equal((await remove(reply.id)).statusCode, 409);
   });
 });

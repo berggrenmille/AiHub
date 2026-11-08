@@ -37,6 +37,7 @@ import { instructionsFor } from "./staff/identity.ts";
 import { describeWeb, normalizeSites, webAccessOf } from "./staff/web.ts";
 import { Delegation } from "./staff/delegation.ts";
 import { Toolsmith } from "./staff/toolsmith.ts";
+import { Views } from "./views/views.ts";
 import { proposeSupervisor } from "./staff/proposals.ts";
 import { proposePolicy } from "./staff/policy.ts";
 import type { SourceContext } from "./sources/source.ts";
@@ -154,6 +155,7 @@ export class Office {
   readonly platform: Platform;
   readonly delegation: Delegation;
   readonly toolsmith: Toolsmith;
+  readonly views: Views;
 
   constructor(options: OfficeOptions) {
     this.store = options.store;
@@ -166,6 +168,7 @@ export class Office {
     this.notebook = new Notebook(vaultDir, this.store, (note) => this.bus.publish({ type: "note", note }));
     this.delegation = new Delegation(this);
     this.toolsmith = new Toolsmith(this);
+    this.views = new Views(this);
     this.gateway = new Gateway(this.store, options.tools ?? OFFICE_TOOLS, (entry) => this.bus.publish({ type: "activity", entry }), {
       notebook: this.notebook,
       proposeSupervisor: (caller, proposal) => proposeSupervisor(this, caller, proposal),
@@ -173,6 +176,7 @@ export class Office {
       models: () => this.models(),
       delegation: this.delegation,
       toolsmith: this.toolsmith,
+      views: this.views,
       sourceContext: () => this.sourceContext(),
     });
   }
@@ -283,10 +287,11 @@ export class Office {
   }
 
   snapshot(): StateSnapshot {
+    const messages = this.store.recentMessages(50);
     return {
       agents: this.store.listAgents(),
       conversations: this.store.listConversations(),
-      messages: this.store.recentMessages(50),
+      messages,
       runs: this.store.recentRuns(30),
       activity: this.store.recentActivity(50),
       responsibilities: this.store.listResponsibilities(),
@@ -298,6 +303,7 @@ export class Office {
       readers: this.store.listReaders(),
       notes: this.notebook.list(),
       policies: this.store.listPolicies(),
+      views: this.store.listViews(messages.map((message) => message.id)),
       office: this.officeStats(),
       runtime: this.runtimeStatus,
       lastEventId: this.bus.lastEventId,
@@ -424,6 +430,7 @@ export class Office {
       web: webAccessOf(web),
     };
     this.setRunState(runId, "working");
+    this.views.replying(runId);
     this.activity(agent.id, runId, "run_started", run.kind === "chat" ? `${agent.name} is replying in chat` : `${agent.name}: ${run.title}`);
 
     const model = await this.modelFor(agent);
@@ -470,7 +477,11 @@ export class Office {
       blocker = result.blocker ?? null;
       // The thread now holds what the turn took in, even if the turn failed partway.
       if (result.status === "completed") this.store.setConversationThread(conversationId, { seenMessageId: context.seenMessageId });
-      if (result.text) this.postMessage(conversationId, agent.id, result.text, runId, "chat", null, caller.sourceData);
+      // Views the turn handed in show under its reply, even one that says nothing in words.
+      if (result.text || this.views.pending(runId)) {
+        const message = this.postMessage(conversationId, agent.id, result.text, runId, "chat", null, caller.sourceData);
+        this.views.attach([runId], message.id);
+      }
       if (result.status === "completed") this.finishRun(runId, "done", undefined, prompt.journal);
       else this.finishRun(runId, "failed", result.error ?? `The turn was ${result.status}`, prompt.journal);
     } catch (error) {
@@ -725,6 +736,7 @@ ${task.instructions}`,
 
   /** Closes a run: its state, a journal line, and an activity entry. */
   finishRun(runId: string, state: "done" | "failed", error?: string, journal?: string) {
+    this.views.forget(runId);
     this.setRunState(runId, state, error);
     const run = this.store.getRun(runId)!;
     this.notebook.journal(run.agentId, `${journal ?? `${run.title}.`}${state === "failed" ? " It failed." : ""}`, runId);

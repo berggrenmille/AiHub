@@ -6,6 +6,7 @@ import { Office } from "./office.ts";
 import { CHIEF_OF_STAFF_CONVERSATION_ID as CHAT, CHIEF_OF_STAFF_ID } from "./staff/chief-of-staff.ts";
 import { Store } from "./store/store.ts";
 const NOTE_TOOLS = ["aihub_list_notes", "aihub_read_note", "aihub_write_note"];
+const VIEW_TOOLS = ["aihub_view_guide", "aihub_show_view", "aihub_save_dashboard"];
 
 function startOffice(store = new Store(":memory:"), runtime = new FakeRuntime()) {
   const office = new Office({ store, runtime });
@@ -122,6 +123,7 @@ describe("Office", () => {
       "aihub_assign_task",
       "aihub_commission_reader",
       ...NOTE_TOOLS,
+      ...VIEW_TOOLS,
     ]);
   });
 
@@ -249,7 +251,7 @@ describe("Chat with any staff member", () => {
     assert.match(context!.options.instructions, /^You are Elin, Schedule Supervisor[\s\S]*The operator is talking with you directly in chat\./);
     assert.deepEqual(
       context!.options.tools.map((tool) => tool.name),
-      ["aihub_ask_colleague", "aihub_read_source", ...NOTE_TOOLS],
+      ["aihub_ask_colleague", "aihub_read_source", ...NOTE_TOOLS, ...VIEW_TOOLS],
     );
     assert.equal(office.notebook.list().find((note) => note.title === "Fridays")?.provenance, "source_data");
     assert.deepEqual(

@@ -23,6 +23,7 @@ import type { Office } from "./office.ts";
 import { approveProposal, declineProposal, previewProposal } from "./staff/proposals.ts";
 import { approvePolicy, declinePolicy, writePolicy } from "./staff/policy.ts";
 import { registerLoopbackGuards } from "./security.ts";
+import { answerData } from "./views/data.ts";
 
 export interface ServerOptions {
   office: Office;
@@ -70,6 +71,7 @@ const ApproveBody = z.object({ sourcePath: z.string().max(1_000).optional() }).s
 const PreviewBody = z.object({ sourcePath: z.string().max(1_000) }).strict();
 const ReasonBody = z.object({ reason: z.string().max(500).optional() }).strict();
 const ResolveBody = z.object({ note: z.string().max(500).optional() }).strict();
+const ViewDataBody = z.object({ tool: z.string().trim().min(1).max(60), args: z.record(z.string(), z.unknown()).optional() }).strict();
 
 /** Parses an optional JSON body: a POST without one counts as `{}`. */
 function bodyOf<T>(schema: z.ZodType<T>, body: unknown): { ok: true; data: T } | { ok: false; error: string } {
@@ -242,6 +244,26 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     if (!body.ok) return reply.code(400).send({ error: body.error });
     try {
       return office.closeItem(Number(request.params.id), "resolved", body.data.note?.trim() || null);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  // Views (DESIGN.md › Views): a dashboard fetches read-only office data, and the operator removes dashboards.
+  app.post("/api/views/data", async (request, reply) => {
+    const body = bodyOf(ViewDataBody, request.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
+    try {
+      return await answerData(office, body.data.tool, body.data.args ?? {});
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.delete<{ Params: { id: string } }>("/api/views/:id", async (request, reply) => {
+    try {
+      office.views.remove(request.params.id);
+      return reply.code(204).send();
     } catch (error) {
       return sendError(reply, error);
     }

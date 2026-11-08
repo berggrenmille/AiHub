@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { ActivityEntry, Agent, Assignment, ChatMessage, DaemonEvent, Item, NoteSummary, PolicyVersion, Proposal, Responsibility, Run, StaffReader, StateSnapshot } from "@aihub/shared";
+import type { ActivityEntry, Agent, Assignment, ChatMessage, DaemonEvent, Item, NoteSummary, PolicyVersion, Proposal, Responsibility, Run, StaffReader, StateSnapshot, View } from "@aihub/shared";
 import { ACTIVITY_LIMIT, initialOfficeState, officeReducer, rosterOrder, SETTLED_ASSIGNMENT_LIMIT, type OfficeAction, type OfficeState } from "./state.ts";
 
 const CHAT = "chief-of-staff";
@@ -87,6 +87,7 @@ function snapshot(overrides: Partial<StateSnapshot> = {}): StateSnapshot {
     readers: [],
     policies: [],
     notes: [],
+    views: [],
     office: { turnsToday: 0, dailyTurnLimit: 80, activeSupervisors: 0, supervisorLimit: 8, briefingStreak: 0 },
     runtime: { signedIn: true, detail: "operator@example.com" },
     lastEventId: "boot-0",
@@ -631,6 +632,36 @@ describe("conversations", () => {
     assert.ok(!state.agents.some((a) => a.id === "ada"));
     assert.ok(state.conversations.some((c) => c.id === chat.id));
     assert.deepEqual(state.messages[chat.id]?.map((m) => m.id), [11]);
+  });
+});
+
+describe("views", () => {
+  const view = (overrides: Partial<View> = {}): View => ({
+    id: "view-1",
+    kind: "dashboard",
+    agentId: "chief-of-staff",
+    runId: "run-1",
+    messageId: null,
+    title: "Open items",
+    program: 'root = Stack([Text("Hi")])',
+    outside: "ask",
+    createdAt: "2026-11-07T16:00:00.000Z",
+    updatedAt: "2026-11-07T16:00:00.000Z",
+    ...overrides,
+  });
+
+  it("loads them from the snapshot by id", () => {
+    const state = apply(initialOfficeState, { type: "snapshot", snapshot: snapshot({ views: [view(), view({ id: "view-2", kind: "reply", messageId: 4 })] }) });
+    assert.deepEqual(Object.keys(state.views).sort(), ["view-1", "view-2"]);
+  });
+
+  it("upserts them, ignores older copies, and drops a removed dashboard", () => {
+    let state = events(loaded(), { type: "view", view: view() }, { type: "view", view: view({ title: "Items", updatedAt: "2026-11-07T17:00:00.000Z" }) });
+    assert.equal(state.views["view-1"]?.title, "Items");
+    assert.equal(events(state, { type: "view", view: view({ title: "Old" }) }), state);
+    state = events(state, { type: "view_removed", viewId: "view-1" });
+    assert.deepEqual(state.views, {});
+    assert.equal(events(state, { type: "view_removed", viewId: "view-1" }), state);
   });
 });
 

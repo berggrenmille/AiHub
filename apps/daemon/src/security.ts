@@ -10,6 +10,25 @@ import type { Store } from "./store/store.ts";
 //    that only a same-origin page can obtain from GET /api/session.
 // No CORS headers are ever sent, so other origins cannot read responses either.
 
+/**
+ * The page runs only AiHub's own scripts and talks only to the daemon. Images may come from the web,
+ * for views (DESIGN.md › Views): AiHub's components decide whether an outside image loads by itself or
+ * waits for the operator's click. Nothing else loads from outside, and nothing frames the page.
+ */
+export const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "frame-src 'none'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
+
 export const TOKEN_COOKIE = "aihub_token";
 const TOKEN_SETTING = "install_token";
 const SAFE_METHODS = new Set(["GET", "HEAD"]);
@@ -44,7 +63,7 @@ export function registerLoopbackGuards(app: FastifyInstance, options: LoopbackGu
 
   app.addHook("onRequest", async (request, reply) => {
     reply.header("x-frame-options", "DENY");
-    reply.header("content-security-policy", "frame-ancestors 'none'");
+    reply.header("content-security-policy", CONTENT_SECURITY_POLICY);
     reply.header("x-content-type-options", "nosniff");
 
     const port = options.port();

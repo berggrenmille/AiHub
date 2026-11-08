@@ -173,7 +173,8 @@ export type ActivityKind =
   | "worker"
   | "web"
   | "policy"
-  | "model";
+  | "model"
+  | "view";
 
 export interface ActivityEntry {
   id: number;
@@ -425,6 +426,8 @@ export interface StateSnapshot {
   notes: NoteSummary[];
   /** The office policy's versions and proposals, newest first. */
   policies: PolicyVersion[];
+  /** Dashboards, and the views under the messages in this snapshot. */
+  views: View[];
   office: OfficeStats;
   runtime: RuntimeStatus | null;
   /** The last event this snapshot includes. Follow the stream with `/api/events?after=<lastEventId>`. */
@@ -449,6 +452,9 @@ export type DaemonEvent =
   | { type: "assignment"; assignment: Assignment }
   | { type: "reader"; reader: StaffReader }
   | { type: "policy"; policy: PolicyVersion }
+  | { type: "view"; view: View }
+  /** The operator removed a dashboard. */
+  | { type: "view_removed"; viewId: string }
   /** A conversation was opened, such as the operator's first chat with a supervisor. */
   | { type: "conversation"; conversation: Conversation }
   /** A staff member left the office, such as a worker whose task is accepted. Its records stay. */
@@ -525,6 +531,40 @@ export interface PolicyVersion {
   outcome: string | null;
   createdAt: string;
   decidedAt: string | null;
+}
+
+/**
+ * Where a view shows (DESIGN.md › Views): under a staff member's chat reply, in their section of the
+ * briefing, or as a dashboard the operator opens from the Dashboards panel.
+ */
+export type ViewKind = "reply" | "section" | "dashboard";
+
+/** Interface a staff member wrote in OpenUI Lang, checked by the daemon and drawn by the web app. */
+export interface View {
+  id: string;
+  kind: ViewKind;
+  /** Who wrote it. A dashboard by the Chief of Staff is the office's. */
+  agentId: string;
+  /** The run that handed it in, or last changed a dashboard. */
+  runId: string | null;
+  /** The chat or briefing message it shows under, once that is posted. */
+  messageId: number | null;
+  title: string;
+  /** The program, in OpenUI Lang. */
+  program: string;
+  /**
+   * Whether images and pages from outside AiHub load by themselves, or wait for the operator's click.
+   * They load only in views by staff that hold no personal data.
+   */
+  outside: "load" | "ask";
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** `POST /api/views/data`: a dashboard fetches with one of the read-only data tools. */
+export interface ViewDataRequest {
+  tool: string;
+  args?: Record<string, unknown>;
 }
 
 /** `PUT /api/policy`: the operator writes the policy. */

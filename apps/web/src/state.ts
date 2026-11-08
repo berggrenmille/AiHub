@@ -22,6 +22,7 @@ import {
   type SourceConnection,
   type StaffReader,
   type StateSnapshot,
+  type View,
 } from "@aihub/shared";
 import { compareAssignments, isOpenAssignment } from "./lib/assignments.ts";
 
@@ -71,6 +72,8 @@ export interface OfficeState {
   notes: NoteSummary[];
   /** Null until the first snapshot arrives. */
   office: OfficeStats | null;
+  /** Dashboards, and the views shown under messages, by ID. */
+  views: Record<string, View>;
 }
 
 export type OfficeAction =
@@ -107,6 +110,7 @@ export const initialOfficeState: OfficeState = {
   departed: [],
   notes: [],
   office: null,
+  views: {},
 };
 
 export function isActive(run: Run): boolean {
@@ -168,6 +172,7 @@ function applySnapshot(state: OfficeState, snapshot: StateSnapshot): OfficeState
     departed: [],
     notes: snapshot.notes ?? [],
     office: snapshot.office ?? null,
+    views: Object.fromEntries((snapshot.views ?? []).map((view) => [view.id, view])),
   };
 }
 
@@ -248,6 +253,14 @@ function applyEvent(state: OfficeState, event: DaemonEvent): OfficeState {
     }
     case "office":
       return { ...state, office: event.office };
+    case "view": {
+      const existing = state.views[event.view.id];
+      if (existing && existing.updatedAt > event.view.updatedAt) return state;
+      return { ...state, views: { ...state.views, [event.view.id]: event.view } };
+    }
+    case "view_removed":
+      if (!state.views[event.viewId]) return state;
+      return { ...state, views: without(state.views, event.viewId) };
     case "resync":
       // The connection reloads the snapshot and applies it; until then the current view stands.
       return state;

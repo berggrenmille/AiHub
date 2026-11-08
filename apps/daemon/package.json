@@ -15,6 +15,7 @@
   "dependencies": {
     "@aihub/codex-protocol": "*",
     "@aihub/shared": "*",
+    "@aihub/views": "*",
     "@fastify/static": "^10.1.10",
     "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
     "fastify": "^5.12.8",

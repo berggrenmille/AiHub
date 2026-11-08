@@ -30,6 +30,18 @@ export interface ToolsmithService {
   submit(caller: Caller, input: { code: string; notes: string }): Promise<StaffReader>;
 }
 
+/** Views staff write in OpenUI Lang (DESIGN.md › Views). The office checks each one before keeping it. */
+export interface ViewService {
+  /** The language guide, for a view in a reply or briefing section, or for a dashboard. */
+  guide(caller: Caller, kind: "reply" | "dashboard"): string;
+  /** A view under the caller's chat reply, or on its briefing section. */
+  show(caller: Caller, input: { title: string; program: string }): string;
+  /** Saves a dashboard, or a new version of the caller's one with the same title. */
+  saveDashboard(caller: Caller, input: { title: string; program: string }): string;
+  /** The run read what another staff member or the office holds, so its views hold personal data. */
+  tookInPersonal(runId: string): void;
+}
+
 /** What tools may ask the office to do. The office checks its rules, records, and publishes each change. */
 export interface OfficeServices {
   /** The staff's notes, when the office keeps a vault. */
@@ -42,6 +54,7 @@ export interface OfficeServices {
   models: (() => Promise<ModelOption[]>) | null;
   delegation: DelegationService | null;
   toolsmith: ToolsmithService | null;
+  views: ViewService | null;
   /** What source adapters need from the office for a read. */
   sourceContext: (() => SourceContext) | null;
 }
@@ -126,6 +139,7 @@ export class Gateway {
         models: this.services.models ?? null,
         delegation: this.services.delegation ?? null,
         toolsmith: this.services.toolsmith ?? null,
+        views: this.services.views ?? null,
         sourceContext: this.services.sourceContext ?? null,
       };
       const text = await tool.run(input.data, { caller, agent, store: this.store, ...services });

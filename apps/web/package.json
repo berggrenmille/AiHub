@@ -12,6 +12,9 @@
   },
   "dependencies": {
     "@aihub/shared": "*",
+    "@aihub/views": "*",
+    "@openuidev/lang-core": "1.1.0",
+    "@openuidev/react-lang": "1.1.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
