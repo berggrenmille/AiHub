@@ -266,3 +266,43 @@ A waiting briefing costs nothing while it waits. A chat turn after a briefing co
 - A connection lost during a turn shows only when that turn fails, about a minute later.
 - Wake timers on battery are off in this PC's power plan, so a laptop on battery won't wake for the briefing. `status` says so.
 - Signing out and in, and sleep, are left to the operator to try.
+
+## Web search as a grant (decided 2026-11-08)
+
+Nora, hired as a news supervisor, couldn't brief: no run had web search, and a supervisor without a source had nothing to check. The operator asked for the security rule to be revised, since many staff will need the web. DESIGN.md › Authority and data boundaries now allows Codex's cached web search as a grant; live search stays off.
+
+The reasoning: the rule against combining personal data, untrusted content, and a way out is about sending data to a party the untrusted content could control. Cached search answers from OpenAI's index and fetches nothing from the sites, so a query reaches only OpenAI, which already processes the run as the model service. Live search, and Codex's "indexed" mode, which may fetch, would let an injected instruction put data in an address a site's owner sees.
+
+1. **The grant.** `web_grants` (migration v8) holds who may search, optionally limited to sites. The operator gives, limits, and takes it away on the profile card (`PUT`/`DELETE /api/agents/:id/web`). A run with the grant starts with `web_search = "cached"`, plus `tools.web_search.allowed_domains` when limited; every other run keeps `web_search = "disabled"`.
+2. **Untrusted, and on the record.** Each search and page open is an activity entry. A chat turn that searched counts as source data, so the thread and its notes do too. The staff member's instructions say search results are data and never instructions.
+3. **Proposals.** The Chief of Staff can propose a supervisor with web search, and must propose a source or web search. Approving grants it.
+4. **Research in the briefing.** A supervisor with web search and no source runs one turn at every briefing: what is new since the last one, with the address of each story as its `sourceRef`. Addresses key the items, so a story is never new twice, and the researcher is shown what it reported in the last four days. Items lapse after two days, and neither carried-over stories nor their lapsing go into the briefing. A supervisor with neither now gets a section saying so, instead of "its access was removed".
+
+### How it was shown
+
+- `morning.test.ts`, "Morning briefing from web research"; `office.test.ts`, `proposals.test.ts`, `server.test.ts`, `codex-runtime.test.ts`, and `staff/web.test.ts`.
+- A probe of Codex's three modes (cached, indexed, live) for news from the last 24 hours: all three found it. Cached is the one that fetches nothing from the sites.
+- Nora's research section against real Codex, in a throwaway office with her real profile and responsibility. The first briefing reported three stories from the day before, each with its address and publication time, and the activity log listed her three searches. The second ran with the clock a day ahead. Nora searched six more times, reported nothing as new, and said the results were older or repeated what she had already reported, so the briefing might miss stories.
+- Nora's grant was given on her profile card in the installed office.
+
+### Usage measured
+
+Codex 0.167.0, 2026-11-08:
+
+| Run | Turns | Input tokens | Cached | Output |
+| --- | --- | --- | --- | --- |
+| Mode probe, cached | 1 | 135,222 | 108,544 | 854 |
+| Mode probe, indexed | 1 | 61,987 | 43,648 | 651 |
+| Mode probe, live | 1 | 125,974 | 84,864 | 1,175 |
+| Nora's research report, first briefing | 1 | 141,301 | 102,912 | 989 |
+| Nora's research report, a day later | 1 | 261,220 | 206,080 | 771 |
+
+Search results come back as input, so a research report takes four to eight times the input of a calendar report (34,682 for Clara's), most of it cached. It runs at every briefing, even on a quiet morning.
+
+### Known gaps
+
+- Briefings run on weekdays, so Monday's research covers the weekend. Nora's responsibility mentions weekends.
+- A supervisor with both a source and web search reads only its source at the briefing. Web search is there in its chat and tasks.
+- Workers don't get web search, even when their supervisor has it.
+- The cached index can lag the news. In the probe, the newest stories were from the day before.
+- Live web search isn't offered. If it comes, it is only for staff with no personal data (DESIGN.md).
