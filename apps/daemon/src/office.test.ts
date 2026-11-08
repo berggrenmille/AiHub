@@ -119,6 +119,7 @@ describe("Office", () => {
       "aihub_list_models",
       "aihub_propose_supervisor",
       "aihub_propose_policy",
+      "aihub_propose_staff_change",
       "aihub_ask_colleague",
       "aihub_assign_task",
       "aihub_commission_reader",

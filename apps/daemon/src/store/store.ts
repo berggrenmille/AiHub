@@ -24,6 +24,8 @@ import {
   type RunProfile,
   type RunState,
   type SourceConnection,
+  type StaffChange,
+  type StaffChangeDetail,
   type WebGrant,
   type SourceKind,
   type StaffProfile,
@@ -80,6 +82,7 @@ const ACTIVE_STATES_SQL = ACTIVE_RUN_STATES.map((state) => `'${state}'`).join(",
 
 /** SQLite is the memory (DESIGN.md › Design rules). Every write goes through here. */
 export class Store {
+  private inTransaction = false;
   private readonly db: DatabaseSync;
 
   constructor(path: string, private readonly now: () => Date = () => new Date()) {
@@ -102,8 +105,11 @@ export class Store {
     }
   }
 
+  /** Runs `work` in one transaction. Inside another, it is part of that one. */
   transaction<T>(work: () => T): T {
+    if (this.inTransaction) return work();
     this.db.exec("BEGIN IMMEDIATE");
+    this.inTransaction = true;
     try {
       const result = work();
       this.db.exec("COMMIT");
@@ -111,6 +117,8 @@ export class Store {
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
+    } finally {
+      this.inTransaction = false;
     }
   }
 
@@ -578,6 +586,161 @@ export class Store {
     return changes ? this.getPolicy(id) : null;
   }
 
+  // Staff changes -----------------------------------------------------------
+
+  createStaffChange(input: {
+    agentId: string;
+    agentName: string;
+    responsibilityId: string;
+    change: StaffChangeDetail;
+    reason: string;
+    proposedBy: string;
+    runId: string | null;
+    fromSourceData: boolean;
+  }): StaffChange {
+    const { kind, ...detail } = input.change;
+    const { lastInsertRowid } = this.db
+      .prepare(
+        `INSERT INTO staff_changes (agent_id, agent_name, responsibility_id, kind, detail, reason, proposed_by, run_id, from_source_data, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+      )
+      .run(
+        input.agentId,
+        input.agentName,
+        input.responsibilityId,
+        kind,
+        JSON.stringify(detail),
+        input.reason,
+        input.proposedBy,
+        input.runId,
+        input.fromSourceData ? 1 : 0,
+        this.timestamp(),
+      );
+    return this.getStaffChange(Number(lastInsertRowid))!;
+  }
+
+  getStaffChange(id: number): StaffChange | null {
+    const row = this.db.prepare(`${STAFF_CHANGE_SELECT} WHERE c.id = ?`).get(id) as Row | undefined;
+    return row ? toStaffChange(row) : null;
+  }
+
+  /** Changes waiting for the operator, then the most recent decisions, newest first. */
+  listStaffChanges(decidedLimit = 30): StaffChange[] {
+    const pending = this.db.prepare(`${STAFF_CHANGE_SELECT} WHERE c.status = 'pending'`).all() as Row[];
+    const decided = this.db.prepare(`${STAFF_CHANGE_SELECT} WHERE c.status <> 'pending' ORDER BY c.id DESC LIMIT ?`).all(decidedLimit) as Row[];
+    return [...pending, ...decided].map(toStaffChange).sort((a, b) => b.id - a.id);
+  }
+
+  /** Changes waiting for the operator, about one supervisor or all. */
+  pendingStaffChanges(agentId?: string): StaffChange[] {
+    const rows = this.db
+      .prepare(`${STAFF_CHANGE_SELECT} WHERE c.status = 'pending' AND (? IS NULL OR c.agent_id = ?) ORDER BY c.id`)
+      .all(agentId ?? null, agentId ?? null) as Row[];
+    return rows.map(toStaffChange);
+  }
+
+  /** Changes proposed since a time, oldest first. */
+  staffChangesSince(since: string): StaffChange[] {
+    return (this.db.prepare(`${STAFF_CHANGE_SELECT} WHERE c.created_at >= ? ORDER BY c.id`).all(since) as Row[]).map(toStaffChange);
+  }
+
+  /** Changes a run proposed, oldest first. */
+  staffChangesOfRun(runId: string): StaffChange[] {
+    return (this.db.prepare(`${STAFF_CHANGE_SELECT} WHERE c.run_id = ? ORDER BY c.id`).all(runId) as Row[]).map(toStaffChange);
+  }
+
+  /** Decides a pending change. Returns null if it was no longer pending. */
+  decideStaffChange(id: number, status: "approved" | "declined" | "withdrawn", outcome: string | null): StaffChange | null {
+    const { changes } = this.db
+      .prepare("UPDATE staff_changes SET status = ?, outcome = ?, decided_at = ? WHERE id = ? AND status = 'pending'")
+      .run(status, outcome, this.timestamp(), id);
+    return changes ? this.getStaffChange(id) : null;
+  }
+
+  /** The operator approved new wording for a responsibility. */
+  setResponsibilityText(id: string, text: { scope: string; standingInstructions: string }): Responsibility | null {
+    const { changes } = this.db
+      .prepare("UPDATE responsibilities SET scope = ?, standing_instructions = ? WHERE id = ? AND status = 'active'")
+      .run(text.scope, text.standingInstructions, id);
+    return changes ? this.getResponsibility(id) : null;
+  }
+
+  /**
+   * Hands a supervisor's responsibility to its replacement, with the routines that serve it, its
+   * sources, and its web search. The old grants are revoked and new ones granted, so each grant still
+   * says who held it when. Items and cursors belong to the responsibility, so they follow it.
+   */
+  handOver(fromId: string, toId: string, responsibilityId: string) {
+    const now = this.timestamp();
+    this.transaction(() => {
+      this.db.prepare("UPDATE responsibilities SET owner_id = ? WHERE id = ? AND owner_id = ?").run(toId, responsibilityId, fromId);
+      this.db.prepare("UPDATE routines SET owner_id = ? WHERE owner_id = ? AND responsibility_id = ?").run(toId, fromId, responsibilityId);
+      this.db
+        .prepare(
+          `INSERT INTO grants (agent_id, connection_id, operations, created_at)
+           SELECT ?, connection_id, operations, ? FROM grants WHERE agent_id = ? AND revoked_at IS NULL`,
+        )
+        .run(toId, now, fromId);
+      this.db.prepare("UPDATE grants SET revoked_at = ? WHERE agent_id = ? AND revoked_at IS NULL").run(now, fromId);
+      this.db
+        .prepare("INSERT INTO web_grants (agent_id, sites, granted_at) SELECT ?, sites, ? FROM web_grants WHERE agent_id = ? ON CONFLICT (agent_id) DO NOTHING")
+        .run(toId, now, fromId);
+      this.db.prepare("DELETE FROM web_grants WHERE agent_id = ?").run(fromId);
+    });
+  }
+
+  /**
+   * What the staff review counts for a supervisor since a time (DESIGN.md › Staff review): numbers
+   * only, never what was reported.
+   */
+  staffNumbers(agentId: string, responsibilityId: string, since: string): StaffNumbers {
+    const runs = this.db
+      .prepare(
+        `SELECT kind, state, COUNT(*) AS n, SUM(input_tokens) AS input, SUM(cached_input_tokens) AS cached, SUM(output_tokens) AS output
+         FROM runs WHERE agent_id = ? AND queued_at >= ? GROUP BY kind, state`,
+      )
+      .all(agentId, since) as Row[];
+    const unfiled = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM runs r WHERE r.agent_id = ? AND r.kind = 'report' AND r.queued_at >= ? AND r.state = 'done'
+         AND NOT EXISTS (SELECT 1 FROM results x WHERE x.run_id = r.id)`,
+      )
+      .get(agentId, since) as { n: number };
+    const items = this.db
+      .prepare("SELECT needs_operator, state, COUNT(*) AS n FROM items WHERE responsibility_id = ? AND first_seen_at >= ? GROUP BY needs_operator, state")
+      .all(responsibilityId, since) as Row[];
+    const last = this.db.prepare("SELECT MAX(first_seen_at) AS at FROM items WHERE responsibility_id = ?").get(responsibilityId) as { at: string | null };
+    const open = this.db
+      .prepare("SELECT COUNT(*) AS n FROM assignments WHERE owner_id = ? AND status IN ('open', 'waiting')")
+      .get(agentId) as { n: number };
+    const numbers: StaffNumbers = {
+      runs: {},
+      usage: { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 },
+      reportsWithoutReport: Number(unfiled.n),
+      items: { needsOperator: { found: 0, open: 0, resolved: 0, dismissed: 0 }, worthKnowing: { found: 0, open: 0, resolved: 0, dismissed: 0 } },
+      lastItemAt: last.at,
+      openAssignments: Number(open.n),
+    };
+    for (const row of runs) {
+      const kind = String(row.kind);
+      const tally = (numbers.runs[kind] ??= { done: 0, failed: 0, other: 0 });
+      const state = String(row.state);
+      tally[state === "done" || state === "failed" ? state : "other"] += Number(row.n);
+      numbers.usage.inputTokens += Number(row.input ?? 0);
+      numbers.usage.cachedInputTokens += Number(row.cached ?? 0);
+      numbers.usage.outputTokens += Number(row.output ?? 0);
+    }
+    for (const row of items) {
+      const tally = Number(row.needs_operator) === 1 ? numbers.items.needsOperator : numbers.items.worthKnowing;
+      const n = Number(row.n);
+      tally.found += n;
+      const state = String(row.state);
+      if (state === "resolved" || state === "dismissed") tally[state] += n;
+      else tally.open += n;
+    }
+    return numbers;
+  }
+
   /** The web search a staff member holds, or null. */
   webGrantOf(agentId: string): WebGrant | null {
     const row = this.db.prepare("SELECT sites FROM web_grants WHERE agent_id = ?").get(agentId) as Row | undefined;
@@ -725,6 +888,11 @@ export class Store {
       .prepare("SELECT * FROM proposals ORDER BY status = 'pending' DESC, created_at DESC, rowid DESC LIMIT ?")
       .all(limit) as Row[];
     return rows.map(toProposal);
+  }
+
+  /** Proposals a run made, oldest first. */
+  proposalsOfRun(runId: string): Proposal[] {
+    return (this.db.prepare("SELECT * FROM proposals WHERE run_id = ? ORDER BY created_at, rowid").all(runId) as Row[]).map(toProposal);
   }
 
   /** Records the decision on a pending proposal. Returns null if it was already decided. */
@@ -1278,6 +1446,41 @@ function toPolicy(row: Row): PolicyVersion {
     basedOn: row.based_on === null ? null : Number(row.based_on),
     status: String(row.status) as PolicyVersion["status"],
     fromSourceData: Number(row.from_source_data) === 1,
+    outcome: row.outcome as string | null,
+    createdAt: String(row.created_at),
+    decidedAt: row.decided_at as string | null,
+  };
+}
+
+/** What the staff review counts for one supervisor. */
+export interface StaffNumbers {
+  /** Runs by kind: how many finished, failed, or are still in progress. */
+  runs: Record<string, { done: number; failed: number; other: number }>;
+  usage: Usage;
+  /** Report runs that finished without filing a report. */
+  reportsWithoutReport: number;
+  items: Record<"needsOperator" | "worthKnowing", { found: number; open: number; resolved: number; dismissed: number }>;
+  /** When it last found anything, ever. */
+  lastItemAt: string | null;
+  /** Questions and tasks it is still working on. */
+  openAssignments: number;
+}
+
+const STAFF_CHANGE_SELECT = "SELECT c.*, r.title AS responsibility_title FROM staff_changes c JOIN responsibilities r ON r.id = c.responsibility_id";
+
+function toStaffChange(row: Row): StaffChange {
+  return {
+    id: Number(row.id),
+    agentId: String(row.agent_id),
+    agentName: String(row.agent_name),
+    responsibilityId: String(row.responsibility_id),
+    responsibilityTitle: String(row.responsibility_title),
+    change: { kind: String(row.kind), ...(JSON.parse(String(row.detail)) as object) } as StaffChangeDetail,
+    reason: String(row.reason),
+    proposedBy: String(row.proposed_by),
+    runId: row.run_id as string | null,
+    fromSourceData: Number(row.from_source_data) === 1,
+    status: String(row.status) as StaffChange["status"],
     outcome: row.outcome as string | null,
     createdAt: String(row.created_at),
     decidedAt: row.decided_at as string | null,

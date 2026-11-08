@@ -40,6 +40,8 @@ import { Toolsmith } from "./staff/toolsmith.ts";
 import { Views } from "./views/views.ts";
 import { proposeSupervisor } from "./staff/proposals.ts";
 import { proposePolicy } from "./staff/policy.ts";
+import { StaffReview } from "./staff/review.ts";
+import { proposeStaffChange } from "./staff/staff-changes.ts";
 import type { SourceContext } from "./sources/source.ts";
 import type { Scheduler } from "./scheduler.ts";
 import { NO_PLATFORM, type Platform } from "./platform.ts";
@@ -66,6 +68,8 @@ export interface Task {
   sourceData?: boolean;
   /** The question or task the run works on. */
   assignmentId?: string | null;
+  /** Whether the run reads the agent's notes first. True when left out. */
+  memory?: boolean;
 }
 
 /** What a chat turn answers: the operator's message, or news AiHub brings to the conversation. */
@@ -156,6 +160,7 @@ export class Office {
   readonly delegation: Delegation;
   readonly toolsmith: Toolsmith;
   readonly views: Views;
+  readonly staffReview: StaffReview;
 
   constructor(options: OfficeOptions) {
     this.store = options.store;
@@ -169,10 +174,12 @@ export class Office {
     this.delegation = new Delegation(this);
     this.toolsmith = new Toolsmith(this);
     this.views = new Views(this);
+    this.staffReview = new StaffReview(this);
     this.gateway = new Gateway(this.store, options.tools ?? OFFICE_TOOLS, (entry) => this.bus.publish({ type: "activity", entry }), {
       notebook: this.notebook,
       proposeSupervisor: (caller, proposal) => proposeSupervisor(this, caller, proposal),
       proposePolicy: (caller, input) => proposePolicy(this, caller, input),
+      proposeStaffChange: (caller, input) => proposeStaffChange(this, caller, input),
       models: () => this.models(),
       delegation: this.delegation,
       toolsmith: this.toolsmith,
@@ -303,6 +310,7 @@ export class Office {
       readers: this.store.listReaders(),
       notes: this.notebook.list(),
       policies: this.store.listPolicies(),
+      staffChanges: this.store.listStaffChanges(),
       views: this.store.listViews(messages.map((message) => message.id)),
       office: this.officeStats(),
       runtime: this.runtimeStatus,
@@ -329,6 +337,7 @@ export class Office {
       activeSupervisors: this.store.countActive("supervisor"),
       supervisorLimit: SUPERVISOR_LIMIT,
       briefingStreak,
+      staffReviewAt: this.staffReview.lastReviewAt,
     };
   }
 
@@ -622,7 +631,7 @@ ${task.instructions}`,
         ephemeral: true,
         web: webAccessOf(web),
       });
-      const memory = this.notebook.memoryFor(agent.id);
+      const memory = task.memory === false ? null : this.notebook.memoryFor(agent.id);
       const result = await this.runtime.runTurn(contextId, {
         input: memory ? `${memory}\n\n${task.input}` : task.input,
         model: await this.modelFor(agent),
@@ -674,12 +683,12 @@ ${task.instructions}`,
     const seenMessageId = this.store.lastMessageId(conversation.id);
     const posted = this.store
       .messagesAfter(conversation.id, conversation.seenMessageId)
-      .filter((message) => message.author === "agent" && (message.kind === "briefing" || message.kind === "notice"))
+      .filter((message) => message.author === "agent" && (message.kind === "briefing" || message.kind === "notice" || message.kind === "review"))
       .slice(-POSTED_LIMIT);
     const sourceData = conversation.sourceData || posted.some((message) => message.sourceData);
     if (!posted.length) return { input: prompt.text, sourceData, seenMessageId };
     const blocks = posted.map((message) => {
-      const what = message.kind === "briefing" ? "The briefing you posted" : "A notice AiHub posted";
+      const what = message.kind === "briefing" ? "The briefing you posted" : message.kind === "review" ? "Your staff review" : "A notice AiHub posted";
       const body = clip(message.body, 4000);
       return message.sourceData ? `${what}, written from source data:\nBEGIN SOURCE DATA\n${body}\nEND SOURCE DATA` : `${what}:\n${body}`;
     });

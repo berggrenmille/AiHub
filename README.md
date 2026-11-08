@@ -104,6 +104,14 @@ A button in a view says what it does: hover it to read its action, and one that 
 
 In the fake office, try "show me a chart" or "make me a dashboard" in the Chief of Staff's chat.
 
+## Staff review
+
+The Chief of Staff looks over the supervisors when AiHub notices a warning sign after a briefing: a section missing from two briefings in a row, a source that couldn't be read for three, most of a supervisor's findings dismissed, or nothing found in two weeks. A sign that still stands a week later gets one more look. A week without a new sign costs nothing, and Review now on her profile card asks for a review at any time.
+
+She reads only counts and your decisions, such as runs, failures, usage, and how many findings you resolved or dismissed, never what supervisors reported. When something would serve you better, she writes a short staff review in her chat, followed by a card for each change: new scope or standing instructions, another model or reasoning level, ending a responsibility so its supervisor leaves, or a replacement who takes over the work with empty notes. She can also propose a new supervisor. Nothing changes until you approve, and she can propose the same changes in chat when you ask. With nothing to suggest she posts nothing and notes why in her journal.
+
+In the fake office, press Review now on Vera's card.
+
 ## Office policy
 
 The Policy button in the top bar holds the rules every staff member works under, such as the language to write in, what always counts as urgent, or what never goes in notes. They go into each staff member's instructions from their next run. Write them yourself in the panel, or tell the Chief of Staff in chat; she proposes the whole new policy on a card that shows what changes, and nothing applies until you approve it. The badge on the button shows a proposal is waiting. Earlier versions stay listed in the panel. The policy can't give anyone access they don't have.

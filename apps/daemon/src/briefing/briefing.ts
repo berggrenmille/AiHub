@@ -60,6 +60,8 @@ const INFO_ITEM_DAYS = 2;
 const RESEARCH_MEMORY_DAYS = 4;
 
 interface SectionBase {
+  /** The supervisor that owns the section. */
+  agentId: string;
   heading: string;
   /** Why what the source holds may be out of date. */
   warning: string | null;
@@ -207,6 +209,7 @@ async function reportSection(office: Office, section: BriefingSection, since: st
   const { store } = office;
   const responsibilityId = section.responsibilityId ?? null;
   const base: SectionBase = {
+    agentId: section.agentId,
     heading: section.heading,
     warning: section.warning ?? null,
     // An item only worth knowing was told once; lapsing isn't news either.

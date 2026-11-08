@@ -31,6 +31,7 @@ describe("Gateway", () => {
       "aihub_list_models",
       "aihub_propose_supervisor",
       "aihub_propose_policy",
+      "aihub_propose_staff_change",
       "aihub_ask_colleague",
       "aihub_assign_task",
       "aihub_commission_reader",
@@ -64,6 +65,12 @@ describe("Gateway", () => {
     const refused = await gateway.call(followUp, { name: "aihub_ask_colleague", arguments: { colleague: "Work Schedule", question: "Free on Friday?" } });
     assert.equal(refused.ok, false);
     assert.match(refused.text, /not available to this run/);
+
+    // A staff review reads counts only: no notes, sources, or views, and no delegation.
+    const review = asRun("chief", "review", "conversation");
+    assert.deepEqual(names(review), ["aihub_list_models", "aihub_propose_supervisor", "aihub_propose_staff_change"]);
+    const notes = await gateway.call(review, { name: "aihub_read_note", arguments: { title: "Operator" } });
+    assert.equal(notes.ok, false);
   });
 
   it("describes tool input as JSON Schema", () => {

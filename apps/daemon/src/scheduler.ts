@@ -210,6 +210,12 @@ export class Scheduler {
     if (run?.state !== "done") return this.fail(started.id, run?.error ?? "The briefing failed.", run?.id ?? null, manual);
     store.updateOccurrence(started.id, { status: "delivered", runId: run.id });
     await this.notify({ title: "Your briefing is ready", body: deliveredText(outcome.sections), tag: "briefing" });
+    // Then the staff review, when a warning sign calls for one (DESIGN.md › Staff review). It can't undo the delivery.
+    try {
+      await this.office.staffReview.afterBriefing(outcome.sections ?? [], this.now());
+    } catch (error) {
+      console.error("The staff review failed:", error);
+    }
   }
 
   /** A failed briefing tries once more after a pause; after that, the operator hears it gave up. */

@@ -11,6 +11,7 @@ import type {
   OpenChatResponse,
   PolicyVersion,
   SourcePreview,
+  StaffChange,
   StateSnapshot,
 } from "@aihub/shared";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyServerOptions } from "fastify";
@@ -22,6 +23,7 @@ import { ConflictError, InvalidRequestError, NotFoundError } from "./errors.ts";
 import type { Office } from "./office.ts";
 import { approveProposal, declineProposal, previewProposal } from "./staff/proposals.ts";
 import { approvePolicy, declinePolicy, writePolicy } from "./staff/policy.ts";
+import { approveStaffChange, declineStaffChange, withdrawStaffChanges } from "./staff/staff-changes.ts";
 import { registerLoopbackGuards } from "./security.ts";
 import { answerData } from "./views/data.ts";
 
@@ -87,11 +89,15 @@ function sendError(reply: FastifyReply, error: unknown) {
   throw error;
 }
 
-/** A policy version's id from the URL. Anything else names no version. */
-function policyId(raw: string): number {
+/** A numeric record id from the URL, such as a policy version's. Anything else names no record. */
+function numericId(raw: string, what: string): number {
   const id = Number(raw);
-  if (!Number.isSafeInteger(id) || id <= 0) throw new NotFoundError(`No policy proposal ${raw}`);
+  if (!Number.isSafeInteger(id) || id <= 0) throw new NotFoundError(`No ${what} ${raw}`);
   return id;
+}
+
+function policyId(raw: string): number {
+  return numericId(raw, "policy proposal");
 }
 
 function notePath(raw: string): string | null {
@@ -271,7 +277,41 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
 
   app.post<{ Params: { id: string } }>("/api/responsibilities/:id/end", async (request, reply) => {
     try {
-      return office.endResponsibility(request.params.id);
+      const responsibility = office.endResponsibility(request.params.id);
+      withdrawStaffChanges(office, responsibility.ownerId, "You ended the responsibility yourself.");
+      return responsibility;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  // Staff changes from the Chief of Staff's review (DESIGN.md › Staff review): the operator approves or declines each.
+  app.post<{ Params: { id: string } }>("/api/staff-changes/:id/approve", async (request, reply) => {
+    try {
+      const change: StaffChange = await approveStaffChange(office, numericId(request.params.id, "staff change"));
+      return change;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/staff-changes/:id/decline", async (request, reply) => {
+    const body = bodyOf(ReasonBody, request.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
+    try {
+      const change: StaffChange = declineStaffChange(office, numericId(request.params.id, "staff change"), body.data.reason?.trim() || null);
+      return change;
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  // The operator asks for a staff review now. It runs in the background; its message and cards arrive in the Chief of Staff's chat.
+  app.post("/api/staff-review", async (_request, reply) => {
+    try {
+      const review = office.staffReview.run();
+      review.catch((error: unknown) => app.log.error({ err: error }, "The staff review failed"));
+      return reply.code(202).send({ started: true });
     } catch (error) {
       return sendError(reply, error);
     }

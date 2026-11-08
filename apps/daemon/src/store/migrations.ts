@@ -329,4 +329,25 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE items ADD COLUMN needs_operator INTEGER NOT NULL DEFAULT 1;
   UPDATE items SET needs_operator = 0 WHERE source_key LIKE 'http://%' OR source_key LIKE 'https://%';
   `,
+
+  // v13: staff changes the Chief of Staff proposes from her review of the staff, or in chat.
+  `
+  CREATE TABLE staff_changes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL REFERENCES agents (id),
+    agent_name TEXT NOT NULL,
+    responsibility_id TEXT NOT NULL REFERENCES responsibilities (id),
+    kind TEXT NOT NULL CHECK (kind IN ('instructions', 'model', 'end', 'replace')),
+    detail TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    proposed_by TEXT NOT NULL REFERENCES agents (id),
+    run_id TEXT REFERENCES runs (id),
+    from_source_data INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'declined', 'withdrawn')),
+    outcome TEXT,
+    created_at TEXT NOT NULL,
+    decided_at TEXT
+  );
+  CREATE INDEX staff_changes_by_status ON staff_changes (status, agent_id);
+  `,
 ];

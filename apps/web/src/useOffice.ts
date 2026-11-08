@@ -3,9 +3,11 @@ import type { Conversation, DaemonEvent, ModelChoice, ModelOption, SourcePreview
 import {
   approvePolicy,
   approveProposal,
+  approveStaffChange,
   connectOffice,
   declinePolicy,
   declineProposal,
+  declineStaffChange,
   dismissItem,
   listModels,
   openChat,
@@ -14,6 +16,7 @@ import {
   removeView,
   resolveItem,
   runRoutine,
+  runStaffReview,
   sendChat,
   setAgentModel,
   setWebGrant,
@@ -38,6 +41,10 @@ export interface OfficeCommands {
   savePolicy(body: string): Promise<void>;
   approvePolicy(policyId: number): Promise<void>;
   declinePolicy(policyId: number): Promise<void>;
+  approveStaffChange(changeId: number): Promise<void>;
+  declineStaffChange(changeId: number): Promise<void>;
+  /** Asks the Chief of Staff to review the staff now. */
+  reviewStaff(): Promise<void>;
   /** What a proposal's source would read at a path. Changes nothing. */
   preview(proposalId: string, sourcePath: string): Promise<SourcePreview>;
   approve(proposalId: string, sourcePath?: string): Promise<void>;
@@ -96,6 +103,9 @@ export function useOffice() {
       savePolicy: async (body) => apply({ type: "policy", policy: await writePolicy(body) }),
       approvePolicy: async (policyId) => apply({ type: "policy", policy: await approvePolicy(policyId) }),
       declinePolicy: async (policyId) => apply({ type: "policy", policy: await declinePolicy(policyId) }),
+      approveStaffChange: async (changeId) => apply({ type: "staff_change", change: await approveStaffChange(changeId) }),
+      declineStaffChange: async (changeId) => apply({ type: "staff_change", change: await declineStaffChange(changeId) }),
+      reviewStaff: () => runStaffReview(),
       preview: (proposalId, sourcePath) => previewProposal(proposalId, { sourcePath }),
       approve: async (proposalId, sourcePath) =>
         apply({ type: "proposal", proposal: await approveProposal(proposalId, sourcePath ? { sourcePath } : {}) }),

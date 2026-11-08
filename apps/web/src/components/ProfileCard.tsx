@@ -66,6 +66,8 @@ interface ProfileCardProps {
   onSetModel(choice: ModelChoice): Promise<void>;
   onRunRoutine(routineId: string): Promise<void>;
   onSetWeekends(routineId: string, weekends: boolean): Promise<void>;
+  /** For the Chief of Staff: her review of the staff, and asking for one now. */
+  staffReview: { lastAt: string | null; running: boolean; onRun(): Promise<void> } | null;
 }
 
 export function ProfileCard(props: ProfileCardProps) {
@@ -232,6 +234,7 @@ export function ProfileCard(props: ProfileCardProps) {
               <p className="muted">{agent.role === "chief_of_staff" ? "The morning briefing and any mandates you grant." : "None yet."}</p>
             )}
             {routines.length > 0 && <RoutineList routines={routines} onRun={props.onRunRoutine} onSetWeekends={props.onSetWeekends} now={now} />}
+            {props.staffReview && <StaffReviewRow {...props.staffReview} now={now} />}
           </section>
 
           <section className="profile-section" aria-labelledby={`${titleId}-assignments`}>
@@ -650,6 +653,44 @@ function RoutineList({
           </button>
         </li>
       ))}
+    </ul>
+  );
+}
+
+/** The Chief of Staff's review of the staff (DESIGN.md › Staff review): when it runs, and a review on request. */
+function StaffReviewRow({ lastAt, running, onRun, now }: { lastAt: string | null; running: boolean; onRun(): Promise<void>; now: number }) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+  const run = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await onRun();
+      setMessage({ text: "Started. Her suggestions, if any, arrive in her chat.", error: false });
+    } catch (failure) {
+      setMessage({ text: errorText(failure), error: true });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <ul className="routine-list">
+      <li>
+        <div>
+          <strong>Staff review</strong>
+          <span className="muted small block">
+            When a warning sign shows after a briefing, and a week later if it stands · {running ? "reviewing now" : lastAt ? `last ${formatShortWhen(lastAt, new Date(now))}` : "not yet"}
+          </span>
+          {message && (
+            <span className={`small block ${message.error ? "form-error" : "tone-text-done"}`} role={message.error ? "alert" : "status"}>
+              {message.text}
+            </span>
+          )}
+        </div>
+        <button type="button" className="button ghost small" disabled={busy || running} onClick={() => void run()}>
+          <Icon name="team" size={14} /> {busy ? "Starting…" : "Review now"}
+        </button>
+      </li>
     </ul>
   );
 }

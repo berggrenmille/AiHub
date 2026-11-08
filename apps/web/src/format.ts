@@ -62,6 +62,7 @@ const ACTIVITY_TONES: Record<ActivityKind, Tone> = {
   policy: "waiting",
   model: "idle",
   view: "done",
+  review: "done",
 };
 
 export function activityTone(kind: ActivityKind): Tone {
@@ -176,4 +177,5 @@ export const RUN_KIND_LABELS: Record<RunKind, string> = {
   question: "Question",
   assignment: "Task",
   follow_up: "Follow-up",
+  review: "Staff review",
 };

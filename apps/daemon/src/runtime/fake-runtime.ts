@@ -24,6 +24,7 @@ export const echo: Responder = async (input, options) => {
  * and calls the first offered tool when the message asks for it, such as "who is on staff? use a tool".
  */
 export const demo: Responder = async (input, options) => {
+  if (/^Today is \S+\. The numbers cover the \d+ days/.test(input)) return review(input, options);
   // A briefing section: file a plain report from the collected records, so the office gets items.
   // A chat can quote source data too, such as a preview, so only a JSON block counts.
   const records = parseRecords(/BEGIN SOURCE DATA\n([\s\S]*?)\nEND SOURCE DATA/.exec(input)?.[1]);
@@ -74,6 +75,29 @@ The roster tool returned: ${outcome.text}`;
   }
   return { status: "completed", text, error: null, usage: { inputTokens: 1200, cachedInputTokens: 800, outputTokens: 40 } };
 };
+
+/**
+ * A staff review: proposes narrower standing instructions for the first supervisor a sign names, or
+ * for the first supervisor when the operator asked, so the fake office shows a card.
+ */
+async function review(input: string, options: RunTurnOptions): Promise<TurnResult> {
+  const usage = { inputTokens: 1500, cachedInputTokens: 0, outputTokens: 60 };
+  const names = [...input.matchAll(/^## ([^,\n]+),/gm)].map((match) => match[1]!);
+  const signs = input.split("\nSupervisors:")[0] ?? "";
+  const name = names.find((candidate) => signs.includes(candidate)) ?? (signs.includes("asked for this review") ? names[0] : undefined);
+  if (!name) return { status: "completed", text: "NOTHING TO SUGGEST", error: null, usage };
+  const outcome = await options.onToolCall({
+    name: "aihub_propose_staff_change",
+    arguments: {
+      supervisor: name,
+      change: "instructions",
+      standingInstructions: "Report only what needs the operator this week. Leave routine changes out.",
+      reason: `The fake runtime suggests narrowing what ${name} reports.`,
+    },
+  });
+  const text = outcome.ok ? `I suggest narrowing what ${name} reports, so fewer findings need dismissing.` : "NOTHING TO SUGGEST";
+  return { status: "completed", text, error: null, usage };
+}
 
 const HELPER_NAMES = ["Pip", "Juno", "Otto", "Wren"];
 const TOOLSMITH_NAMES = ["Ada", "Linus", "Grace", "Alan"];

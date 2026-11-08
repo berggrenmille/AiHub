@@ -44,7 +44,8 @@ export function OfficeFloor({ state, now, onSelectAgent, onOpenChat, onOpenInbox
     return map;
   }, [state.responsibilities]);
   const itemCounts = useMemo(() => openItemCounts(state.items), [state.items]);
-  const pendingProposals = state.proposals.filter((proposal) => proposal.status === "pending").length;
+  const pendingProposals =
+    state.proposals.filter((proposal) => proposal.status === "pending").length + state.staffChanges.filter((change) => change.status === "pending").length;
 
   const podColors = useMemo(() => {
     const colors: Record<string, string> = {};

@@ -4,20 +4,7 @@ Where the build stands against [DESIGN.md](../DESIGN.md) › Build sequence and 
 
 ## Up next
 
-The operator set the order on 2026-11-08: views first, then the Chief of Staff's review of the staff. Views are built (below), so the review is next. Nothing in this section is built yet. When it starts, its rules move into DESIGN.md.
-
-### The Chief of Staff reviews the staff
-
-The operator wants to revisit how the Chief of Staff behaves. One of the role's purposes is to review the supervisors' work over time and keep them as effective as they can be: catch blockers, and suggest replacing, removing, or adding supervisors, or changing their responsibilities, when something needs to improve. It shouldn't happen all the time, but over time the role is responsible for it: the Chief of Staff runs the staff overall.
-
-What exists today: the Chief of Staff reads the roster, the activity log, and notes; asks a supervisor a question or gives them a task; proposes a new supervisor or a policy change; and composes the briefing, whose health check flags failed sections. There is no way to propose ending, replacing, or changing a supervisor's responsibility, or changing a supervisor's model, and no routine looks back over the supervisors' work.
-
-To settle when it starts:
-
-- How often the review runs, such as weekly or monthly, and which signals bring it forward: repeated failures, access blocked for days, a section whose items the operator keeps dismissing, or one that never finds anything.
-- What the review reads. Counts and the operator's decisions (resolved, dismissed, runs, failures, usage) carry no source data, so a review on them can't be steered by injected text. Reading what supervisors reported is source data, and a proposal made from it carries the warning, as policy proposals do.
-- Which changes the Chief of Staff may propose: a responsibility's scope or standing instructions, ending one, replacing a supervisor, adding one, a supervisor's model and reasoning level. Each goes on an approval card, and nothing changes until the operator approves.
-- How the review reaches the operator: a short staff review in the chat or the briefing, and what it costs in usage.
+The operator set the order on 2026-11-08: views first, then the Chief of Staff's review of the staff. Both are built (below). Nothing else is queued.
 
 ## Milestone 1: runtime, isolation, and control surface (done 2026-11-07)
 
@@ -444,3 +431,49 @@ The operator found Nora's news stories in the Inbox with Resolve and Dismiss, an
 - A web researcher's finding never needs the operator, even one that is a recommendation, such as running the dishwasher before prices rise.
 - A finding only worth knowing shows in its briefing and on dashboards, and nowhere else. The Inbox has no list of them.
 - A lapsed item counts toward its supervisor's experience like a resolved one, as research items did before.
+
+## The Chief of Staff reviews the staff (2026-11-08)
+
+The operator wanted the Chief of Staff to run the staff over time: catch blockers, and suggest changing, replacing, ending, or adding supervisors when something needs to improve, without it happening all the time. They took the proposed defaults: a review when code finds a warning sign, counts and decisions only, every change on an approval card, and a short message in her chat only when there is something to suggest. DESIGN.md › Staff review has the rules as built.
+
+1. **Warning signs, found by code.** After each delivered briefing, AiHub records each supervisor's section and looks for four signs: a section missing twice in a row, a source unreadable three times in a row, the operator dismissing at least three and most of a supervisor's findings that needed them in 14 days, and nothing found in 14 days by a supervisor who has been there that long. A new sign starts a review (a run of kind `review`); one that still stands a week later starts one more, and then none until it clears. At most one review runs a day. `POST /api/staff-review` and Review now on her profile card start one at any time.
+2. **Counts only.** The review's input is built from records: each supervisor's scope and standing instructions as approved, model, section history, runs by kind and outcome, share of the office's usage, findings by kind and the operator's decisions, and the staff changes and hires of the last 30 days with their outcomes. It never holds what was reported, item titles, or notes, and the run has no memory and no notes tools. Its only tools are `aihub_list_models`, `aihub_propose_supervisor`, and `aihub_propose_staff_change`.
+3. **Staff changes.** `aihub_propose_staff_change` (the Chief of Staff, in a review or in chat) proposes new scope or standing instructions, another model or reasoning level, ending a responsibility, or a replacement. Changes live in `staff_changes` (migration v13), at most three per review and one waiting per supervisor. Approving checks the supervisor and responsibility are as they were when proposed; ending or replacing also waits for open questions and tasks. A replacement takes over the responsibility, its routines, sources, web search, and items, and the old supervisor leaves.
+4. **In the office.** A review that proposes something posts a staff review message in her chat, then a card per change, with a diff for instructions, now and then for a model, and the new person for a replacement. With nothing to suggest it posts nothing and her journal says why. The tray menu and the proposal bubble count waiting staff changes.
+5. **The fake office** proposes narrower instructions for the first supervisor named in a sign, or for the first supervisor when asked with Review now.
+
+### How it was shown
+
+- Tests: `staff/review.test.ts` (the cadence, the four signs, an input without reported text or notes, the review's tools, message before cards, the cap, validation, a newer change replacing a waiting one, conflicts on approval, ending with an open assignment, replacing, declining, and the journal's reason), `scheduler.test.ts` (a review after the second missing briefing), `gateway.test.ts`, `server.test.ts` (the routes), and `state.test.ts` (a late copy can't reopen a decided change).
+- In a browser against the fake office: Review now, the staff review message and its card in Vera's chat, Approve and its notice, and both themes.
+- Against real Codex, in copies of the views office (Nora, Clara, and Ingrid, one day in):
+  - With no sign, Vera found nothing to suggest.
+  - After the operator dismissed three of Nora's five findings that needed them, she proposed in two of five runs to keep Nora's standing instructions and add when a finding needs the operator, with a reason quoting the dismissals. In the other three she let the sign stand. In the last of them, her journal said the staff were one day in and no dismissal reasons were recorded, so the numbers didn't support a change yet.
+
+### Usage measured
+
+Codex 0.167.0, 2026-11-08, Vera on GPT-6.1-Sol at low reasoning:
+
+| Review | Input tokens | Cached | Output | Time |
+| --- | --- | --- | --- | --- |
+| No sign, nothing to suggest | 12,840 | 0 | 35 | 8 s |
+| Nora's dismissals, nothing to suggest | 12,878 | 9,216 | 118 | 13 s |
+| Nora's dismissals, a change proposed | 41,372 | not recorded | 346 | |
+| Nora's dismissals, a change proposed | 55,860 | not recorded | 391 | |
+
+The input itself is about 1K tokens for three supervisors; the rest is the charter and tools. A review with nothing to suggest costs less than a chat turn, and one that proposes about two.
+
+### What the real run changed
+
+| Finding | Change |
+| --- | --- |
+| When Vera let a sign stand, her reasoning was lost, and nothing showed why. | She gives one sentence on why, which goes in her journal, not the chat. |
+| Review now wrapped onto two lines on her profile card. | Buttons in the routine list never wrap. |
+
+### Known gaps
+
+- Dismiss takes no reason, so a review sees how many findings the operator dismissed but not why. Vera named this when she let Nora's sign stand.
+- Section history starts with the first briefing after this change, so the missing and unreadable signs need a few briefings before they can show.
+- On a borderline sign, the same numbers led to a proposal in some runs and not others. A sign that still stands gets one more review a week later.
+- The review judges from counts alone. It can't tell a useful finding from a noisy one except by what the operator did with it.
+- A replacement starts with empty notes, and ending or replacing is refused while the supervisor has open questions or tasks; the operator approves again once they are done.

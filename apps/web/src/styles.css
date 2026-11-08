@@ -2466,6 +2466,11 @@ summary.hud-chip::-webkit-details-marker {
   min-width: 0;
 }
 
+.routine-list li > .button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 /* Web search on the profile card: a row like a connection's, or the form that grants it. */
 .web-access {
   display: grid;
@@ -3969,6 +3974,48 @@ button.wikilink:hover {
 
 .policy-diff .diff-removed .diff-text {
   text-decoration: line-through;
+}
+
+/* A change to a supervisor from the staff review: what it does, then the detail, then the decision. */
+.staff-change-title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.staff-change-detail {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.staff-change-detail .eyebrow {
+  margin: 4px 0 0;
+}
+
+.staff-change-person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.staff-change-person .portrait {
+  background: var(--surface-2);
+}
+
+.staff-change-person p {
+  margin: 0;
+}
+
+.staff-change-name {
+  font-weight: 700;
+}
+
+/* The Chief of Staff's staff review message, marked as such above its text. */
+.message-review .review-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
 }
 
 /* What a staff member runs on, on the profile card: the model and level, or the form that changes them. */

@@ -29,7 +29,7 @@ const ItemsInput = z
 const RunsInput = z
   .object({
     staff,
-    kind: z.enum(["chat", "briefing", "report", "question", "assignment", "follow_up"]).optional(),
+    kind: z.enum(["chat", "briefing", "report", "question", "assignment", "follow_up", "review"]).optional(),
     days: days(90, "Runs from the last this many days. 7 when left out."),
     limit: z.number().int().min(1).max(1_000).optional().describe("Most rows, newest first. 200 when left out."),
   })

@@ -15,6 +15,7 @@ import {
   type OfficeStats,
   type PolicyVersion,
   type Proposal,
+  type StaffChange,
   type Responsibility,
   type Routine,
   type Run,
@@ -63,6 +64,8 @@ export interface OfficeState {
   readers: StaffReader[];
   /** The office policy's versions and proposals, newest first. */
   policies: PolicyVersion[];
+  /** Staff changes the Chief of Staff proposed, newest first. */
+  staffChanges: StaffChange[];
   /**
    * Staff who left since the last snapshot, such as workers whose results were accepted. A late
    * update for one of them doesn't bring them back.
@@ -107,6 +110,7 @@ export const initialOfficeState: OfficeState = {
   assignments: [],
   readers: [],
   policies: [],
+  staffChanges: [],
   departed: [],
   notes: [],
   office: null,
@@ -169,6 +173,7 @@ function applySnapshot(state: OfficeState, snapshot: StateSnapshot): OfficeState
     assignments: keepAssignments(snapshot.assignments ?? []),
     readers: [...(snapshot.readers ?? [])].sort(newestFirst),
     policies: [...(snapshot.policies ?? [])].sort((a, b) => b.id - a.id),
+    staffChanges: [...(snapshot.staffChanges ?? [])].sort((a, b) => b.id - a.id),
     departed: [],
     notes: snapshot.notes ?? [],
     office: snapshot.office ?? null,
@@ -235,6 +240,12 @@ function applyEvent(state: OfficeState, event: DaemonEvent): OfficeState {
       const known = state.policies.find((policy) => policy.id === event.policy.id);
       if (known && known.status !== "pending" && event.policy.status === "pending") return state;
       return { ...state, policies: upsert(state.policies, event.policy, (policy) => policy.id).sort((a, b) => b.id - a.id) };
+    }
+    case "staff_change": {
+      // A decided change never goes back to waiting, so a late copy of the proposal is older.
+      const known = state.staffChanges.find((change) => change.id === event.change.id);
+      if (known && known.status !== "pending" && event.change.status === "pending") return state;
+      return { ...state, staffChanges: upsert(state.staffChanges, event.change, (change) => change.id).sort((a, b) => b.id - a.id) };
     }
     case "reader": {
       const existing = state.readers.find((reader) => reader.id === event.reader.id);

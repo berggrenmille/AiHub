@@ -1,4 +1,5 @@
-import type { AgentRole, Assignment, ModelOption, PolicyVersion, Proposal, RecruitProposal, RunKind, RunProfile, StaffReader } from "@aihub/shared";
+import type { AgentRole, Assignment, ModelOption, PolicyVersion, Proposal, RecruitProposal, RunKind, RunProfile, StaffChange, StaffReader } from "@aihub/shared";
+import type { StaffChangeRequest } from "../staff/staff-changes.ts";
 import type { ReaderFile } from "../sources/reader.ts";
 import { z } from "zod";
 import type { Notebook } from "../notes/notebook.ts";
@@ -50,6 +51,8 @@ export interface OfficeServices {
   proposeSupervisor: ((caller: Caller, proposal: RecruitProposal) => Proposal) | null;
   /** Records a proposed office policy and shows it to the operator as an approval card. */
   proposePolicy: ((caller: Caller, input: { body: string; reason: string }) => PolicyVersion) | null;
+  /** Records a proposed change to a supervisor and shows it to the operator as an approval card. */
+  proposeStaffChange: ((caller: Caller, input: { supervisor: string; change: StaffChangeRequest; reason: string }) => Promise<StaffChange>) | null;
   /** The models staff can run on. */
   models: (() => Promise<ModelOption[]>) | null;
   delegation: DelegationService | null;
@@ -73,7 +76,7 @@ export interface GatewayTool<Input extends z.ZodType = z.ZodType> {
   roles: readonly AgentRole[];
   /** Run profiles the tool is offered in. Data runs only ever get tools that cannot act outside AiHub. */
   profiles: readonly RunProfile[];
-  /** Run kinds the tool works in, such as no questions from a run that answers one. All when omitted. */
+  /** Run kinds the tool works in, such as no questions from a run that answers one. All but a staff review when omitted. */
   kinds?: readonly RunKind[];
   /** Whether this agent has a use for the tool right now, such as a toolsmith with a reader to write. */
   available?: (agent: AgentRecord, store: Store) => boolean;
@@ -136,6 +139,7 @@ export class Gateway {
         notebook: this.services.notebook ?? null,
         proposeSupervisor: this.services.proposeSupervisor ?? null,
         proposePolicy: this.services.proposePolicy ?? null,
+        proposeStaffChange: this.services.proposeStaffChange ?? null,
         models: this.services.models ?? null,
         delegation: this.services.delegation ?? null,
         toolsmith: this.services.toolsmith ?? null,
@@ -165,7 +169,8 @@ function permits(tool: GatewayTool, agent: AgentRecord, caller: Caller, kind: Ru
     agent.status === "active" &&
     tool.roles.includes(agent.role) &&
     tool.profiles.includes(caller.profile) &&
-    (!tool.kinds || (kind !== undefined && tool.kinds.includes(kind))) &&
+    // A staff review gets only the tools that name it: it reads counts, never notes or sources.
+    (tool.kinds ? kind !== undefined && tool.kinds.includes(kind) : kind !== "review") &&
     (!tool.available || tool.available(agent, store))
   );
 }

@@ -12,6 +12,7 @@ import type {
   OpenChatResponse,
   PolicyVersion,
   Proposal,
+  StaffChange,
   ResolveItemRequest,
   Routine,
   RunRoutineResponse,
@@ -172,6 +173,19 @@ export function approvePolicy(policyId: number): Promise<PolicyVersion> {
 
 export function declinePolicy(policyId: number): Promise<PolicyVersion> {
   return request<PolicyVersion>(`/api/policy/${policyId}/decline`, json("POST", {}));
+}
+
+export function approveStaffChange(changeId: number): Promise<StaffChange> {
+  return request<StaffChange>(`/api/staff-changes/${changeId}/approve`, json("POST", {}));
+}
+
+export function declineStaffChange(changeId: number): Promise<StaffChange> {
+  return request<StaffChange>(`/api/staff-changes/${changeId}/decline`, json("POST", {}));
+}
+
+/** Starts the Chief of Staff's review of the staff. Its message and cards arrive in her chat. */
+export async function runStaffReview(): Promise<void> {
+  await request<{ started: boolean }>("/api/staff-review", json("POST", {}));
 }
 
 /** Has a scheduled routine run on weekends too, or on weekdays only. */

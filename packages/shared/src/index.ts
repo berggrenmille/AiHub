@@ -104,9 +104,13 @@ export interface Usage {
 /**
  * What a run is for. chat: a conversation turn. briefing and report: the morning briefing and a
  * supervisor's section of it. question: answering a colleague. assignment: working on a task.
- * follow_up: the requester resuming once what it asked for has arrived.
+ * follow_up: the requester resuming once what it asked for has arrived. review: the Chief of Staff
+ * reviewing the staff from AiHub's counts.
  */
-export type RunKind = "chat" | "briefing" | "report" | "question" | "assignment" | "follow_up";
+export type RunKind = "chat" | "briefing" | "report" | "question" | "assignment" | "follow_up" | "review";
+
+/** Every run kind, for checks and filters. */
+export const RUN_KINDS: readonly RunKind[] = ["chat", "briefing", "report", "question", "assignment", "follow_up", "review"];
 
 export interface Run {
   id: string;
@@ -130,8 +134,11 @@ export interface Run {
   effort: string | null;
 }
 
-/** chat: a conversation turn. briefing: a delivered briefing. proposal: a card for `refId`. notice: AiHub's own note. */
-export type MessageKind = "chat" | "briefing" | "proposal" | "notice" | "policy";
+/**
+ * chat: a conversation turn. briefing: a delivered briefing. proposal, policy, and staff_change: a
+ * card for the record `refId`. notice: AiHub's own note. review: the Chief of Staff's staff review.
+ */
+export type MessageKind = "chat" | "briefing" | "proposal" | "notice" | "policy" | "review" | "staff_change";
 
 export interface ChatMessage {
   id: number;
@@ -174,7 +181,8 @@ export type ActivityKind =
   | "web"
   | "policy"
   | "model"
-  | "view";
+  | "view"
+  | "review";
 
 export interface ActivityEntry {
   id: number;
@@ -340,6 +348,41 @@ export interface Proposal {
   decidedAt: string | null;
 }
 
+/** What a staff change does once approved (DESIGN.md › Staff review). */
+export type StaffChangeDetail =
+  /** Replaces the responsibility's scope and standing instructions. `before` is what they were when proposed. */
+  | { kind: "instructions"; scope: string; standingInstructions: string; before: { scope: string; standingInstructions: string } }
+  /** Sets the model and reasoning level. `before` is the supervisor's choice when proposed. */
+  | { kind: "model"; model: ProposedModel; before: ModelChoice }
+  /** Ends the responsibility; the supervisor leaves. */
+  | { kind: "end" }
+  /** A new supervisor takes over the responsibility; the old one leaves. Without a model, it keeps the old one's. */
+  | { kind: "replace"; profile: StaffProfile; model: ProposedModel | null };
+
+export type StaffChangeKind = StaffChangeDetail["kind"];
+
+/** A change to a supervisor the Chief of Staff proposes, which applies once the operator approves it. */
+export interface StaffChange {
+  id: number;
+  agentId: string;
+  /** Kept on the record, so it reads well after the supervisor has left. */
+  agentName: string;
+  responsibilityId: string;
+  responsibilityTitle: string;
+  change: StaffChangeDetail;
+  /** Why, in the operator's terms. */
+  reason: string;
+  proposedBy: string;
+  runId: string | null;
+  /** Proposed in a chat that held source data, so text from outside AiHub may have shaped it. */
+  fromSourceData: boolean;
+  status: "pending" | "approved" | "declined" | "withdrawn";
+  /** What approval did, or why it was declined or withdrawn. */
+  outcome: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+}
+
 export type ItemState = "new" | "open" | "resolved" | "dismissed";
 export type Urgency = "urgent" | "today" | "this_week" | "fyi";
 
@@ -395,6 +438,8 @@ export interface OfficeStats {
   supervisorLimit: number;
   /** Weekdays in a row with a delivered briefing. */
   briefingStreak: number;
+  /** When the Chief of Staff last reviewed the staff, if ever. */
+  staffReviewAt: string | null;
 }
 
 export interface RuntimeStatus {
@@ -432,6 +477,8 @@ export interface StateSnapshot {
   notes: NoteSummary[];
   /** The office policy's versions and proposals, newest first. */
   policies: PolicyVersion[];
+  /** Staff changes waiting for the operator, and recent decisions, newest first. */
+  staffChanges: StaffChange[];
   /** Dashboards, and the views under the messages in this snapshot. */
   views: View[];
   office: OfficeStats;
@@ -458,6 +505,7 @@ export type DaemonEvent =
   | { type: "assignment"; assignment: Assignment }
   | { type: "reader"; reader: StaffReader }
   | { type: "policy"; policy: PolicyVersion }
+  | { type: "staff_change"; change: StaffChange }
   | { type: "view"; view: View }
   /** The operator removed a dashboard. */
   | { type: "view_removed"; viewId: string }

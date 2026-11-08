@@ -17,7 +17,7 @@ import { openCount } from "./lib/inbox.ts";
 import { resolveWikilink } from "./lib/notes.ts";
 import { pendingPolicy } from "./lib/policy.ts";
 import { dashboardsOf, viewsByMessage } from "./lib/views.ts";
-import { rosterOrder } from "./state.ts";
+import { isActive, rosterOrder } from "./state.ts";
 import { useOffice } from "./useOffice.ts";
 
 type Theme = "dark" | "light";
@@ -60,6 +60,8 @@ export function App() {
   const inbox = useMemo(() => openCount(state.items), [state.items]);
   const openAssignments = useMemo(() => openAssignmentCount(state.assignments), [state.assignments]);
   const profile = state.agents.find((agent) => agent.id === profileId) ?? null;
+  // A staff review in progress, from its run.
+  const reviewRunning = Object.values(state.runs).some((run) => run.kind === "review" && isActive(run));
   const messageViews = useMemo(() => viewsByMessage(state.views), [state.views]);
   const dashboards = useMemo(() => dashboardsOf(state.views), [state.views]);
   const viewActions = useMemo(() => ({ resolve: commands.resolve, dismiss: commands.dismiss }), [commands]);
@@ -262,6 +264,7 @@ export function App() {
               streaming={streaming}
               proposals={state.proposals}
               policies={state.policies}
+              staffChanges={state.staffChanges}
               models={models}
               readers={state.readers}
               scope={chatScope(partner.agent)}
@@ -273,6 +276,8 @@ export function App() {
               onDecline={commands.decline}
               onApprovePolicy={commands.approvePolicy}
               onDeclinePolicy={commands.declinePolicy}
+              onApproveStaffChange={commands.approveStaffChange}
+              onDeclineStaffChange={commands.declineStaffChange}
               onClose={() => setDrawer(null)}
               onOpenProfile={() => setProfileId(partner.agent.id)}
               resolveLink={resolveChatLink}
@@ -325,6 +330,11 @@ export function App() {
           onSetModel={(choice) => commands.setModel(profile.id, choice)}
           onRunRoutine={commands.runRoutine}
           onSetWeekends={commands.setWeekends}
+          staffReview={
+            profile.role === "chief_of_staff"
+              ? { lastAt: state.office?.staffReviewAt ?? null, running: reviewRunning, onRun: commands.reviewStaff }
+              : null
+          }
         />
       )}
     </div>

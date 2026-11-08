@@ -112,7 +112,7 @@ flowchart LR
 | Result | A report for an assignment with source references, freshness, and decisions needed. It references items rather than restating them. |
 | Item | A finding with a stable identity from its source, such as a mail thread ID or a calendar event ID and version. It has a state (new, open, resolved, or dismissed), first-seen and last-reported times, and an owning responsibility. The supervisor says whether it needs the operator: something to do or decide, such as a clash to fix or a charge to check, waits in the Inbox until the operator resolves or dismisses it. Anything else, such as a moved meeting or a news story, is only worth knowing: the briefing tells the operator once, and it lapses after two days, sooner if its source record stops mattering. |
 | Cursor | The last position a responsibility has checked on a connection, so collectors fetch only what changed. |
-| Proposal | A change that needs operator approval: a new supervisor, responsibility, routine, access request, or reader. |
+| Proposal | A change that needs operator approval: a new supervisor, responsibility, routine, access request, or reader, or a change to a supervisor from the staff review. |
 | Action | A step outside AiHub's own records, such as a draft to create, a listing to publish, or a purchase. It has an autonomy level, a target connection, a cost if any, evidence, and a status (proposed, approved, done, failed, or declined). |
 | Conversation | A chat between the operator and one staff member, or a meeting with several. It keeps the transcript and links to the decisions and assignments it produced. |
 | Connection | An authenticated account or an identified local resource, such as a mailbox or a project folder. |
@@ -138,6 +138,38 @@ A supervisor recruits a worker for a bounded assignment, such as counting last m
 ### Asking colleagues
 
 A staff member can ask a colleague for help when the colleague knows more, such as the Chief of Staff asking the Work Schedule supervisor whether next week has room for a new meeting. The question becomes an assignment for the colleague, and the asking turn ends. The colleague answers in its own run from its charter, notes, and current work; it shares an answer, not its notes or sources. The daemon then starts a new turn for the asker with the answer. A colleague answering a question cannot ask another one, questions count against the daily turn budget, and the question reaches the colleague as data, never as instructions.
+
+### Staff review
+
+The Chief of Staff looks back over how her supervisors are doing and proposes changes for the operator to approve. After every delivered briefing, AiHub checks for warning signs in code, with no model turn:
+
+- A supervisor's section is missing from two briefings in a row, because its run failed or filed no report.
+- A supervisor can't read its source in three briefings in a row.
+- The operator dismissed most of what a supervisor found that needed them in the last 14 days, and at least three items.
+- A supervisor that joined at least 14 days ago found nothing in the last 14 days.
+
+When a sign appears, the Chief of Staff reviews the staff after that briefing. A sign that still stands a week later is reviewed once more, and then not again until it clears and comes back. A week with no new sign runs no review, and at most one review runs a day. The operator can also ask for a review at any time on her profile card.
+
+A review is a run of its own kind. Its input is what AiHub counts from its records for each active supervisor over the last 14 days:
+
+- Its section in recent briefings, and its runs and their usage.
+- The items it found, how many of them needed the operator, and how many the operator resolved or dismissed.
+- Its sources' state, its model and reasoning level, and its responsibility's scope and standing instructions.
+
+The input also holds the signs, and the staff changes proposed in the last 30 days with the operator's decisions. It holds no reports, item text, notes, or source data, and the run has no tools to read them, so nothing a source says can steer it. The run can only propose staff changes, propose a new supervisor, and list models.
+
+A staff change waits on an approval card in the Chief of Staff's chat. Nothing applies until the operator approves it:
+
+| Change | What approval does |
+| --- | --- |
+| Instructions | Replaces the responsibility's scope or standing instructions. The card shows the change line by line. |
+| Model | Sets the supervisor's model and reasoning level. |
+| End | Ends the responsibility. The supervisor leaves the office with its access revoked. Its items, runs, and notes stay. |
+| Replace | A new supervisor, named on the card, takes over the responsibility with its routine, sources, web search, and items. It starts with empty notes, and the old supervisor leaves. |
+
+A review proposes at most three changes, and each supervisor has at most one change waiting; a newer one replaces it. A change applies only to the supervisor and responsibility as they were when it was proposed. If either changed since, approval is refused, and a supervisor who left withdraws its waiting changes. Ending or replacing a supervisor waits until its open questions and tasks are done. The Chief of Staff can also propose a staff change in chat when the operator asks for one, and the card says when that chat held source data.
+
+When a review proposes something, it posts a short staff review message in the Chief of Staff's chat, followed by the cards. With nothing to suggest, it posts nothing and records the review in her journal, with a sentence on why. A review costs less than a chat turn: about 13K input tokens with nothing to suggest, and 40–55K when it proposes.
 
 ### Autonomy levels
 

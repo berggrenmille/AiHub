@@ -37,15 +37,15 @@ export function proposeSupervisor(office: Office, caller: Caller, payload: Recru
     type: "activity",
     entry: store.addActivity({ agentId: caller.agentId, runId: caller.runId, kind: "proposal", summary: `Proposed hiring ${payload.profile.name} as ${payload.profile.title}` }),
   });
-  office.postMessage(
-    CHIEF_OF_STAFF_CONVERSATION_ID,
-    caller.agentId,
-    `Proposal: hire ${payload.profile.name} as ${payload.profile.title}. ${payload.reason}`,
-    caller.runId,
-    "proposal",
-    proposal.id,
-  );
+  // A staff review posts its cards after its own message, once the run is done.
+  if (store.getRun(caller.runId)?.kind !== "review") postRecruitCard(office, proposal, caller.runId);
   return proposal;
+}
+
+/** The card for a recruitment proposal, in the Chief of Staff's chat. */
+export function postRecruitCard(office: Office, proposal: Proposal, runId: string | null) {
+  const { profile, reason } = proposal.payload;
+  office.postMessage(CHIEF_OF_STAFF_CONVERSATION_ID, proposal.proposedBy, `Proposal: hire ${profile.name} as ${profile.title}. ${reason}`, runId, "proposal", proposal.id);
 }
 
 /** The id of the reader staff wrote that a proposed source uses, if it uses one. */

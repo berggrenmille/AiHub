@@ -393,6 +393,46 @@ describe("HTTP server: decisions", () => {
     assert.equal(store.getAgent("rut")!.state, "done");
   });
 
+  it("approves and declines staff changes, and starts a staff review on request", async () => {
+    let office: Office;
+    ({ app, office } = await server());
+    const { store } = office;
+    const post = (url: string, body?: object) => app!.inject({ method: "POST", url, headers: PAGE, ...(body && { payload: body }) });
+    assert.equal((await post("/api/staff-review")).statusCode, 409, "nobody to review yet");
+
+    store.upsertAgent({ id: "nora", name: "Nora", title: "Calendar Supervisor", role: "supervisor", managerId: "chief-of-staff", profile: "data", charter: "" });
+    const responsibility = store.createResponsibility({ ownerId: "nora", title: "Work calendar", scope: "All of it.", standingInstructions: "", expiresAt: null });
+    const propose = (standingInstructions: string) =>
+      store.createStaffChange({
+        agentId: "nora",
+        agentName: "Nora",
+        responsibilityId: responsibility.id,
+        change: { kind: "instructions", scope: "All of it.", standingInstructions, before: { scope: "All of it.", standingInstructions: "" } },
+        reason: "Fewer findings.",
+        proposedBy: "chief-of-staff",
+        runId: null,
+        fromSourceData: false,
+      });
+    const first = propose("Clashes only.");
+    assert.equal((await post(`/api/staff-changes/${first.id}/approve`)).json().status, "approved");
+    assert.equal(store.getResponsibility(responsibility.id)!.standingInstructions, "Clashes only.");
+    assert.equal((await post(`/api/staff-changes/${first.id}/approve`)).statusCode, 409);
+    const second = propose("Anything.");
+    assert.equal((await post(`/api/staff-changes/${second.id}/decline`, { reason: "Keep it" })).json().outcome, "Keep it");
+    assert.equal((await post("/api/staff-changes/nope/decline")).statusCode, 404);
+    assert.ok((await app!.inject({ method: "GET", url: "/api/state", headers: PAGE })).json().staffChanges.some((change: { id: number }) => change.id === second.id));
+
+    // A waiting change is withdrawn when the operator ends the responsibility.
+    const third = propose("Something else.");
+    await post(`/api/responsibilities/${responsibility.id}/end`);
+    assert.equal(store.getStaffChange(third.id)!.status, "withdrawn");
+
+    store.createResponsibility({ ownerId: "nora", title: "Reading list", scope: "", standingInstructions: "", expiresAt: null });
+    assert.equal((await post("/api/staff-review")).statusCode, 202);
+    await office.staffReview.idle();
+    assert.ok(office.officeStats().staffReviewAt);
+  });
+
   it("runs a routine on request", async () => {
     let office: Office;
     ({ app, office } = await server());

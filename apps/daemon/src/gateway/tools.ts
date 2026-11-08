@@ -192,25 +192,38 @@ export const writeNote = defineTool({
 });
 
 // Recruitment: the Chief of Staff proposes; the operator decides on a card; the daemon checks the caps.
+const ProfileInput = z
+  .object({
+    name: z.string().trim().min(1).max(40).describe("A first name that nobody on staff has."),
+    title: z.string().trim().min(1).max(60).describe('Such as "Bookkeeping Supervisor".'),
+    description: z.string().trim().min(1).max(300).describe("The job description, in one or two sentences."),
+    workingStyle: z.string().trim().max(160).default("").describe("How this supervisor works and communicates, in one sentence."),
+  })
+  .strict();
+
+const ModelInput = z
+  .object({
+    id: z.string().trim().min(1).max(80).describe("A model from aihub_list_models."),
+    effort: z.string().trim().min(1).max(20).describe("A reasoning level that model offers."),
+    why: z.string().trim().min(1).max(200).describe("Why it fits the work, in a sentence the operator reads on the card."),
+  })
+  .strict();
+
+const SCOPE_LIMIT = 300;
+const STANDING_INSTRUCTIONS_LIMIT = 600;
+
 export const proposeSupervisorTool = defineTool({
   name: "aihub_propose_supervisor",
   description:
     "Propose recruiting a supervisor for an area the operator hands over. Nothing happens until the operator approves the card this puts in the chat. Check the roster first, and suggest extending an existing responsibility when one fits.",
   input: z
     .object({
-      profile: z
-        .object({
-          name: z.string().trim().min(1).max(40).describe("A first name that nobody on staff has."),
-          title: z.string().trim().min(1).max(60).describe('Such as "Bookkeeping Supervisor".'),
-          description: z.string().trim().min(1).max(300).describe("The job description, in one or two sentences."),
-          workingStyle: z.string().trim().max(160).default("").describe("How this supervisor works and communicates, in one sentence."),
-        })
-        .strict(),
+      profile: ProfileInput,
       responsibility: z
         .object({
           title: z.string().trim().min(1).max(80),
-          scope: z.string().trim().max(300).describe("What it covers, and what it leaves out."),
-          standingInstructions: z.string().trim().max(600).default("").describe("Lasting rules the operator stated, such as what to always flag."),
+          scope: z.string().trim().max(SCOPE_LIMIT).describe("What it covers, and what it leaves out."),
+          standingInstructions: z.string().trim().max(STANDING_INSTRUCTIONS_LIMIT).default("").describe("Lasting rules the operator stated, such as what to always flag."),
           expiresInDays: z.number().int().min(1).max(365).optional().describe("Only for a time-bound responsibility."),
         })
         .strict(),
@@ -243,21 +256,14 @@ export const proposeSupervisorTool = defineTool({
         .nullable()
         .default(null)
         .describe("Web search, for public information such as news or prices. Search answers from an index and opens no live pages. Null for none."),
-      model: z
-        .object({
-          id: z.string().trim().min(1).max(80).describe("A model from aihub_list_models."),
-          effort: z.string().trim().min(1).max(20).describe("A reasoning level that model offers."),
-          why: z.string().trim().min(1).max(200).describe("Why it fits the work, in a sentence the operator reads on the card."),
-        })
-        .strict()
-        .describe("What the supervisor runs on. Pick the lightest model and reasoning that do the work well: every run uses the operator's plan."),
+      model: ModelInput.describe("What the supervisor runs on. Pick the lightest model and reasoning that do the work well: every run uses the operator's plan."),
       reason: z.string().trim().min(1).max(300).describe("Why, in the operator's own terms."),
     })
     .strict(),
   roles: ["chief_of_staff"],
   profiles: ["conversation"],
-  // Also when a toolsmith's reader comes back: proposing only puts a card in front of the operator.
-  kinds: ["chat", "follow_up"],
+  // Also when a toolsmith's reader comes back, and in a staff review: proposing only puts a card in front of the operator.
+  kinds: ["chat", "follow_up", "review"],
   run: async (input, { caller, proposeSupervisor, store, models }) => {
     if (!proposeSupervisor || !models) throw new Error("Recruiting isn't available in this office");
     const { expiresInDays, ...duty } = input.responsibility;
@@ -294,7 +300,7 @@ export const listModelsTool = defineTool({
   input: z.object({}).strict(),
   roles: ["chief_of_staff"],
   profiles: ["conversation"],
-  kinds: ["chat", "follow_up"],
+  kinds: ["chat", "follow_up", "review"],
   run: async (_input, { models }) => {
     if (!models) throw new Error("The list of models isn't available in this office");
     const catalog = await models();
@@ -322,6 +328,66 @@ export const proposePolicyTool = defineTool({
     if (!proposePolicy) throw new Error("The office policy isn't available in this office");
     proposePolicy(caller, { body: input.policy, reason: input.reason });
     return "Proposal recorded. The operator sees a card in this chat showing the change. Tell them in a sentence what you proposed.";
+  },
+});
+
+// Staff changes (DESIGN.md › Staff review): from the Chief of Staff's review of the staff, or when the
+// operator asks in chat. Each waits on a card; nothing changes until the operator approves it.
+export const proposeStaffChangeTool = defineTool({
+  name: "aihub_propose_staff_change",
+  description:
+    "Propose a change to a supervisor: new scope or standing instructions for its responsibility, another model or reasoning level, ending its responsibility so it leaves the office, or replacing it with a new supervisor who takes over the work with empty notes. Nothing changes until the operator approves the card. A newer proposal for the same supervisor replaces one still waiting.",
+  input: z
+    .object({
+      supervisor: z.string().trim().min(1).max(40).describe("The supervisor's name."),
+      change: z
+        .enum(["instructions", "model", "end", "replace"])
+        .describe("instructions: new scope or standing instructions. model: another model or reasoning level. end: end the responsibility; the supervisor leaves. replace: a new supervisor takes over the work."),
+      scope: z.string().trim().min(1).max(SCOPE_LIMIT).optional().describe("For instructions: the whole new scope. Left out, it stays as it is."),
+      standingInstructions: z
+        .string()
+        .trim()
+        .max(STANDING_INSTRUCTIONS_LIMIT)
+        .optional()
+        .describe("For instructions: the whole new standing instructions. Left out, they stay as they are."),
+      model: ModelInput.optional().describe("For model: what to run on. For replace: what the new supervisor runs on; left out, the old one's."),
+      profile: ProfileInput.optional().describe("For replace: who takes over."),
+      reason: z.string().trim().min(1).max(300).describe("Why, in the operator's terms, with the numbers that show it."),
+    })
+    .strict(),
+  roles: ["chief_of_staff"],
+  profiles: ["conversation"],
+  // In chat when the operator asks, and in a staff review. Never from a follow-up that brings in colleagues' answers.
+  kinds: ["chat", "review"],
+  run: async (input, { caller, proposeStaffChange }) => {
+    if (!proposeStaffChange) throw new Error("Staff changes aren't available in this office");
+    const { supervisor, reason } = input;
+    const extra = (allowed: string[]) => {
+      const given = (["scope", "standingInstructions", "model", "profile"] as const).filter((key) => input[key] !== undefined && !allowed.includes(key));
+      if (given.length) throw new Error(`A ${input.change} change takes no ${given.join(" or ")}.`);
+    };
+    switch (input.change) {
+      case "instructions":
+        extra(["scope", "standingInstructions"]);
+        if (input.scope === undefined && input.standingInstructions === undefined) throw new Error("Give the new scope, the new standing instructions, or both.");
+        await proposeStaffChange(caller, { supervisor, reason, change: { kind: "instructions", scope: input.scope, standingInstructions: input.standingInstructions } });
+        break;
+      case "model":
+        extra(["model"]);
+        if (!input.model) throw new Error("Give the model and reasoning level to run on. See aihub_list_models.");
+        await proposeStaffChange(caller, { supervisor, reason, change: { kind: "model", model: input.model } });
+        break;
+      case "end":
+        extra([]);
+        await proposeStaffChange(caller, { supervisor, reason, change: { kind: "end" } });
+        break;
+      case "replace":
+        extra(["profile", "model"]);
+        if (!input.profile) throw new Error("Give the profile of the supervisor who takes over.");
+        await proposeStaffChange(caller, { supervisor, reason, change: { kind: "replace", profile: input.profile, model: input.model ?? null } });
+        break;
+    }
+    return "Proposal recorded. The operator sees an approval card in your chat. Tell them in a sentence what you proposed.";
   },
 });
 
@@ -594,6 +660,7 @@ export const OFFICE_TOOLS: GatewayTool[] = [
   listModelsTool,
   proposeSupervisorTool,
   proposePolicyTool,
+  proposeStaffChangeTool,
   askColleague,
   assignTask,
   recruitWorker,

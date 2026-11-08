@@ -27,7 +27,7 @@ export function officeStatus(office: Office, now = new Date()): OfficeStatus {
     attention = true;
   }
 
-  const proposals = store.listProposals().filter((proposal) => proposal.status === "pending").length;
+  const proposals = store.listProposals().filter((proposal) => proposal.status === "pending").length + store.pendingStaffChanges().length;
   if (proposals) {
     needs.push(proposals === 1 ? "A proposal to approve" : `${proposals} proposals to approve`);
     attention = true;

@@ -380,6 +380,29 @@ describe("The scheduler when Codex can't run", () => {
     assert.match(alert!.body, /^Codex isn't signed in/);
   });
 
+  it("has the Chief of Staff review the staff after a briefing when a sign calls for it", async () => {
+    const { store, runtime, at } = setUp(MONDAY_0700, async (done) => ({
+      run: done()!.run,
+      sections: [{ agentId: "nora", heading: "Work calendar", warning: null, carried: [], resolved: [], status: "missing", run: null, reason: "The run failed" }],
+    }));
+    store.upsertAgent({ id: "nora", name: "Nora", title: "Calendar Supervisor", role: "supervisor", managerId: CHIEF_OF_STAFF_ID, profile: "data", charter: "" });
+    store.createResponsibility({ ownerId: "nora", title: "Work calendar", scope: "", standingInstructions: "", expiresAt: null });
+    const inputs: string[] = [];
+    runtime.respond = async (input) => {
+      inputs.push(input);
+      return { status: "completed", text: "NOTHING TO SUGGEST", error: null, usage: { inputTokens: 1, cachedInputTokens: 0, outputTokens: 1 } };
+    };
+    const reviews = () => store.recentRuns(20).filter((run) => run.kind === "review").length;
+
+    await at(MONDAY_0700);
+    assert.equal(reviews(), 0, "one missing section is no sign yet");
+    await at("2026-11-10T06:00:00.000Z");
+    assert.equal(reviews(), 1);
+    assert.match(inputs.at(-1)!, /Nora's section was missing from the last two briefings/);
+    const [occurrence] = store.occurrencesIn("delivered").filter((candidate) => candidate.id.includes("2026-11-10") && !candidate.id.endsWith("health"));
+    assert.ok(occurrence, "the briefing stays delivered");
+  });
+
   it("tells the operator a manual briefing can't run, without waiting or retrying", async () => {
     const { store, scheduler, routine } = setUp("2026-11-09T12:00:00.000Z", () => Promise.resolve({ run: null, waiting: signedOut }));
     const id = scheduler.runNow(routine.id);

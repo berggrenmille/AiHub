@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import type { Agent, ChatMessage, Conversation, Item, ModelOption, PolicyVersion, Proposal, Run, SourcePreview, StaffReader, View } from "@aihub/shared";
+import type { Agent, ChatMessage, Conversation, Item, ModelOption, PolicyVersion, Proposal, Run, SourcePreview, StaffChange, StaffReader, View } from "@aihub/shared";
 import { errorText } from "../api.ts";
 import { lookFor } from "../lib/avatar.ts";
 import { formatClock, formatDateTime, formatLongDate, STATE_LABELS, toneOf } from "../format.ts";
@@ -9,6 +9,7 @@ import { Markdown, type WikilinkTarget } from "./Markdown.tsx";
 import { Portrait } from "./office/Figure.tsx";
 import { ProposalCard } from "./ProposalCard.tsx";
 import { PolicyCard } from "./PolicyCard.tsx";
+import { StaffChangeCard } from "./StaffChangeCard.tsx";
 import { baseOf } from "../lib/policy.ts";
 import { StateBadge } from "./StateBadge.tsx";
 import { ViewFrame, type ViewActions } from "../views/LazyViewFrame.tsx";
@@ -28,6 +29,7 @@ interface ChatDrawerProps {
   streaming: StreamingReply[];
   proposals: Proposal[];
   policies: PolicyVersion[];
+  staffChanges: StaffChange[];
   /** The models Codex offers, for naming the one a proposal picks. */
   models: ModelOption[] | null;
   readers: StaffReader[];
@@ -42,6 +44,8 @@ interface ChatDrawerProps {
   onDecline(proposalId: string): Promise<void>;
   onApprovePolicy(policyId: number): Promise<void>;
   onDeclinePolicy(policyId: number): Promise<void>;
+  onApproveStaffChange(changeId: number): Promise<void>;
+  onDeclineStaffChange(changeId: number): Promise<void>;
   onClose(): void;
   onOpenProfile(): void;
   resolveLink(target: string): WikilinkTarget;
@@ -106,7 +110,7 @@ export function ChatDrawer(props: ChatDrawerProps) {
   useLayoutEffect(() => {
     const scroller = scrollRef.current;
     if (scroller && following.current) scroller.scrollTop = scroller.scrollHeight;
-  }, [messages, streaming, runs, props.proposals, props.policies]);
+  }, [messages, streaming, runs, props.proposals, props.policies, props.staffChanges]);
 
   // Stay at the bottom when the panel itself changes size, such as when the input grows.
   useEffect(() => {
@@ -205,6 +209,7 @@ export function ChatDrawer(props: ChatDrawerProps) {
               proposal={message.kind === "proposal" ? props.proposals.find((proposal) => proposal.id === message.refId) : undefined}
               policy={message.kind === "policy" ? props.policies.find((policy) => String(policy.id) === message.refId) : undefined}
               policies={props.policies}
+              staffChange={message.kind === "staff_change" ? props.staffChanges.find((change) => String(change.id) === message.refId) : undefined}
               models={props.models}
               readers={props.readers}
               onPreview={props.onPreview}
@@ -212,6 +217,8 @@ export function ChatDrawer(props: ChatDrawerProps) {
               onDecline={props.onDecline}
               onApprovePolicy={props.onApprovePolicy}
               onDeclinePolicy={props.onDeclinePolicy}
+              onApproveStaffChange={props.onApproveStaffChange}
+              onDeclineStaffChange={props.onDeclineStaffChange}
               resolveLink={props.resolveLink}
               onOpenLink={props.onOpenLink}
               views={props.views.get(message.id) ?? NO_VIEWS}
@@ -281,6 +288,7 @@ interface MessageViewProps {
   proposal: Proposal | undefined;
   policy: PolicyVersion | undefined;
   policies: PolicyVersion[];
+  staffChange: StaffChange | undefined;
   models: ModelOption[] | null;
   readers: StaffReader[];
   onPreview(proposalId: string, sourcePath: string): Promise<SourcePreview>;
@@ -288,6 +296,8 @@ interface MessageViewProps {
   onDecline(proposalId: string): Promise<void>;
   onApprovePolicy(policyId: number): Promise<void>;
   onDeclinePolicy(policyId: number): Promise<void>;
+  onApproveStaffChange(changeId: number): Promise<void>;
+  onDeclineStaffChange(changeId: number): Promise<void>;
   resolveLink(target: string): WikilinkTarget;
   onOpenLink(target: string): void;
   views: View[];
@@ -344,6 +354,37 @@ function MessageView(props: MessageViewProps) {
           onApprove={() => props.onApprovePolicy(Number(message.refId))}
           onDecline={() => props.onDeclinePolicy(Number(message.refId))}
         />
+        <p className="message-meta">{time}</p>
+      </li>
+    );
+  }
+
+  if (message.kind === "staff_change") {
+    return (
+      <li className="message message-card">
+        <StaffChangeCard
+          change={props.staffChange}
+          intro={message.body}
+          authorName={agentName}
+          models={props.models}
+          onApprove={() => props.onApproveStaffChange(Number(message.refId))}
+          onDecline={() => props.onDeclineStaffChange(Number(message.refId))}
+        />
+        <p className="message-meta">{time}</p>
+      </li>
+    );
+  }
+
+  if (message.kind === "review") {
+    return (
+      <li className="message message-agent message-review">
+        <span className="visually-hidden">{agentName}'s staff review: </span>
+        <div className="bubble">
+          <p className="eyebrow review-label">
+            <Icon name="team" size={14} /> Staff review
+          </p>
+          <Markdown source={message.body} resolveLink={resolveLink} onOpenLink={onOpenLink} />
+        </div>
         <p className="message-meta">{time}</p>
       </li>
     );

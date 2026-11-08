@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { ActivityEntry, Agent, Assignment, ChatMessage, DaemonEvent, Item, NoteSummary, PolicyVersion, Proposal, Responsibility, Run, StaffReader, StateSnapshot, View } from "@aihub/shared";
+import type { ActivityEntry, Agent, Assignment, ChatMessage, DaemonEvent, Item, NoteSummary, PolicyVersion, Proposal, Responsibility, Run, StaffChange, StaffReader, StateSnapshot, View } from "@aihub/shared";
 import { ACTIVITY_LIMIT, initialOfficeState, officeReducer, rosterOrder, SETTLED_ASSIGNMENT_LIMIT, type OfficeAction, type OfficeState } from "./state.ts";
 
 const CHAT = "chief-of-staff";
@@ -86,9 +86,10 @@ function snapshot(overrides: Partial<StateSnapshot> = {}): StateSnapshot {
     assignments: [],
     readers: [],
     policies: [],
+    staffChanges: [],
     notes: [],
     views: [],
-    office: { turnsToday: 0, dailyTurnLimit: 80, activeSupervisors: 0, supervisorLimit: 8, briefingStreak: 0 },
+    office: { turnsToday: 0, dailyTurnLimit: 80, activeSupervisors: 0, supervisorLimit: 8, briefingStreak: 0, staffReviewAt: null },
     runtime: { signedIn: true, detail: "operator@example.com" },
     lastEventId: "boot-0",
     ...overrides,
@@ -343,7 +344,7 @@ function note(overrides: Partial<NoteSummary> = {}): NoteSummary {
 
 describe("office records", () => {
   it("loads responsibilities, connections, routines, proposals, items, notes and stats from the snapshot", () => {
-    const office = { turnsToday: 12, dailyTurnLimit: 80, activeSupervisors: 2, supervisorLimit: 8, briefingStreak: 3 };
+    const office = { turnsToday: 12, dailyTurnLimit: 80, activeSupervisors: 2, supervisorLimit: 8, briefingStreak: 3, staffReviewAt: null };
     const state = apply(initialOfficeState, {
       type: "snapshot",
       snapshot: snapshot({
@@ -415,7 +416,7 @@ describe("office records", () => {
   });
 
   it("replaces the office stats", () => {
-    const office = { turnsToday: 40, dailyTurnLimit: 80, activeSupervisors: 4, supervisorLimit: 8, briefingStreak: 5 };
+    const office = { turnsToday: 40, dailyTurnLimit: 80, activeSupervisors: 4, supervisorLimit: 8, briefingStreak: 5, staffReviewAt: null };
     assert.deepEqual(events(loaded(), { type: "office", office }).office, office);
   });
 
@@ -600,6 +601,35 @@ describe("the office policy", () => {
 
     state = events(state, { type: "policy", policy: policyVersion({ id: 2, basedOn: 1 }) });
     assert.deepEqual(state.policies.map((p) => p.id), [2, 1]);
+  });
+});
+
+describe("staff changes", () => {
+  const change = (overrides: Partial<StaffChange> = {}): StaffChange => ({
+    id: 1,
+    agentId: "work-schedule",
+    agentName: "Nora",
+    responsibilityId: "r-1",
+    responsibilityTitle: "Work calendar",
+    change: { kind: "end" },
+    reason: "Nothing found in weeks.",
+    proposedBy: "chief-of-staff",
+    runId: "run-review",
+    fromSourceData: false,
+    status: "pending",
+    outcome: null,
+    createdAt: "2026-11-08T10:00:00.000Z",
+    decidedAt: null,
+    ...overrides,
+  });
+
+  it("takes them from the snapshot, newest first, and keeps a decision over a late copy", () => {
+    let state = apply(initialOfficeState, { type: "snapshot", snapshot: snapshot({ staffChanges: [change(), change({ id: 2 })] }) });
+    assert.deepEqual(state.staffChanges.map((c) => c.id), [2, 1]);
+    const approved = change({ status: "approved", decidedAt: "2026-11-08T10:05:00.000Z", outcome: "Nora left the office." });
+    state = events(state, { type: "staff_change", change: approved });
+    assert.deepEqual(state.staffChanges.map((c) => [c.id, c.status]), [[2, "pending"], [1, "approved"]]);
+    assert.equal(events(state, { type: "staff_change", change: change() }), state);
   });
 });
 
