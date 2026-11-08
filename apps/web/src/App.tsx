@@ -26,10 +26,12 @@ type Drawer = "chat" | "activity" | "assignments" | "policy" | null;
 export function App() {
   const { state, commands, models } = useOffice();
   const now = useNow(1000);
-  // The hiring card and the profile card name models, so ask for the list once. The profile card asks again if this fails.
+  // The hiring card and the profile card name models, so ask for the list once the session has its
+  // token, with the first snapshot. The profile card asks again if this fails.
+  const loaded = state.loaded;
   useEffect(() => {
-    commands.loadModels().catch(() => undefined);
-  }, [commands]);
+    if (loaded) commands.loadModels().catch(() => undefined);
+  }, [commands, loaded]);
   const [view, setView] = useState<View>("office");
   const [drawer, setDrawer] = useState<Drawer>(null);
   // The chat the drawer shows. Null shows the Chief of Staff's.

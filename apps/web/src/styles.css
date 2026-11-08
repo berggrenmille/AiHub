@@ -4626,6 +4626,8 @@ button.wikilink:hover {
 }
 
 .view-chart-toggle {
+  flex-shrink: 0;
+  white-space: nowrap;
   border: none;
   background: none;
   padding: 0;

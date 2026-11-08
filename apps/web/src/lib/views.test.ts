@@ -82,6 +82,8 @@ describe("chart axes", () => {
     assert.deepEqual(niceTicks([0.2, 0.9]), [0, 0.25, 0.5, 0.75, 1]);
     assert.deepEqual(niceTicks([-12, 30]), [-20, 0, 20, 40]);
     assert.deepEqual(niceTicks([]), [0, 1]);
+    assert.deepEqual(niceTicks([0, 0, 2]), [0, 1, 2], "counts step by whole numbers");
+    assert.deepEqual(niceTicks([3, 47, 112]).every(Number.isInteger), true);
   });
 
   it("writes numbers in full under 10,000 and compact above", () => {

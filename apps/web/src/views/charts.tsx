@@ -82,6 +82,18 @@ function Plot(props: { kind: "bar" | "line"; labels: string[]; series: Series[];
   const widest = Math.max(...labels.map((label) => label.length)) * 6.2 + 8;
   const every = Math.max(1, Math.ceil(widest / band));
   const faded = (index: number) => highlight.size > 0 && !highlight.has(labels[index]!);
+  // A single series names its highlighted values, but only when every one fits beside its
+  // neighbors; otherwise none do, and the tooltip and the table carry them.
+  const valueLabels =
+    series.length === 1
+      ? series[0]!.values.flatMap((value, index) => (value !== null && highlight.has(labels[index]!) ? [{ index, value, text: formatNumber(value) }] : []))
+      : [];
+  const labelsFit = valueLabels.every((one, n) => {
+    const next = valueLabels[n + 1];
+    const ownWidth = one.text.length * 6.2;
+    if (ownWidth > width - left) return false;
+    return !next || (next.index - one.index) * band >= (ownWidth + next.text.length * 6.2) / 2 + 4;
+  });
 
   const indexAt = (clientX: number) => {
     const rect = box.current?.getBoundingClientRect();
@@ -153,14 +165,12 @@ function Plot(props: { kind: "bar" | "line"; labels: string[]; series: Series[];
               </g>
             ))}
         {kind === "line" && active !== null && <line className="view-crosshair" x1={xCenter(active)} x2={xCenter(active)} y1={MARGIN.top} y2={MARGIN.top + plotHeight} />}
-        {series.length === 1 &&
-          series[0]!.values.map((value, index) =>
-            value !== null && highlight.has(labels[index]!) ? (
-              <text key={index} className="view-value" x={xCenter(index)} y={Math.min(y(value), zero) - 6} textAnchor="middle" fontSize={FONT}>
-                {formatNumber(value)}
-              </text>
-            ) : null,
-          )}
+        {labelsFit &&
+          valueLabels.map(({ index, value, text }) => (
+            <text key={index} className="view-value" x={xCenter(index)} y={Math.min(y(value), zero) - 6} textAnchor="middle" fontSize={FONT}>
+              {text}
+            </text>
+          ))}
       </svg>
       {active !== null && (
         <div className="view-tooltip" style={{ left: Math.min(Math.max(xCenter(active), 70), width - 70) }} role="status">

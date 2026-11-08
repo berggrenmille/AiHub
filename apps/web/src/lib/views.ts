@@ -101,7 +101,9 @@ export function niceTicks(values: number[], count = 4): number[] {
   if (low === high) return [0, 1];
   const rough = (high - low) / count;
   const magnitude = 10 ** Math.floor(Math.log10(rough));
-  const step = [1, 2, 2.5, 5, 10].map((factor) => factor * magnitude).find((candidate) => candidate >= rough) ?? 10 * magnitude;
+  const nice = [1, 2, 2.5, 5, 10].map((factor) => factor * magnitude).find((candidate) => candidate >= rough) ?? 10 * magnitude;
+  // Counts, such as turns, step by whole numbers.
+  const step = finite.every(Number.isInteger) ? Math.max(1, Math.round(nice)) : nice;
   const ticks: number[] = [];
   for (let tick = Math.floor(low / step) * step; ; tick += step) {
     ticks.push(Number(tick.toPrecision(12)));
